@@ -290,3 +290,55 @@ def run_action(action_id: str, body: ActionIn):
         payload=body.payload,
         idempotency_key=body.idempotency_key,
     ))
+
+
+# -------------------------------------------------- 组合式 Object Set 查询（E4）
+# 对标 Palantir OSDK 组合语义：谓词/集合代数/followLink/聚合，安全联动（行级过滤影响
+# total 与聚合，列级脱敏作用于输出 props；scope token 检查集合涉及的主类型）。
+
+class ObjectSetQueryIn(BaseModel):
+    set: dict
+    where: Optional[dict] = None
+    orderBy: Optional[list] = None
+    aggregate: Optional[dict] = None
+    page: Optional[dict] = None
+
+
+def _object_query_engine():
+    from enhancements.runtime import EnhancedSystem
+    from freight.object_query import ObjectQueryEngine
+    enh = EnhancedSystem(get_system())
+    return ObjectQueryEngine(get_system().sem, enh.ext, enh.security), enh
+
+
+@router.post("/object-set/query")
+def object_set_query(body: ObjectSetQueryIn,
+                     user: str = Query("anonymous"), roles: str = Query("")):
+    from enhancements.security import SecurityContext, AccessDenied
+    from freight.object_query import QueryError
+    from freight.semantic import OntologyViolation
+
+    engine, enh = _object_query_engine()
+    role_set = {r.strip() for r in roles.split(",") if r.strip()}
+    token = enh.ext.scope_tokens.get("default_token")
+    ctx = SecurityContext(
+        user=user, roles=role_set, markings=role_set,
+        scope_token=token if user.startswith("agent-") else None,
+    )
+    # scope token：集合主类型必须在令牌可见范围内
+    try:
+        if ctx.scope_token:
+            main_type = engine.validate_set(body.set)
+            if main_type == "*":
+                raise AccessDenied(
+                    "scope token 不允许代数组合查询（无法静态判定类型）",
+                    code="TOOL_NOT_IN_SCOPE")
+            engine.security.check_scope(ctx, "class", main_type)
+        query = body.model_dump(exclude_none=True)
+        return engine.execute(query, get_system().facts.store, ctx)
+    except QueryError as exc:
+        raise HTTPException(400, f"{exc.code}: {exc}") from exc
+    except OntologyViolation as exc:
+        raise HTTPException(400, f"ONTOLOGY_VIOLATION: {exc}") from exc
+    except AccessDenied as exc:
+        raise HTTPException(403, f"{exc.code}: {exc}") from exc

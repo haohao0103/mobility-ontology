@@ -613,8 +613,17 @@ class FactMCP:
                       select: list[str] | None = None,
                       order_by: Any = None,
                       limit: int = 100,
-                      next_page_token: str | None = None) -> dict:
+                      next_page_token: str | None = None,
+                      query_tree: Any = None) -> dict:
         self._validate_type(type_id)
+        if query_tree:
+            # 组合式 Object Set 查询（E4）：query_tree 优先，type 仅做工具参数合法性校验
+            return self._record(
+                "ontology.query",
+                {"type": type_id, "query_tree": query_tree},
+                "组合式 Object Set 查询",
+                lambda: self._query_tree(query_tree),
+            )
         select_list = [str(item) for item in (select or [])]
         for name in select_list:
             self._validate_property(type_id, name)
@@ -674,6 +683,18 @@ class FactMCP:
             "本体图查询",
             load,
         )
+
+    def _query_tree(self, query_tree: Any) -> dict:
+        """组合式 Object Set 查询（E4）：校验+求值走 freight.object_query。"""
+        from freight.object_query import ObjectQueryEngine
+        ext = None
+        try:  # 扩展注册表可选（值类型校验增强；缺失时 legacy 属性跳过类型校验）
+            from enhancements.registry import ExtensionRegistry
+            ext = ExtensionRegistry(base_classes=self.sem.classes)
+        except ImportError:
+            pass
+        engine = ObjectQueryEngine(self.sem, ext)
+        return engine.execute(dict(query_tree), self.store)
 
     def _traverse(self, object_ids: list[str],
                   predicates: list[str] | None,
@@ -1327,7 +1348,7 @@ class FactMCP:
             "ontology.query": lambda: self.query_objects(
                 args["type"], args.get("where"), args.get("select"),
                 args.get("order_by"), args.get("limit", 100),
-                args.get("next_page_token")),
+                args.get("next_page_token"), args.get("query_tree")),
             "ontology.traverse": lambda: self.traverse_objects(
                 args["object_id"], args.get("predicate"),
                 args.get("direction", "out"), args.get("depth", 1),

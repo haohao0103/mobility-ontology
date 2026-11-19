@@ -551,6 +551,80 @@ def check_shacl_cases(path: str, label: str, base_iri: str) -> dict:
     }
 
 
+def check_query_schema(root: str) -> dict:
+    """E5 门禁：查询树 Schema 自洽 + 负样本三例（非法算子/未知属性/超深嵌套）必须被拦。"""
+    import jsonschema
+
+    from freight.object_query import ObjectQueryEngine, QueryError
+    from freight.semantic import SemanticLayer
+
+    target = "schema/object_query.schema.json#query_dsl"
+    item: dict = {"target": target, "ok": True, "issues": []}
+    schema_path = os.path.join(root, "schema", "object_query.schema.json")
+    if not os.path.exists(schema_path):
+        item["ok"] = False
+        item["issues"].append({"code": "QUERY_SCHEMA_MISSING", "path": schema_path,
+                               "message": "查询树 Schema 不存在"})
+        return item
+    with open(schema_path, encoding="utf-8") as f:
+        schema = json.load(f)
+    try:
+        jsonschema.Draft7Validator.check_schema(schema)
+    except jsonschema.SchemaError as exc:
+        item["ok"] = False
+        item["issues"].append({"code": "QUERY_SCHEMA_INVALID", "path": schema_path,
+                               "message": f"Schema 自身不合法: {exc.message}"})
+        return item
+
+    # 正例必须同时通过 Schema 与本体期校验
+    good = {
+        "set": {"from": "Waybill", "where": {"status": {"$in": ["DELIVERED"]}}},
+        "orderBy": [{"prop": "actual_fee", "dir": "desc"}],
+        "page": {"limit": 10},
+    }
+    try:
+        jsonschema.validate(good, schema)
+    except jsonschema.ValidationError as exc:
+        item["ok"] = False
+        item["issues"].append({"code": "QUERY_SCHEMA_GOOD_REJECTED",
+                               "message": f"正例被 Schema 拒绝: {exc.message}"})
+    # 负样本三例：必须被本体期校验拦（schema 只管结构，属性/算子白名单在引擎）
+    negatives = [
+        ("PREDICATE_OP_UNKNOWN", {
+            "set": {"from": "Waybill", "where": {"actual_fee": {"$weird": 1}}}}),
+        ("PREDICATE_PROP_UNKNOWN", {
+            "set": {"from": "Waybill", "where": {"no_such_prop": {"$eq": 1}}}}),
+        ("QUERY_DEPTH_EXCEEDED", {
+            "set": {"from": "Waybill"},
+            "where": _deep_predicate(40)}),
+    ]
+    sem = SemanticLayer()
+    engine = ObjectQueryEngine(sem)
+    for expected_code, bad_query in negatives:
+        try:
+            engine.validate(bad_query)
+            item["ok"] = False
+            item["issues"].append({
+                "code": "QUERY_NEGATIVE_LEAKED",
+                "message": f"负样本未被拦截（期望 {expected_code}）",
+            })
+        except QueryError as exc:
+            if exc.code != expected_code:
+                item["ok"] = False
+                item["issues"].append({
+                    "code": "QUERY_NEGATIVE_WRONG_CODE",
+                    "message": f"拦截码 {exc.code} != 期望 {expected_code}",
+                })
+    return item
+
+
+def _deep_predicate(depth: int) -> dict:
+    node: dict = {"status": {"$eq": "LOADED"}}
+    for _ in range(depth):
+        node = {"$or": [node]}
+    return node
+
+
 def main() -> int:
     results = [check_schema(CURRENT, "freight/semantic_layer.json")]
     results.append(check_metadata(CURRENT, "freight/semantic_layer.json"))
@@ -562,6 +636,7 @@ def main() -> int:
     results.append(check_shacl(ROOT_LAYER, "semantic_layer.json", MOBILITY_BASE))
     results.append(check_shacl_cases(ROOT_LAYER, "semantic_layer.json", MOBILITY_BASE))
     results.append(check_model_tools(CURRENT, "freight/semantic_layer.json"))
+    results.append(check_query_schema(ROOT))
     for manifest in list_manifests():
         version = manifest["version"]
         path = semantic_path(version)
@@ -611,6 +686,7 @@ def main() -> int:
         "shacl": "freight/semantic_layer.json#shacl",
         "shacl_cases": "semantic_layer.json#shacl_cases",
         "model_tools": "freight/semantic_layer.json#tools",
+        "query_dsl": "schema/object_query.schema.json#query_dsl",
     }
     coverage = {
         name: {"target": target, "ok": bool(by_target.get(target))}

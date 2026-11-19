@@ -1,0 +1,29 @@
+[project]
+name = "mobility-ontology"
+version = "2.2.0"
+description = "货拉拉订单本体：可执行语义层 + 确定性规则引擎 + 语义门禁（Palantir 式业务操作本体）"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+    "pydantic>=2.6",
+    "jsonschema>=4.21",
+    "httpx>=0.27",
+]
+
+[project.optional-dependencies]
+shacl = [
+    "rdflib>=7.0",
+    "pyshacl>=0.25",
+]
+dev = [
+    "pytest>=8.0",
+    "pyyaml>=6.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --basetemp=.pytest_tmp/bt"
+
+[tool.setuptools]
+packages = ["freight", "mobility", "profile_ai", "schema", "tools", "enhancements"]

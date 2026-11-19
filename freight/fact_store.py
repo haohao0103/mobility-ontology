@@ -8,6 +8,12 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
+
+# 并发模型（对标 Palantir 服务端多租户的降级实现，P0-3）：
+# - 写路径：单一写连接 + api 层写锁串行（SQLite 单写者约束）
+# - 读路径：WAL 模式下每线程独立只读连接，读写互不阻塞
+# - busy_timeout：写冲突时等待而非报错
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS objects (
@@ -77,19 +83,49 @@ CREATE INDEX IF NOT EXISTS idx_audit_object ON audit(object_id, occurred_at);
 
 
 class FactStore:
-    def __init__(self, conn: sqlite3.Connection):
+    def __init__(self, conn: sqlite3.Connection, db_path: str | None = None):
         self.conn = conn
-        self.conn.executescript(SCHEMA)
+        self.db_path = db_path
+        # P0-3 并发修复：WAL + busy_timeout，读不再阻塞写、写不再阻塞读
+        try:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA busy_timeout=5000")
+        except sqlite3.OperationalError:
+            pass
+        conn.executescript(SCHEMA)
+        self._read_local = threading.local()
+
+    def _read_conn(self) -> sqlite3.Connection:
+        """线程本地只读连接；WAL 模式下读写不互斥。
+
+        写事务进行中（conn.in_transaction）时回落到写连接：
+        同一事务内的读写必须看到未提交数据（seed/复合写流程依赖此语义）。
+        """
+        if self.conn.in_transaction:
+            return self.conn
+        c = getattr(self._read_local, "conn", None)
+        if c is None:
+            if not self.db_path:
+                return self.conn  # 无法建独立连接时退回共享连接
+            c = sqlite3.connect(self.db_path, check_same_thread=False)
+            c.row_factory = sqlite3.Row
+            try:
+                c.execute("PRAGMA journal_mode=WAL")
+                c.execute("PRAGMA busy_timeout=5000")
+            except sqlite3.OperationalError:
+                pass
+            self._read_local.conn = c
+        return c
 
     def one(self, sql: str, args: tuple = ()) -> dict | None:
-        row = self.conn.execute(sql, args).fetchone()
+        row = self._read_conn().execute(sql, args).fetchone()
         return dict(row) if row else None
 
     def all(self, sql: str, args: tuple = ()) -> list[dict]:
-        return [dict(r) for r in self.conn.execute(sql, args).fetchall()]
+        return [dict(r) for r in self._read_conn().execute(sql, args).fetchall()]
 
     def scalar(self, sql: str, args: tuple = ()):
-        row = self.conn.execute(sql, args).fetchone()
+        row = self._read_conn().execute(sql, args).fetchone()
         return row[0] if row else None
 
     def insert_object(self, object_id: str, type_id: str, name: str,

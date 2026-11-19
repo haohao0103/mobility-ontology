@@ -1,0 +1,28 @@
+{
+ "version": "1.1.0",
+ "merged_at": "2026-11-19T21:24:22+0800",
+ "proposal": "P-1795094662",
+ "checksum": "cafae11b3346946f",
+ "base_checksum": "d87f698bade8eccb",
+ "change_list": [
+  {
+   "path": "property_types[]",
+   "change": "ADDED",
+   "value": {
+    "name": "contact",
+    "label": "联系方式",
+    "value_type": "string",
+    "unit": null,
+    "marking": "PII",
+    "timeseries": false,
+    "primary_key": false,
+    "status": "active",
+    "owner": "demo",
+    "version": "1.0.0",
+    "used_by": [
+     "Shipper"
+    ]
+   }
+  }
+ ]
+}

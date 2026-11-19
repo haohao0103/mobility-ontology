@@ -192,6 +192,9 @@ def create_app(db_path: str = DEFAULT_DB, fresh: bool = False) -> FastAPI:
     app.include_router(profile_router)
     # 货拉拉订单本体：/freight/*（对象图谱 + 费用诊断 + 规则动作 + 审计）
     app.include_router(freight_router)
+    # Palantir 追齐层：/enh/*（属性注册表 + 接口 + 安全 + 函数注册表 + 沙箱 + 度量）
+    from enhancements.api import router as enh_router
+    app.include_router(enh_router)
 
     # 统一入口：用户只需要记住根地址，再选择订单本体或画像本体
     @app.get("/", include_in_schema=False)

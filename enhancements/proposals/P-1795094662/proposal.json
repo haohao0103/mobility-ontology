@@ -1,0 +1,9 @@
+{
+ "id": "P-1795094662",
+ "title": "演示：加 remote_area 费用属性",
+ "created_at": "2026-11-19T21:24:22+0800",
+ "base_checksum": "d87f698bade8eccb",
+ "status": "MERGED",
+ "review": "PASS",
+ "merged_version": "1.1.0"
+}

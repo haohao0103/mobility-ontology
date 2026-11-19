@@ -168,7 +168,7 @@ class FactMCP:
         self.sem = sem
         self.conn = sqlite3.connect(db_path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
-        self.store = FactStore(self.conn)
+        self.store = FactStore(self.conn, db_path)
         self._trace: list[dict] = []
         self.runtime: Any = None
         self.conn.commit()

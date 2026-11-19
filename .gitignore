@@ -9,3 +9,5 @@ venv/
 runs/
 build/
 *.log
+.pytest_tmp/
+generated/

@@ -1,0 +1,8 @@
+{
+ "proposal": "P-1795094662",
+ "reviewed_at": "2026-11-19T21:24:22+0800",
+ "verdict": "PASS",
+ "changed_vs_main": true,
+ "issues": [],
+ "checker": "ExtensionRegistry.validate (semantic-gate kernel)"
+}

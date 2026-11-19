@@ -234,8 +234,11 @@ class ObjectQueryEngine:
                 raise QueryError("followLink 必须是对象", "SET_INVALID")
             link = spec.get("link", "")
             direction = spec.get("direction", "out")
+            at = spec.get("at")
             if direction not in ("out", "in"):
                 raise QueryError("followLink.direction 只能是 out/in", "SET_INVALID")
+            if at is not None and not isinstance(at, str):
+                raise QueryError("followLink.at 必须是 ISO 时间字符串", "SET_INVALID")
             rel = self.sem.relations.get(link)
             if rel is None:
                 raise QueryError(
@@ -375,10 +378,19 @@ class ObjectQueryEngine:
             spec = node["followLink"]
             start_rows = self._resolve_set(spec["set"], store, depth + 1)
             link, direction = spec["link"], spec.get("direction", "out")
+            at = spec.get("at")
             self.sem.relations[link]  # 已过校验
-            all_links = store.all(
-                "SELECT subject_id, object_id FROM relations "
-                "WHERE predicate=? AND valid_to IS NULL", (link,))
+            if at is None:
+                all_links = store.all(
+                    "SELECT subject_id, object_id FROM relations "
+                    "WHERE predicate=? AND valid_to IS NULL", (link,))
+            else:
+                # E6 时态回放：只取 at 时刻活跃的关系（valid_from <= at < valid_to）
+                all_links = store.all(
+                    "SELECT subject_id, object_id FROM relations "
+                    "WHERE predicate=? "
+                    "AND (valid_from IS NULL OR valid_from <= ?) "
+                    "AND (valid_to IS NULL OR valid_to > ?)", (link, at, at))
             if direction == "out":
                 subject_ids = {r["object_id"] for r in start_rows}
                 linked = {r["object_id"] for r in all_links

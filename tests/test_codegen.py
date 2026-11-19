@@ -57,6 +57,40 @@ class TestGeneratedArtifacts:
 
 
 class TestLoadBearing:
+    def test_tsc_compiles_and_breaks_on_schema_drift(self, generated):
+        """tsc 真编译（需 TSC_BIN 指向 tsc 可执行，或 /tmp/tsc_try 预装）；
+        无 tsc 环境时跳过（CI 接入时用 npm 装真实 tsc）。"""
+        tsc = os.environ.get("TSC_BIN") or "/tmp/tsc_try/node_modules/.bin/tsc"
+        if not os.path.exists(tsc):
+            pytest.skip("tsc 不可用（设 TSC_BIN 或预装 typescript）")
+        import tempfile
+        ts = os.path.join(generated, "typescript.ts")
+        # 1. 正常版编译通过
+        r = subprocess.run([tsc, "--noEmit", "--target", "es2020",
+                            "--lib", "es2020,dom", "--strict", "false", ts],
+                           capture_output=True, text=True)
+        assert r.returncode == 0, r.stdout + r.stderr
+        # 2. 删类版（模拟本体演进后未重新生成的旧客户端）编译必须失败
+        content = open(ts, encoding="utf-8").read()
+        stripped = content.replace("export interface WaybillFilters", "export interface _RemovedFilters")
+        with tempfile.NamedTemporaryFile("w", suffix=".ts", delete=False,
+                                         encoding="utf-8") as tf:
+            tf.write(stripped)
+            broken = tf.name
+        use = broken.replace(".ts", "_use.ts")
+        with open(use, "w", encoding="utf-8") as f:
+            f.write("import { WaybillFilters } from './" +
+                    os.path.basename(broken)[:-3] + "';\n"
+                    "const f: WaybillFilters = {};\nexport default f;\n")
+        r2 = subprocess.run([tsc, "--noEmit", "--target", "es2020",
+                             "--lib", "es2020,dom", "--strict", "false",
+                             "--esModuleInterop", use, broken],
+                            capture_output=True, text=True)
+        os.unlink(broken)
+        os.unlink(use)
+        assert r2.returncode != 0, "schema 漂移未被编译期发现"
+        assert "TS2305" in r2.stdout or "WaybillFilters" in r2.stdout + r2.stderr
+
     def test_new_class_appears_after_regen(self, generated, sem, tmp_path):
         """承重：本体加新类 -> 重新生成 -> 客户端出现新类型（本体驱动客户端）。"""
         from enhancements.registry import ExtensionRegistry

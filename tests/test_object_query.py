@@ -421,6 +421,58 @@ class TestSchemaAndOsdk:
             store.conn.commit()
 
 
+class TestTemporalFollowLink:
+    """E6 时态回放：followLink.at 只取当时活跃的关系。"""
+
+    def _inject_temporal_link(self, sys_mod):
+        """注入一条已关闭的历史 link：历史时刻可见、现在不可见。"""
+        store = _store(sys_mod)
+        cur = store.one(
+            "SELECT created_at FROM objects WHERE object_id=?",
+            ("waybill:WB20261105001",))
+        closed = store.conn.execute(
+            "INSERT INTO relations(subject_id,predicate,object_id,subject_type,"
+            "object_type,source_system,valid_from,valid_to,created_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?)",
+            ("waybill:WB20261105001", "waybill_produces_fee", "fee:F001", "Waybill",
+             "FeeItem", "ontology", "2026-11-05T08:00:00Z",
+             "2026-11-05T12:00:00Z", cur["created_at"])).lastrowid
+        store.conn.commit()
+        return closed
+
+    def test_at_replays_history(self, engine, sys_mod):
+        eng, _ = engine
+        store = _store(sys_mod)
+        rel_id = self._inject_temporal_link(sys_mod)
+        try:
+            start = {"from": "Waybill",
+                     "where": {"waybill_id": {"$eq": "WB20261105001"}}}
+            base = {"set": {"followLink": {
+                "set": start,
+                "link": "waybill_produces_fee", "direction": "out"}}}
+            now = eng.execute(base, store)["total"]
+            historical = eng.execute({"set": {"followLink": {
+                "set": start, "link": "waybill_produces_fee",
+                "direction": "out", "at": "2026-11-05T10:00:00Z"}}}, store)["total"]
+            assert historical >= 1
+            # 关闭时间之后的历史时刻：注入关系已不可见，等于当前集
+            after_close = eng.execute({"set": {"followLink": {
+                "set": start, "link": "waybill_produces_fee",
+                "direction": "out", "at": "2026-11-06T00:00:00Z"}}}, store)["total"]
+            assert after_close == now
+        finally:
+            store.conn.execute("DELETE FROM relations WHERE id=?", (rel_id,))
+            store.conn.commit()
+
+    def test_at_rejects_non_string(self, engine, sys_mod):
+        eng, _ = engine
+        with pytest.raises(QueryError, match="at 必须是"):
+            eng.execute({"set": {"followLink": {
+                "set": {"from": "Waybill"},
+                "link": "waybill_produces_fee", "direction": "out",
+                "at": 123}}}, _store(sys_mod))
+
+
 def importlib_helper() -> str:
     import subprocess
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

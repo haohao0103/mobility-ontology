@@ -1,0 +1,233 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Proposal",
+  "description": "对已声明动作的只读预演，不产生任何写入。契约见 plan/judgment-proposal-contract.md 第 4 节。",
+  "type": "object",
+  "required": [
+    "proposal_id",
+    "action_id",
+    "target",
+    "actor",
+    "params",
+    "expected_effects",
+    "preconditions",
+    "blocked_reasons",
+    "risk",
+    "evidence",
+    "requires_confirmation",
+    "executable",
+    "as_of",
+    "ontology_version",
+    "produced_at"
+  ],
+  "properties": {
+    "proposal_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "action_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "target": {
+      "type": "object",
+      "required": ["type", "object_id"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "object_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "actor": {
+      "type": "object",
+      "required": ["id", "role"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "role": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "params": {
+      "type": "object"
+    },
+    "expected_effects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["op", "target"],
+        "properties": {
+          "op": {
+            "type": "string",
+            "enum": ["set_status", "set_field", "create_link", "delete_link"]
+          },
+          "target": {
+            "type": "string",
+            "minLength": 1
+          },
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "field": {
+            "type": "string"
+          },
+          "value": {},
+          "link_type": {
+            "type": "string"
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": { "op": { "const": "set_status" } },
+              "required": ["op"]
+            },
+            "then": {
+              "required": ["from", "to"]
+            }
+          },
+          {
+            "if": {
+              "properties": { "op": { "const": "set_field" } },
+              "required": ["op"]
+            },
+            "then": {
+              "required": ["field", "value"]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "op": { "enum": ["create_link", "delete_link"] }
+              },
+              "required": ["op"]
+            },
+            "then": {
+              "required": ["link_type"]
+            }
+          }
+        ]
+      }
+    },
+    "preconditions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["kind", "ok", "detail"],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["state", "role", "rule", "constraint", "permission"]
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "detail": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "blocked_reasons": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["code", "detail"],
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "STATE_INVALID",
+              "ROLE_FORBIDDEN",
+              "RULE_REJECTED",
+              "CONSTRAINT_VIOLATION",
+              "EVIDENCE_MISSING",
+              "PERMISSION_DENIED",
+              "PARAM_INVALID"
+            ]
+          },
+          "detail": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "risk": {
+      "type": "object",
+      "required": ["level", "notes"],
+      "properties": {
+        "level": {
+          "type": "string",
+          "enum": ["LOW", "MEDIUM", "HIGH"]
+        },
+        "notes": {
+          "type": "string"
+        }
+      }
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "$ref": "evidence.schema.json"
+      }
+    },
+    "requires_confirmation": {
+      "const": true
+    },
+    "executable": {
+      "const": false
+    },
+    "as_of": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "ontology_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "produced_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "blocked_reasons": { "minItems": 1 }
+        },
+        "required": ["blocked_reasons"]
+      },
+      "then": {
+        "properties": {
+          "preconditions": {
+            "contains": {
+              "type": "object",
+              "properties": { "ok": { "const": false } },
+              "required": ["ok"]
+            }
+          }
+        }
+      }
+    }
+  ]
+}

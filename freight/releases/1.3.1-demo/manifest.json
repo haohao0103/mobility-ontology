@@ -1,0 +1,45 @@
+{
+  "version": "1.3.1-demo",
+  "label": "演示：4.2米厢货等候费每块 2.4→3.0 元",
+  "based_on": "1.3.0",
+  "created_at": "2026-11-19T11:32:32+08:00",
+  "checksum": "b9668ab33d68244c9d5006241847f2685113f688d36d1a8d632d04931dc3edc0",
+  "source": "freight/releases/1.3.1-demo/semantic_layer.json",
+  "change_count": 5,
+  "changes": [
+    {
+      "path": "meta.based_on",
+      "from": null,
+      "to": "1.3.0",
+      "kind": "added"
+    },
+    {
+      "path": "meta.released_at",
+      "from": null,
+      "to": "2026-11-19T11:32:32+08:00",
+      "kind": "added"
+    },
+    {
+      "path": "meta.version",
+      "from": "1.3.0",
+      "to": "1.3.1-demo",
+      "kind": "changed"
+    },
+    {
+      "path": "pricing.waiting.by_vehicle_type.4.2米厢货.per_block",
+      "from": 2.4,
+      "to": 3.0,
+      "kind": "changed"
+    },
+    {
+      "path": "rules[R-WAIT-01].judge.explain",
+      "from": "等候费按车型取不同费率：面包车 20 分钟免费、每 5 分钟 1.8 元；小货车/4.2 米厢货 30 分钟免费、每 5 分钟 2.4 元；大货车 40 分钟免费、每 10 分钟 4 元；跑腿 10 分钟免费、每 5 分钟 1 元。",
+      "to": "等候费按车型取不同费率；本次演示把 4.2 米厢货从每 5 分钟 2.4 元调整为 3.0 元。",
+      "kind": "changed"
+    }
+  ],
+  "validation": {
+    "ok": true,
+    "checks": 7
+  }
+}

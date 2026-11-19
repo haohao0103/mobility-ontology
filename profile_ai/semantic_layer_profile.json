@@ -1,0 +1,579 @@
+{
+  "meta": {
+    "name": "画像 AI 资产语义层",
+    "version": "1.1.0",
+    "description": "面向画像 AI Agent 的人群/标签/策略/画布/指标/证据/版本/操作人语义层，并内置司机/车辆/城市/订单业务主体层，支撑 P0 人群智能纠错。",
+    "graphspace": "profile_ai",
+    "graph": "profile",
+    "id_pattern": "^(crowd|tag|strategy|canvas|metric|evidence|version|operator|driver|vehicle|city|order):[a-z0-9][a-z0-9_.-]*:[A-Za-z0-9][A-Za-z0-9_.:-]*$",
+    "id_description": "全局资产 ID 统一为 {kind}:{source_system}:{source_id}，保证 HugeGraph / DataHub / OpenSearch 实体对齐。"
+  },
+  "id_rules": {
+    "kinds": {
+      "crowd": {"class": "Crowd", "label": "人群"},
+      "tag": {"class": "Tag", "label": "标签"},
+      "strategy": {"class": "Strategy", "label": "策略"},
+      "canvas": {"class": "CanvasTask", "label": "画布任务"},
+      "metric": {"class": "Metric", "label": "指标"},
+      "evidence": {"class": "Evidence", "label": "证据"},
+      "version": {"class": "Version", "label": "版本"},
+      "operator": {"class": "Operator", "label": "操作人"},
+      "driver": {"class": "Driver", "label": "司机"},
+      "vehicle": {"class": "Vehicle", "label": "车辆"},
+      "city": {"class": "City", "label": "城市"},
+      "order": {"class": "Order", "label": "订单"}
+    }
+  },
+  "properties": {
+    "name": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "display_name": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "description": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "status": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "status_reason": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "owner": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "domain": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "source_system": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "source_id": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "source_url": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "asset_type": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "created_at": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "updated_at": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "valid_from": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "valid_to": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "confidence": {"data_type": "DOUBLE", "cardinality": "SINGLE"},
+    "definition": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "expression": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "metric_id": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "metric_name": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "value": {"data_type": "DOUBLE", "cardinality": "SINGLE"},
+    "value_type": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "unit": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "period": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "direction": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "sample_size": {"data_type": "LONG", "cardinality": "SINGLE"},
+    "rule": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "rule_expression": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "rule_language": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "rule_parseable": {"data_type": "BOOLEAN", "cardinality": "SINGLE"},
+    "referenced_tags": {"data_type": "TEXT", "cardinality": "LIST"},
+    "scope": {"data_type": "TEXT", "cardinality": "LIST"},
+    "crowd_type": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "expected_city_count": {"data_type": "INT", "cardinality": "SINGLE"},
+    "vehicle_type": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "sticker_status": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "intent_vehicle_type": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "intent_sticker_status": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "intent_expected_city_count": {"data_type": "INT", "cardinality": "SINGLE"},
+    "intent_managed_cities": {"data_type": "TEXT", "cardinality": "LIST"},
+    "plate_no": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "driver_id": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "order_id": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "city_code": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "city_name": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "managed": {"data_type": "BOOLEAN", "cardinality": "SINGLE"},
+    "region": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "amount": {"data_type": "DOUBLE", "cardinality": "SINGLE"},
+    "action": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "trigger_type": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "channel": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "risk_level": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "canvas_id": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "canvas_name": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "task_type": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "schedule": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "audience_rule": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "publish_channel": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "last_run_at": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "next_run_at": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "result": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "error_message": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "version": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "previous_version": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "change_summary": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "evidence_type": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "content": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "observed_at": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "operator_name": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "role": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "account": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "email": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "confirmed_by": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "confirmed_at": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "payload": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "ttl_days": {"data_type": "INT", "cardinality": "SINGLE"},
+    "estimated_size": {"data_type": "LONG", "cardinality": "SINGLE"},
+    "target_size": {"data_type": "LONG", "cardinality": "SINGLE"},
+    "score": {"data_type": "DOUBLE", "cardinality": "SINGLE"},
+    "weight": {"data_type": "DOUBLE", "cardinality": "SINGLE"},
+    "is_active": {"data_type": "BOOLEAN", "cardinality": "SINGLE"},
+    "priority": {"data_type": "INT", "cardinality": "SINGLE"},
+    "permission_scope": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "effective_from": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "effective_to": {"data_type": "TEXT", "cardinality": "SINGLE"},
+    "keywords": {"data_type": "TEXT", "cardinality": "LIST"},
+    "tags": {"data_type": "TEXT", "cardinality": "LIST"},
+    "metadata": {"data_type": "TEXT", "cardinality": "SINGLE"}
+  },
+  "classes": [
+    {
+      "id": "Crowd",
+      "label": "人群",
+      "kind": "crowd",
+      "description": "由标签、规则或派生关系定义的可计算人群资产。",
+      "properties": ["name", "display_name", "description", "status", "status_reason", "owner", "domain", "source_system", "source_id", "source_url", "keywords", "estimated_size", "target_size", "priority", "permission_scope", "rule_expression", "rule_language", "referenced_tags", "scope", "crowd_type", "expected_city_count", "intent_vehicle_type", "intent_sticker_status", "intent_expected_city_count", "intent_managed_cities", "created_at", "updated_at", "metadata"],
+      "required": ["name", "status", "owner", "source_system", "source_id"],
+      "indexes": ["status", "source_system", "name"]
+    },
+    {
+      "id": "Tag",
+      "label": "标签",
+      "kind": "tag",
+      "description": "描述用户属性、行为或价值的原子语义标签。",
+      "properties": ["name", "display_name", "description", "status", "owner", "domain", "source_system", "source_id", "source_url", "definition", "expression", "value_type", "keywords", "created_at", "updated_at", "metadata"],
+      "required": ["name", "definition", "source_system", "source_id"],
+      "indexes": ["status", "source_system", "name"]
+    },
+    {
+      "id": "Strategy",
+      "label": "策略",
+      "kind": "strategy",
+      "description": "面向人群的运营/触达策略，包含规则、动作、渠道与生效窗口。",
+      "properties": ["name", "display_name", "description", "status", "owner", "domain", "source_system", "source_id", "source_url", "rule", "action", "trigger_type", "channel", "risk_level", "priority", "effective_from", "effective_to", "created_at", "updated_at", "metadata"],
+      "required": ["name", "status", "owner", "source_system", "source_id"],
+      "indexes": ["status", "source_system", "name"]
+    },
+    {
+      "id": "CanvasTask",
+      "label": "画布任务",
+      "kind": "canvas",
+      "description": "画布编排中的可执行任务，负责把人群与策略发布到目标渠道。",
+      "properties": ["name", "display_name", "description", "status", "owner", "domain", "source_system", "source_id", "source_url", "canvas_id", "canvas_name", "task_type", "schedule", "audience_rule", "publish_channel", "last_run_at", "next_run_at", "result", "error_message", "created_at", "updated_at", "metadata"],
+      "required": ["name", "status", "owner", "source_system", "source_id"],
+      "indexes": ["status", "source_system", "name"]
+    },
+    {
+      "id": "Metric",
+      "label": "指标",
+      "kind": "metric",
+      "description": "可被语义层解释、追溯和复用的业务指标定义与观测值。",
+      "properties": ["name", "display_name", "description", "status", "owner", "domain", "source_system", "source_id", "source_url", "metric_id", "metric_name", "value", "value_type", "unit", "period", "sample_size", "direction", "definition", "expression", "created_at", "updated_at", "metadata"],
+      "required": ["name", "definition", "source_system", "source_id"],
+      "indexes": ["status", "source_system", "name"]
+    },
+    {
+      "id": "Evidence",
+      "label": "证据",
+      "kind": "evidence",
+      "description": "支撑人群、标签、策略或指标结论的可追溯证据。",
+      "properties": ["name", "description", "source_system", "source_id", "source_url", "evidence_type", "content", "observed_at", "confidence", "sample_size", "created_at", "updated_at", "metadata"],
+      "required": ["name", "evidence_type", "content", "observed_at", "source_system", "source_id"],
+      "indexes": ["source_system", "evidence_type", "observed_at"]
+    },
+    {
+      "id": "Version",
+      "label": "版本",
+      "kind": "version",
+      "description": "资产变更快照，形成可回溯的版本时间线。",
+      "properties": ["name", "description", "version", "previous_version", "change_summary", "status", "source_system", "source_id", "created_at", "updated_at", "metadata"],
+      "required": ["name", "version", "source_system", "source_id"],
+      "indexes": ["status", "source_system", "version"]
+    },
+    {
+      "id": "Operator",
+      "label": "操作人",
+      "kind": "operator",
+      "description": "资产创建、变更、确认和发布的自然人/系统账号。",
+      "properties": ["name", "display_name", "role", "account", "email", "status", "source_system", "source_id", "created_at", "updated_at", "metadata"],
+      "required": ["name", "role"],
+      "indexes": ["status", "account", "role"]
+    },
+    {
+      "id": "Driver",
+      "label": "司机",
+      "kind": "driver",
+      "description": "货运/出行业务中的司机主体，是人群规则的作用对象。",
+      "properties": ["name", "display_name", "description", "status", "owner", "domain", "source_system", "source_id", "source_url", "driver_id", "vehicle_type", "sticker_status", "city_code", "city_name", "keywords", "created_at", "updated_at", "metadata"],
+      "required": ["name", "vehicle_type", "city_code", "source_system", "source_id"],
+      "indexes": ["vehicle_type", "city_code", "sticker_status"]
+    },
+    {
+      "id": "Vehicle",
+      "label": "车辆",
+      "kind": "vehicle",
+      "description": "司机绑定的车辆，承载车型与车贴状态。",
+      "properties": ["name", "display_name", "description", "status", "owner", "domain", "source_system", "source_id", "source_url", "plate_no", "vehicle_type", "sticker_status", "driver_id", "city_code", "keywords", "created_at", "updated_at", "metadata"],
+      "required": ["name", "plate_no", "vehicle_type", "source_system", "source_id"],
+      "indexes": ["vehicle_type", "sticker_status", "city_code"]
+    },
+    {
+      "id": "City",
+      "label": "城市",
+      "kind": "city",
+      "description": "业务开城单元，区分托管城市与非托管城市。",
+      "properties": ["name", "display_name", "description", "status", "owner", "domain", "source_system", "source_id", "source_url", "city_code", "city_name", "managed", "region", "created_at", "updated_at", "metadata"],
+      "required": ["name", "city_code", "source_system", "source_id"],
+      "indexes": ["city_code", "managed", "region"]
+    },
+    {
+      "id": "Order",
+      "label": "订单",
+      "kind": "order",
+      "description": "业务订单主体，用于验证人群规则命中的真实业务对象。",
+      "properties": ["name", "display_name", "description", "status", "owner", "domain", "source_system", "source_id", "source_url", "order_id", "driver_id", "city_code", "vehicle_type", "amount", "created_at", "updated_at", "metadata"],
+      "required": ["name", "order_id", "city_code", "source_system", "source_id"],
+      "indexes": ["order_id", "city_code", "driver_id"]
+    }
+  ],
+  "relations": [
+    {
+      "id": "crowd_has_tag",
+      "label": "人群包含标签",
+      "domain": "Crowd",
+      "range": "Tag",
+      "description": "人群定义所依赖的原子标签。",
+      "temporal": true,
+      "properties": ["weight", "valid_from", "valid_to", "source_system", "created_at"],
+      "required": ["valid_from"],
+      "sort_keys": ["valid_from"]
+    },
+    {
+      "id": "crowd_derived_from",
+      "label": "人群派生自人群",
+      "domain": "Crowd",
+      "range": "Crowd",
+      "description": "人群之间的派生/拆分/合并血缘。",
+      "temporal": true,
+      "properties": ["weight", "expression", "valid_from", "valid_to", "source_system", "created_at"],
+      "required": ["valid_from"],
+      "sort_keys": ["valid_from"],
+      "forbid_self": true
+    },
+    {
+      "id": "strategy_targets_crowd",
+      "label": "策略触达人群",
+      "domain": "Strategy",
+      "range": "Crowd",
+      "description": "策略作用的目标人群。",
+      "temporal": true,
+      "properties": ["weight", "priority", "valid_from", "valid_to", "source_system", "created_at"],
+      "required": ["valid_from"],
+      "sort_keys": ["valid_from"]
+    },
+    {
+      "id": "strategy_uses_tag",
+      "label": "策略使用标签",
+      "domain": "Strategy",
+      "range": "Tag",
+      "description": "策略规则引用的标签。",
+      "temporal": true,
+      "properties": ["weight", "valid_from", "valid_to", "source_system", "created_at"],
+      "required": ["valid_from"],
+      "sort_keys": ["valid_from"]
+    },
+    {
+      "id": "canvas_references_crowd",
+      "label": "画布任务引用人群",
+      "domain": "CanvasTask",
+      "range": "Crowd",
+      "description": "画布任务发布所引用的人群。",
+      "temporal": true,
+      "properties": ["valid_from", "valid_to", "source_system", "created_at"],
+      "required": ["valid_from"],
+      "sort_keys": ["valid_from"]
+    },
+    {
+      "id": "canvas_references_strategy",
+      "label": "画布任务引用策略",
+      "domain": "CanvasTask",
+      "range": "Strategy",
+      "description": "画布任务执行所引用的策略。",
+      "temporal": true,
+      "properties": ["valid_from", "valid_to", "source_system", "created_at"],
+      "required": ["valid_from"],
+      "sort_keys": ["valid_from"]
+    },
+    {
+      "id": "canvas_generates_order",
+      "label": "画布任务生成订单",
+      "domain": "CanvasTask",
+      "range": "Order",
+      "description": "画布任务发布后实际产生的业务订单，用于评估改动的影响面。",
+      "temporal": true,
+      "properties": ["valid_from", "valid_to", "source_system", "created_at"],
+      "required": ["valid_from"],
+      "sort_keys": ["valid_from"]
+    },
+    {
+      "id": "asset_has_metric",
+      "label": "资产关联指标",
+      "domains": ["Crowd", "Tag", "Strategy", "CanvasTask"],
+      "range": "Metric",
+      "description": "资产价值回收与效果观测所使用的指标。",
+      "temporal": true,
+      "physical": "{domain_snake}_has_metric",
+      "properties": ["weight", "valid_from", "valid_to", "source_system", "created_at"],
+      "required": ["valid_from"],
+      "sort_keys": ["valid_from"]
+    },
+    {
+      "id": "asset_has_evidence",
+      "label": "资产关联证据",
+      "domains": ["Crowd", "Tag", "Strategy", "CanvasTask", "Metric"],
+      "range": "Evidence",
+      "description": "支撑资产结论的证据链。",
+      "temporal": true,
+      "physical": "{domain_snake}_has_evidence",
+      "properties": ["confidence", "valid_from", "valid_to", "source_system", "created_at"],
+      "required": ["valid_from"],
+      "sort_keys": ["valid_from"]
+    },
+    {
+      "id": "asset_has_version",
+      "label": "资产关联版本",
+      "domains": ["Crowd", "Tag", "Strategy", "CanvasTask"],
+      "range": "Version",
+      "description": "资产变更快照与版本时间线。",
+      "temporal": true,
+      "physical": "{domain_snake}_has_version",
+      "properties": ["valid_from", "valid_to", "source_system", "created_at"],
+      "required": ["valid_from"],
+      "sort_keys": ["valid_from"]
+    },
+    {
+      "id": "version_generated_by",
+      "label": "版本由操作人生成",
+      "domain": "Version",
+      "range": "Operator",
+      "description": "版本变更责任人与操作来源。",
+      "temporal": true,
+      "properties": ["action", "valid_from", "valid_to", "source_system", "created_at"],
+      "required": ["valid_from"],
+      "sort_keys": ["valid_from"]
+    },
+    {
+      "id": "crowd_scope_city",
+      "label": "人群覆盖城市",
+      "domain": "Crowd",
+      "range": "City",
+      "description": "人群圈选声明的城市范围，用于校验托管城市覆盖是否完整。",
+      "temporal": true,
+      "properties": ["weight", "valid_from", "valid_to", "source_system", "created_at"],
+      "required": ["valid_from"],
+      "sort_keys": ["valid_from"]
+    },
+    {
+      "id": "driver_owns_vehicle",
+      "label": "司机绑定车辆",
+      "domain": "Driver",
+      "range": "Vehicle",
+      "description": "司机与车辆的归属关系，车型与车贴状态以车辆为准。",
+      "temporal": true,
+      "properties": ["valid_from", "valid_to", "source_system", "created_at"],
+      "required": ["valid_from"],
+      "sort_keys": ["valid_from"]
+    },
+    {
+      "id": "driver_in_city",
+      "label": "司机所属城市",
+      "domain": "Driver",
+      "range": "City",
+      "description": "司机开展业务的城市。",
+      "temporal": true,
+      "properties": ["valid_from", "valid_to", "source_system", "created_at"],
+      "required": ["valid_from"],
+      "sort_keys": ["valid_from"]
+    },
+    {
+      "id": "order_served_by_driver",
+      "label": "订单由司机服务",
+      "domain": "Order",
+      "range": "Driver",
+      "description": "订单实际服务司机。",
+      "temporal": true,
+      "properties": ["valid_from", "valid_to", "source_system", "created_at"],
+      "required": ["valid_from"],
+      "sort_keys": ["valid_from"]
+    },
+    {
+      "id": "order_in_city",
+      "label": "订单所属城市",
+      "domain": "Order",
+      "range": "City",
+      "description": "订单发生的城市。",
+      "temporal": true,
+      "properties": ["valid_from", "valid_to", "source_system", "created_at"],
+      "required": ["valid_from"],
+      "sort_keys": ["valid_from"]
+    }
+  ],
+  "state_machines": {
+    "Crowd": {
+      "initial": "DRAFT",
+      "states": ["DRAFT", "ACTIVE", "PAUSED", "ARCHIVED"],
+      "transitions": {
+        "DRAFT": ["ACTIVE", "ARCHIVED"],
+        "ACTIVE": ["PAUSED", "ARCHIVED"],
+        "PAUSED": ["ACTIVE", "ARCHIVED"],
+        "ARCHIVED": []
+      }
+    },
+    "Strategy": {
+      "initial": "DRAFT",
+      "states": ["DRAFT", "REVIEW", "ACTIVE", "PAUSED", "ARCHIVED"],
+      "transitions": {
+        "DRAFT": ["REVIEW", "ARCHIVED"],
+        "REVIEW": ["ACTIVE", "DRAFT", "ARCHIVED"],
+        "ACTIVE": ["PAUSED", "ARCHIVED"],
+        "PAUSED": ["ACTIVE", "ARCHIVED"],
+        "ARCHIVED": []
+      }
+    },
+    "CanvasTask": {
+      "initial": "DRAFT",
+      "states": ["DRAFT", "SCHEDULED", "RUNNING", "COMPLETED", "FAILED", "CANCELLED"],
+      "transitions": {
+        "DRAFT": ["SCHEDULED", "CANCELLED"],
+        "SCHEDULED": ["RUNNING", "CANCELLED"],
+        "RUNNING": ["COMPLETED", "FAILED"],
+        "FAILED": ["SCHEDULED", "CANCELLED"],
+        "COMPLETED": [],
+        "CANCELLED": []
+      }
+    }
+  },
+  "constraints": [
+    {
+      "id": "C1",
+      "label": "全局资产 ID 规范",
+      "type": "id_format",
+      "target": "ALL",
+      "severity": "ERROR",
+      "message": "资产 ID 必须符合 {kind}:{source_system}:{source_id}。"
+    },
+    {
+      "id": "C2",
+      "label": "资产必填属性",
+      "type": "required_properties",
+      "target": "ALL",
+      "severity": "ERROR",
+      "message": "每类资产必须满足该类 required 字段。"
+    },
+    {
+      "id": "C3",
+      "label": "状态机合法迁移",
+      "type": "state_transition",
+      "target": "Crowd,Strategy,CanvasTask",
+      "severity": "ERROR",
+      "message": "资产状态只能沿 state_machines 中定义的边迁移。"
+    },
+    {
+      "id": "C4",
+      "label": "时态边必须有时效起点",
+      "type": "temporal_edge",
+      "target": "ALL_EDGES",
+      "severity": "ERROR",
+      "message": "所有语义边必须提供 valid_from，且 valid_to 不得早于 valid_from。"
+    },
+    {
+      "id": "C5",
+      "label": "关系定义域/值域",
+      "type": "relation_domain_range",
+      "target": "ALL_EDGES",
+      "severity": "ERROR",
+      "message": "边两端顶点类型必须符合关系定义。"
+    },
+    {
+      "id": "C6",
+      "label": "禁止自派生",
+      "type": "forbid_self",
+      "target": "crowd_derived_from",
+      "severity": "ERROR",
+      "message": "人群不能从自身派生。"
+    },
+    {
+      "id": "C7",
+      "label": "人群必须有标签",
+      "type": "min_relation",
+      "target": "Crowd.crowd_has_tag",
+      "severity": "ERROR",
+      "min": 1,
+      "message": "可用于投放的人群至少需要一个标签定义。"
+    },
+    {
+      "id": "C8",
+      "label": "发布资产必须有证据",
+      "type": "min_relation",
+      "target": "Crowd.asset_has_evidence",
+      "severity": "ERROR",
+      "min": 1,
+      "message": "对外发布的人群、策略必须至少关联一条证据。"
+    },
+    {
+      "id": "C9",
+      "label": "版本必须可追溯操作人",
+      "type": "min_relation",
+      "target": "Version.version_generated_by",
+      "severity": "ERROR",
+      "min": 1,
+      "message": "每个版本必须记录生成操作人。"
+    },
+    {
+      "id": "C10",
+      "label": "证据必须包含来源与观测时间",
+      "type": "required_properties",
+      "target": "Evidence",
+      "severity": "ERROR",
+      "message": "证据必须包含 source_system 与 observed_at。"
+    },
+    {
+      "id": "C11",
+      "label": "策略发布必须有生效窗口",
+      "type": "required_properties",
+      "target": "Strategy",
+      "severity": "WARN",
+      "message": "ACTIVE 策略建议提供 effective_from / effective_to。"
+    },
+    {
+      "id": "C12",
+      "label": "画像资产权限边界",
+      "type": "required_properties",
+      "target": "Crowd",
+      "severity": "WARN",
+      "message": "人群建议声明 permission_scope，避免跨域越权使用。"
+    },
+    {
+      "id": "C13",
+      "label": "人群圈选规则必须可解析",
+      "type": "rule_parseable",
+      "target": "Crowd",
+      "severity": "ERROR",
+      "message": "人群必须提供可解析的 rule_expression，否则无法判断是否圈错。"
+    },
+    {
+      "id": "C14",
+      "label": "人群名称/描述与圈选规则语义一致",
+      "type": "semantic_consistency",
+      "target": "Crowd",
+      "severity": "ERROR",
+      "message": "人群名称/描述中的车型、车贴状态等语义必须与圈选规则一致。"
+    },
+    {
+      "id": "C15",
+      "label": "人群城市范围与声明覆盖一致",
+      "type": "scope_coverage",
+      "target": "Crowd",
+      "severity": "ERROR",
+      "message": "人群声明的城市数量必须与规则中的城市范围一致，托管城市不得漏配。"
+    }
+  ],
+  "context_projection": {
+    "OVERVIEW": ["id", "label", "name", "display_name", "status", "owner", "description", "updated_at"],
+    "NETWORK": ["id", "label", "name", "display_name", "status", "owner", "description", "updated_at", "neighbors"],
+    "FULL": ["id", "label", "name", "display_name", "status", "owner", "description", "updated_at", "properties", "neighbors", "evidence", "versions", "metrics", "lineage"]
+  },
+  "write_gate": {
+    "policy": "所有修改人群、标签、策略、画布的动作必须经过 Agent 提议 -> 人工确认 -> 执行 -> 审计留痕。",
+    "allowed_actions": ["update_status", "attach_tag", "attach_evidence", "publish_strategy", "update_properties"],
+    "forbidden": ["直接删除资产", "绕过源系统权限发布", "无审计的批量改写"]
+  }
+}

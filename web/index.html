@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>共享出行互联网本体 · 语义可视化</title>
+<style>
+  :root{
+    --bg:#f3f5f9; --panel:#fff; --ink:#1f2937; --muted:#6b7280; --line:#e5e7eb;
+    --accent:#2563eb; --ok:#16a34a; --bad:#dc2626; --warn:#f59e0b;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+       font-size:13px;line-height:1.55}
+  header{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:18px;
+         padding:12px 22px;background:#0f172a;color:#e2e8f0;flex-wrap:wrap}
+  header .brand{font-size:16px;font-weight:700;letter-spacing:.3px}
+  header .brand small{font-weight:400;color:#94a3b8;margin-left:8px;font-size:12px}
+  .stats{display:flex;gap:8px;flex-wrap:wrap}
+  .stat{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);
+        border-radius:8px;padding:3px 10px;font-size:12px;color:#cbd5e1}
+  .stat b{color:#fff;font-size:14px;margin-left:4px}
+  header .spacer{flex:1}
+  select,button{font:inherit}
+  select{background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:8px;padding:6px 10px;max-width:340px}
+  a.docs{color:#93c5fd;text-decoration:none;font-size:12px}
+  main{display:grid;grid-template-columns:minmax(0,1.65fr) minmax(340px,1fr);gap:14px;
+       padding:14px 18px 26px;max-width:1560px;margin:0 auto}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+         box-shadow:0 1px 2px rgba(15,23,42,.04);min-width:0;display:flex;flex-direction:column}
+  .panel h2{font-size:13px;margin:0;padding:11px 14px;border-bottom:1px solid var(--line);
+            color:#111827;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .panel h2 .tag{font-size:11px;font-weight:400;color:var(--muted)}
+  .panel .body{padding:12px 14px;min-width:0}
+  .graph-panel{grid-column:1;grid-row:1 / span 2}
+  .timeline-panel{grid-column:2;grid-row:1}
+  .detail-panel{grid-column:2;grid-row:2}
+  .analysis-panel{grid-column:1;grid-row:3}
+  .constraint-panel{grid-column:2;grid-row:3}
+  .graph-wrap{position:relative;height:640px}
+  svg{width:100%;height:100%;display:block;cursor:grab;background:
+      radial-gradient(circle at 1px 1px,#e2e8f0 1px,transparent 0) 0 0/22px 22px}
+  svg.dragging{cursor:grabbing}
+  .graph-hint{position:absolute;left:12px;bottom:10px;color:var(--muted);font-size:11px;
+              background:rgba(255,255,255,.9);padding:2px 7px;border-radius:6px;border:1px solid var(--line)}
+  .legend{position:absolute;right:10px;top:10px;background:rgba(255,255,255,.94);
+          border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-size:11px;
+          display:flex;gap:10px;flex-wrap:wrap;max-width:330px}
+  .legend span{display:inline-flex;align-items:center;gap:4px;color:#374151}
+  .legend i{width:9px;height:9px;border-radius:50%;display:inline-block}
+  .timeline{list-style:none;margin:0;padding:0;max-height:430px;overflow:auto}
+  .timeline li{display:grid;grid-template-columns:104px 64px 1fr;gap:8px;align-items:start;
+               padding:6px 4px;border-bottom:1px dashed #eef1f5;cursor:pointer;border-radius:6px}
+  .timeline li:hover{background:#f8fafc}
+  .timeline li.active{background:#eff6ff;box-shadow:inset 2px 0 0 var(--accent)}
+  .timeline .time{color:#64748b;font-variant-numeric:tabular-nums;font-size:11px;padding-top:2px}
+  .badge{font-size:10px;padding:1px 6px;border-radius:999px;text-align:center;white-space:nowrap}
+  .badge.event{background:#e0f2fe;color:#0369a1}
+  .badge.relation{background:#dcfce7;color:#15803d}
+  .badge.temporal{background:#fef3c7;color:#b45309}
+  .timeline .txt{word-break:break-all}
+  .kv{display:grid;grid-template-columns:88px 1fr;gap:5px 10px;margin-bottom:10px}
+  .kv .k{color:var(--muted)}
+  .kv .v{word-break:break-all}
+  .chain{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 12px}
+  .chip{background:#f1f5f9;border:1px solid #e2e8f0;border-radius:999px;padding:2px 9px;font-size:11px;color:#334155}
+  .chip b{color:#0f172a}
+  .subhead{font-size:11px;font-weight:600;color:#475569;margin:10px 0 6px;letter-spacing:.4px}
+  .temporal{background:#fffbeb;border:1px dashed #fcd34d;border-radius:8px;padding:7px 9px;
+            margin-bottom:6px;color:#92400e;font-size:12px}
+  .detail-empty{color:var(--muted);padding:18px 4px}
+  .states{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:12px}
+  .state{padding:3px 9px;border-radius:999px;border:1px solid #dbe3ec;background:#f8fafc;
+         color:#64748b;font-size:11px;white-space:nowrap}
+  .state.done{background:#eff6ff;border-color:#bfdbfe;color:#1d4ed8}
+  .state.now{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+  .state.cancel{background:#fef2f2;border-color:#fecaca;color:#b91c1c}
+  .state.cancel.now{background:var(--bad);border-color:var(--bad);color:#fff}
+  .arrow{color:#cbd5e1}
+  .bar{display:flex;height:26px;border-radius:7px;overflow:hidden;border:1px solid #e2e8f0;background:#f8fafc}
+  .bar span{display:block;height:100%}
+  .barlist{display:flex;gap:14px;flex-wrap:wrap;margin:8px 0 4px;font-size:11px;color:#475569}
+  .barlist i{width:9px;height:9px;border-radius:2px;display:inline-block;margin-right:4px}
+  .total{font-size:15px;font-weight:700;color:#0f172a;margin-top:8px}
+  .explain{background:#f8fafc;border:1px solid #eef2f7;border-radius:8px;padding:9px 11px;
+           color:#334155;margin-top:10px;font-size:12px}
+  .checks{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+  .checks button{border:1px solid #cbd5e1;background:#fff;color:#334155;border-radius:8px;
+                 padding:5px 10px;cursor:pointer;font-size:12px}
+  .checks button:hover{border-color:var(--accent);color:var(--accent)}
+  .check-result{border-radius:8px;padding:9px 11px;font-size:12px;margin-bottom:10px;display:none}
+  .check-result.ok{display:block;background:#f0fdf4;border:1px solid #bbf7d0;color:#166534}
+  .check-result.bad{display:block;background:#fef2f2;border:1px solid #fecaca;color:#991b1b}
+  .clist{list-style:none;margin:0;padding:0}
+  .clist li{display:flex;gap:8px;align-items:flex-start;padding:6px 2px;border-bottom:1px dashed #eef1f5}
+  .clist .cid{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;
+              color:#475569;min-width:26px;padding-top:1px}
+  .clist .txt{flex:1}
+  .pulse{animation:pulse 1.4s ease-out 1}
+  @keyframes pulse{0%{opacity:.25}100%{opacity:1}}
+  .empty{padding:40px;text-align:center;color:var(--muted)}
+  code{background:#f1f5f9;border:1px solid #e2e8f0;border-radius:4px;padding:1px 5px;font-size:11px}
+  @media (max-width:1080px){
+    main{grid-template-columns:1fr}
+    .graph-panel,.timeline-panel,.detail-panel,.analysis-panel,.constraint-panel{grid-column:1;grid-row:auto}
+    .graph-wrap{height:480px}
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">共享出行互联网本体<small>语义层驱动的订单全链路可视化</small></div>
+  <div class="stats" id="stats"></div>
+  <div class="spacer"></div>
+  <select id="orderSelect" title="选择订单"></select>
+  <a class="docs" href="/profile/ui" target="_blank" rel="noreferrer">画像语义层 ↗</a>
+  <a class="docs" href="/docs" target="_blank" rel="noreferrer">REST /docs ↗</a>
+</header>
+
+<main>
+  <section class="panel graph-panel">
+    <h2>① 关系图谱 <span class="tag">点击节点 / 边查看语义；滚轮缩放，拖拽平移</span></h2>
+    <div class="body graph-wrap">
+      <svg id="graph" viewBox="0 0 1000 620" preserveAspectRatio="xMidYMid meet"></svg>
+      <div class="legend" id="legend"></div>
+      <div class="graph-hint">节点来自持久化图谱 facts 表；虚线为时态关系（带有效区间）</div>
+    </div>
+  </section>
+
+  <section class="panel timeline-panel">
+    <h2>② 事件时间线 <span class="tag" id="timelineCount"></span>
+      <span style="flex:1"></span>
+      <span class="checks" style="margin:0">
+        <button data-filter="all">全部</button><button data-filter="event">事件</button><button data-filter="relation">关系</button>
+      </span>
+    </h2>
+    <div class="body"><ol class="timeline" id="timeline"></ol></div>
+  </section>
+
+  <section class="panel detail-panel">
+    <h2>③ 订单详情与追溯</h2>
+    <div class="body" id="detail"><div class="detail-empty">选择订单后展示关系链、时态区间与追溯信息。</div></div>
+  </section>
+
+  <section class="panel analysis-panel">
+    <h2>④ 生命周期与计费解释</h2>
+    <div class="body">
+      <div class="subhead">订单状态机（语义层 lifecycle）</div>
+      <div class="states" id="stateMachine"></div>
+      <div class="subhead">扣款构成（语义层 pricing / fee_strategies）</div>
+      <div id="billing"></div>
+      <div class="subhead">为什么这样扣款</div>
+      <div class="explain" id="explanation">—</div>
+    </div>
+  </section>
+
+  <section class="panel constraint-panel">
+    <h2>⑤ 本体约束（守数据边界）</h2>
+    <div class="body">
+      <div class="checks">
+        <button data-check="illegalDomain">试写非法定义域</button>
+        <button data-check="illegalRange">试写非法值域</button>
+        <button data-check="legal">试写合法关系</button>
+      </div>
+      <div class="check-result" id="checkResult"></div>
+      <div class="subhead">约束定义与当前违规（GET /constraints）</div>
+      <ul class="clist" id="constraints"></ul>
+    </div>
+  </section>
+</main>
+
+<script>
+const COLORS = {
+  Passenger:'#7c3aed', Driver:'#0891b2', Vehicle:'#0d9488', Order:'#2563eb',
+  Trip:'#4f46e5', Payment:'#16a34a', BillingRecord:'#d97706', Address:'#64748b',
+  Region:'#475569', RoadSegment:'#94a3b8', PricingRule:'#a855f7', Coupon:'#db2777',
+  Dispatch:'#f59e0b', SupportTicket:'#ef4444', Refund:'#dc2626', Event:'#0ea5e9'
+};
+const COL = {Passenger:0, Dispatch:1, Order:1, Trip:2, Address:2, SupportTicket:2,
+             Driver:3, Vehicle:3, Region:3, RoadSegment:3, BillingRecord:4,
+             Coupon:5, Payment:5, Refund:6};
+const EVENT_CN = {
+  ORDER_CREATED:'订单创建', SERVICE_AREA_CHECKED:'服务区校验', ORDER_DISPATCHED:'派单',
+  NO_AVAILABLE_DRIVER:'无可用运力', TRIP_CREATED:'行程生成', DRIVER_ACCEPTED:'司机接单',
+  DRIVER_ARRIVED:'司机到达', PASSENGER_ONBOARD:'乘客上车', METER_STARTED:'开始计费',
+  PASSENGER_OFFBOARD:'乘客下车', METER_STOPPED:'结束计费', BILLING_COMPUTED:'计费完成',
+  BILL_GENERATED:'账单生成', CAPACITY_RELEASED:'运力释放', PAYMENT_SETTLED:'支付完成',
+  ORDER_CANCELLED:'订单取消', CANCELLATION_CHARGED:'取消收费', CANCELLATION_FREE:'免费取消',
+  REFUND_CREATED:'退款', SUPPORT_TICKET_OPENED:'客服工单'
+};
+const EVENT_STATE = {
+  ORDER_CREATED:'CREATED', ORDER_DISPATCHED:'MATCHED', DRIVER_ACCEPTED:'MATCHED',
+  DRIVER_ARRIVED:'DRIVER_ARRIVED', PASSENGER_ONBOARD:'IN_TRIP',
+  BILLING_COMPUTED:'BILLED', BILL_GENERATED:'BILLED', PAYMENT_SETTLED:'COMPLETED',
+  ORDER_CANCELLED:'CANCELLED', CANCELLATION_CHARGED:'CANCELLED', CANCELLATION_FREE:'CANCELLED'
+};
+
+let DICT = null;
+let CURRENT = {trace:null, facts:[], orderId:null};
+let GRAPH = {nodes:[], edges:[], selected:null, vb:{x:0,y:0,w:1000,h:620}};
+let timelineFilter = 'all';
+
+const svg = document.getElementById('graph');
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s == null ? '' : s)
+  .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+  .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+
+async function fetchJSON(url, opts) {
+  const r = await fetch(url, opts);
+  const text = await r.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch(e) { data = {detail:text}; }
+  if (!r.ok) throw new Error((data && data.detail) || ('HTTP ' + r.status));
+  return data;
+}
+
+function relLabel(id) {
+  if (!DICT) return id;
+  const r = DICT.relations.find(x => x.id === id);
+  return r ? r.label : id;
+}
+function classLabel(id) {
+  if (!DICT) return id;
+  const c = DICT.classes.find(x => x.id === id);
+  return c ? c.label : id;
+}
+
+// ---------------------------------------------------------------- 初始化
+async function init() {
+  try {
+    DICT = await fetchJSON('/semantic/dictionary');
+    const cons = await fetchJSON('/constraints');
+    renderConstraints(cons);
+    await loadStats();
+    const list = (await fetchJSON('/orders')).orders || [];
+    const sel = $('orderSelect');
+    sel.innerHTML = list.map(o =>
+      `<option value="${esc(o.order_id)}">${esc(o.order_id)} · ${esc(o.status)} · ${esc(o.origin)}→${esc(o.destination)}${o.total ? ' · ¥' + Number(o.total).toFixed(2) : ''}</option>`
+    ).join('');
+    if (!list.length) {
+      $('detail').innerHTML = '<div class="detail-empty">当前数据库没有订单。运行 <code>python3 cli.py demo</code> 或种子脚本后刷新。</div>';
+      return;
+    }
+    sel.onchange = () => loadOrder(sel.value);
+    const preferred = list.find(o => o.order_id === 'O1') || list[0];
+    sel.value = preferred.order_id;
+    DICT_READY();
+    await loadOrder(preferred.order_id);
+  } catch (e) {
+    $('detail').innerHTML = `<div class="detail-empty">加载失败：${esc(e.message)}</div>`;
+  }
+}
+function DICT_READY() {
+  const types = Object.keys(COLORS).filter(t => COL[t] !== undefined);
+  $('legend').innerHTML = types.map(t =>
+    `<span><i style="background:${COLORS[t]}"></i>${esc(classLabel(t))}</span>`).join('');
+}
+
+async function loadStats() {
+  const s = await fetchJSON('/stats');
+  $('stats').innerHTML = [
+    ['订单', s.orders], ['行程', s.trips], ['图谱事实', s.facts],
+    ['时态关系', s.temporal_drives],
+    ['约束违规', (await fetchJSON('/constraints')).violations.length],
+  ].map(([k,v]) => `<span class="stat">${k}<b>${v}</b></span>`).join('');
+}
+
+async function loadOrder(orderId) {
+  const [trace, facts] = await Promise.all([
+    fetchJSON(`/orders/${encodeURIComponent(orderId)}/trace`),
+    fetchJSON(`/orders/${encodeURIComponent(orderId)}/facts`)
+  ]);
+  CURRENT = {trace, facts: facts.facts || [], orderId};
+  GRAPH.selected = null;
+  GRAPH.vb = {x:0,y:0,w:1000,h:620};
+  renderGraph();
+  renderTimeline();
+  renderDetail();
+  renderAnalysis();
+}
+
+// ---------------------------------------------------------------- 图谱
+function buildGraph() {
+  const relationFacts = CURRENT.facts.filter(f => f.kind === 'relation');
+  const nodeMap = new Map();
+  const add = (id, type) => {
+    if (!nodeMap.has(id)) nodeMap.set(id, {id, type, degree:0});
+  };
+  relationFacts.forEach(f => { add(f.subject, f.subject_type); add(f.object, f.object_type); });
+  relationFacts.forEach(f => {
+    nodeMap.get(f.subject).degree++;
+    nodeMap.get(f.object).degree++;
+  });
+
+  const groups = {};
+  [...nodeMap.values()].forEach(n => {
+    const c = COL[n.type] != null ? COL[n.type] : 3;
+    (groups[c] = groups[c] || []).push(n);
+  });
+  const W = 1000, H = 620, PAD_X = 76, PAD_Y = 66;
+  Object.keys(groups).forEach(c => {
+    const arr = groups[c].sort((a,b) =>
+      (a.type + a.id).localeCompare(b.type + b.id, 'zh'));
+    arr.forEach((n, i) => {
+      n.x = PAD_X + Number(c) * ((W - PAD_X*2) / 6);
+      n.y = arr.length === 1 ? H/2 : PAD_Y + i * ((H - PAD_Y*2) / (arr.length - 1));
+    });
+  });
+
+  const edges = relationFacts.map((f, i) => {
+    const s = nodeMap.get(f.subject), t = nodeMap.get(f.object);
+    return {idx:i, fact:f, s, t};
+  });
+  return {nodes:[...nodeMap.values()], edges};
+}
+
+function edgePath(e) {
+  const {s, t} = e;
+  if (!s || !t) return '';
+  const dx = t.x - s.x, dy = t.y - s.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const sameCol = Math.abs(dx) < 2;
+  const bow = sameCol ? (e.idx % 2 ? 60 : -60) : 26;
+  const mx = (s.x + t.x)/2 - dy/len * bow;
+  const my = (s.y + t.y)/2 + dx/len * bow;
+  const r = 34;
+  const ux = (t.x - s.x)/len, uy = (t.y - s.y)/len;
+  const sx = s.x + ux * r, sy = s.y + uy * r;
+  const tx = t.x - ux * r, ty = t.y - uy * r;
+  return {d:`M ${sx} ${sy} Q ${mx} ${my} ${tx} ${ty}`,
+          lx:(sx + 2*mx + tx)/4, ly:(sy + 2*my + ty)/4};
+}
+
+function renderGraph() {
+  const g = buildGraph();
+  GRAPH.nodes = g.nodes; GRAPH.edges = g.edges;
+  const sel = GRAPH.selected;
+  const connected = new Set();
+  if (sel && sel.kind === 'node') {
+    connected.add(sel.id);
+    g.edges.forEach(e => {
+      if (e.fact.subject === sel.id || e.fact.object === sel.id) {
+        connected.add(e.fact.subject); connected.add(e.fact.object);
+      }
+    });
+  }
+
+  let html = `<defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8"/></marker>
+    <marker id="arrowT" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#f59e0b"/></marker>
+    <marker id="arrowH" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563eb"/></marker>
+  </defs>`;
+
+  g.edges.forEach(e => {
+    const p = edgePath(e);
+    if (!p) return;
+    const temporal = !!e.fact.valid_from;
+    const active = (sel && sel.kind === 'edge' && sel.idx === e.idx) ||
+      (sel && sel.kind === 'node' && connected.has(e.fact.subject) && connected.has(e.fact.object));
+    const stroke = active ? '#2563eb' : (temporal ? '#f59e0b' : '#94a3b8');
+    const marker = active ? 'arrowH' : (temporal ? 'arrowT' : 'arrow');
+    const dash = temporal ? 'stroke-dasharray="7 4"' : '';
+    const op = (sel && !active) ? .18 : 1;
+    html += `<g class="edge${active ? ' active' : ''}" data-idx="${e.idx}" opacity="${op}">
+      <path d="${p.d}" fill="none" stroke="transparent" stroke-width="16" style="cursor:pointer"></path>
+      <path d="${p.d}" fill="none" stroke="${stroke}" stroke-width="${active?2.4:1.5}" ${dash}
+            marker-end="url(#${marker})"></path>
+      <text x="${p.lx}" y="${p.ly}" text-anchor="middle" font-size="10"
+            fill="${active?'#1d4ed8':'#64748b'}" style="paint-order:stroke;stroke:#fff;stroke-width:4px;stroke-linejoin:round;pointer-events:none">${esc(relLabel(e.fact.predicate))}</text>
+    </g>`;
+  });
+
+  g.nodes.forEach(n => {
+    const dim = sel ? !connected.has(n.id) : false;
+    const active = sel && sel.kind === 'node' && sel.id === n.id;
+    const color = COLORS[n.type] || '#64748b';
+    const label = n.id.length > 12 ? n.id.slice(0, 11) + '…' : n.id;
+    html += `<g class="node" data-id="${esc(n.id)}" data-type="${esc(n.type)}"
+                 opacity="${dim?.2:1}" style="cursor:pointer">
+      ${active ? `<circle cx="${n.x}" cy="${n.y}" r="38" fill="none" stroke="${color}" stroke-width="2" opacity=".35"/>` : ''}
+      <circle cx="${n.x}" cy="${n.y}" r="28" fill="${color}" stroke="#fff" stroke-width="2.5"></circle>
+      <text x="${n.x}" y="${n.y+4}" text-anchor="middle" font-size="11" font-weight="600" fill="#fff"
+            style="pointer-events:none">${esc(label)}</text>
+      <text x="${n.x}" y="${n.y+45}" text-anchor="middle" font-size="10" fill="#475569"
+            style="paint-order:stroke;stroke:#fff;stroke-width:3px;stroke-linejoin:round;pointer-events:none">${esc(classLabel(n.type))}</text>
+    </g>`;
+  });
+
+  svg.innerHTML = `<rect id="bg" x="-5000" y="-5000" width="12000" height="12000" fill="transparent"></rect>` + html;
+  applyVB();
+}
+
+function applyVB() {
+  const {x,y,w,h} = GRAPH.vb;
+  svg.setAttribute('viewBox', `${x} ${y} ${w} ${h}`);
+}
+
+const SVG_NS_CLICK = (ev) => {
+  const nodeEl = ev.target.closest('.node');
+  const edgeEl = ev.target.closest('.edge');
+  if (nodeEl) selectNode(nodeEl.dataset.id, nodeEl.dataset.type);
+  else if (edgeEl) selectEdge(Number(edgeEl.dataset.idx));
+  else { GRAPH.selected = null; renderGraph(); renderDetail(); }
+};
+svg.addEventListener('click', SVG_NS_CLICK);
+
+// 缩放 / 平移
+svg.addEventListener('wheel', (ev) => {
+  ev.preventDefault();
+  const rect = svg.getBoundingClientRect();
+  const px = GRAPH.vb.x + (ev.clientX - rect.left) / rect.width * GRAPH.vb.w;
+  const py = GRAPH.vb.y + (ev.clientY - rect.top) / rect.height * GRAPH.vb.h;
+  const k = ev.deltaY > 0 ? 1.12 : 0.89;
+  GRAPH.vb.w *= k; GRAPH.vb.h *= k;
+  GRAPH.vb.x = px - (px - GRAPH.vb.x) * k;
+  GRAPH.vb.y = py - (py - GRAPH.vb.y) * k;
+  applyVB();
+}, {passive:false});
+
+let drag = null;
+svg.addEventListener('pointerdown', (ev) => {
+  if (ev.target.closest('.node') || ev.target.closest('.edge')) return;
+  drag = {sx:ev.clientX, sy:ev.clientY, ox:GRAPH.vb.x, oy:GRAPH.vb.y};
+  svg.classList.add('dragging');
+});
+window.addEventListener('pointermove', (ev) => {
+  if (!drag) return;
+  const rect = svg.getBoundingClientRect();
+  GRAPH.vb.x = drag.ox - (ev.clientX - drag.sx) / rect.width * GRAPH.vb.w;
+  GRAPH.vb.y = drag.oy - (ev.clientY - drag.sy) / rect.height * GRAPH.vb.h;
+  applyVB();
+});
+window.addEventListener('pointerup', () => { drag = null; svg.classList.remove('dragging'); });
+
+function selectNode(id, type) {
+  GRAPH.selected = {kind:'node', id, type};
+  renderGraph();
+  const out = GRAPH.edges.filter(e => e.fact.subject === id);
+  const inc = GRAPH.edges.filter(e => e.fact.object === id);
+  const rows = [...out.map(e => ({dir:'出', ...e})), ...inc.map(e => ({dir:'入', ...e}))];
+  $('detail').innerHTML = `
+    <div class="kv">
+      <div class="k">对象</div><div class="v"><b>${esc(id)}</b></div>
+      <div class="k">类型</div><div class="v">${esc(classLabel(type))} <span class="chip">${esc(type)}</span></div>
+      <div class="k">关联边</div><div class="v">${rows.length} 条</div>
+    </div>
+    <div class="subhead">与该对象相关的关系</div>
+    ${rows.length ? rows.map(e => `<div class="temporal" style="background:#f8fafc;border-color:#e2e8f0;color:#334155">
+        ${e.dir === '出' ? esc(e.fact.subject) : esc(e.fact.subject)} —${esc(relLabel(e.fact.predicate))}→
+        ${esc(e.fact.object)}${e.fact.valid_from ? `<br><span style="color:#b45309">有效区间 ${esc(e.fact.valid_from)} ~ ${esc(e.fact.valid_to||'至今')}</span>` : ''}
+      </div>`).join('') : '<div class="detail-empty">无关系</div>'}`;
+}
+
+function selectEdge(idx) {
+  GRAPH.selected = {kind:'edge', idx};
+  renderGraph();
+  const e = GRAPH.edges.find(x => x.idx === idx);
+  if (!e) return;
+  const f = e.fact;
+  const rel = DICT ? DICT.relations.find(r => r.id === f.predicate) : null;
+  $('detail').innerHTML = `
+    <div class="kv">
+      <div class="k">关系</div><div class="v"><b>${esc(relLabel(f.predicate))}</b> <span class="chip">${esc(f.predicate)}</span></div>
+      <div class="k">主语</div><div class="v">${esc(f.subject)} <span class="chip">${esc(classLabel(f.subject_type))}</span></div>
+      <div class="k">宾语</div><div class="v">${esc(f.object)} <span class="chip">${esc(classLabel(f.object_type))}</span></div>
+      <div class="k">定义域</div><div class="v">${esc(classLabel(rel ? rel.domain : f.subject_type))}</div>
+      <div class="k">值域</div><div class="v">${esc(classLabel(rel ? rel.range : f.object_type))}</div>
+      <div class="k">发生时间</div><div class="v">${esc(f.occurred_at)}</div>
+      <div class="k">时态</div><div class="v">${f.valid_from ? '是 · ' + esc(f.valid_from) + ' ~ ' + esc(f.valid_to || '至今') : '否'}</div>
+    </div>
+    <div class="explain">${f.valid_from
+      ? '时态关系：同一对对象在不同时间段可成立，查询某时刻可还原当时状态，而不是写成对象的固定字段。'
+      : '静态关系：由语义层定义域/值域约束，写入前必须通过本体校验。'}</div>`;
+}
+
+// ---------------------------------------------------------------- 时间线
+function factText(f) {
+  if (f.kind === 'event') {
+    const cn = EVENT_CN[f.object] || f.object;
+    const note = f.payload && (f.payload.question || f.payload.result || '');
+    return `事件 · ${cn}（${f.object}）${note ? ' · ' + note : ''}`;
+  }
+  let s = `${f.subject} —${relLabel(f.predicate)}→ ${f.object}`;
+  if (f.valid_from) s += ` 〔${f.valid_from} ~ ${f.valid_to || '至今'}〕`;
+  return s;
+}
+
+function renderTimeline() {
+  const list = CURRENT.facts.filter(f =>
+    timelineFilter === 'all' ? true :
+    timelineFilter === 'event' ? f.kind === 'event' : f.kind === 'relation');
+  $('timelineCount').textContent = `${list.length} 条事实`;
+  const sel = GRAPH.selected;
+  $('timeline').innerHTML = list.map(f => {
+    const temporal = f.kind === 'relation' && f.valid_from;
+    const cls = temporal ? 'temporal' : f.kind;
+    const active = sel && sel.kind === 'edge'
+      ? (GRAPH.edges.find(e => e.idx === sel.idx) || {}).fact?.seq === f.seq : false;
+    return `<li data-seq="${f.seq}" class="${active ? 'active' : ''}">
+      <span class="time">${esc(f.occurred_at.slice(11))}</span>
+      <span class="badge ${cls}">${f.kind === 'event' ? '事件' : (temporal ? '时态' : '关系')}</span>
+      <span class="txt">${esc(factText(f))}</span>
+    </li>`;
+  }).join('') || '<li class="detail-empty">没有匹配的事实</li>';
+
+  $('timeline').querySelectorAll('li[data-seq]').forEach(li => {
+    li.onclick = () => {
+      const seq = Number(li.dataset.seq);
+      const f = CURRENT.facts.find(x => x.seq === seq);
+      if (!f) return;
+      if (f.kind === 'relation') {
+        const e = GRAPH.edges.find(x => x.fact.seq === seq);
+        if (e) { selectEdge(e.idx); renderTimeline(); }
+      } else {
+        GRAPH.selected = null; renderGraph();
+        $('detail').innerHTML = `
+          <div class="kv">
+            <div class="k">事件</div><div class="v"><b>${esc(EVENT_CN[f.object] || f.object)}</b> <span class="chip">${esc(f.object)}</span></div>
+            <div class="k">时间</div><div class="v">${esc(f.occurred_at)}</div>
+            <div class="k">订单</div><div class="v">${esc(CURRENT.orderId)}</div>
+          </div>
+          <div class="subhead">事件载荷</div>
+          <pre style="background:#f8fafc;border:1px solid #eef2f7;border-radius:8px;padding:10px;overflow:auto;font-size:11px">${esc(JSON.stringify(f.payload, null, 2))}</pre>`;
+        renderTimeline();
+      }
+    };
+  });
+}
+
+document.querySelectorAll('[data-filter]').forEach(b => {
+  b.onclick = () => { timelineFilter = b.dataset.filter; renderTimeline(); };
+});
+
+// ---------------------------------------------------------------- 详情
+function renderDetail() {
+  const tr = CURRENT.trace;
+  if (!tr) return;
+  const o = tr.order || {};
+  const r = tr.relations || {};
+  const chain = [
+    ['乘客', r['发起乘客']], ['行程', r['对应行程']], ['司机', r['执行司机']],
+    ['车辆', r['使用车辆']], ['计费', r['计费记录']], ['支付', r['支付']],
+    ['退款', r['退款']], ['工单', r['客服工单']]
+  ];
+  $('detail').innerHTML = `
+    <div class="kv">
+      <div class="k">订单</div><div class="v"><b>${esc(o.order_id)}</b> <span class="chip">${esc(o.status)}</span></div>
+      <div class="k">乘客</div><div class="v">${esc(o.passenger_id)}</div>
+      <div class="k">司机 / 车辆</div><div class="v">${esc(o.driver_id || (tr.trip && tr.trip.driver_id) || '—')} / ${esc((tr.trip && tr.trip.vehicle_id) || '—')}</div>
+      <div class="k">起终点</div><div class="v">${esc(o.origin)} → ${esc(o.destination)}（${esc(o.vehicle_type)}）</div>
+      <div class="k">创建时间</div><div class="v">${esc(o.created_at)}</div>
+      <div class="k">可追溯</div><div class="v">${tr.can_reconstruct ? '<span style="color:#16a34a">是</span>' : '<span style="color:#dc2626">否</span>'} · 时间线 ${tr.timeline_length} 条</div>
+    </div>
+    <div class="subhead">关系链（沿本体关系还原）</div>
+    <div class="chain">${chain.filter(([,v]) => v && v.length).map(([k,v]) =>
+      `<span class="chip">${k} <b>${esc(v.join(', '))}</b></span>`).join('')}</div>
+    <div class="subhead">时态驾驶关系</div>
+    ${(tr.temporal_drives || []).length
+      ? tr.temporal_drives.map(d => `<div class="temporal">司机 <b>${esc(d.driver)}</b> 驾驶 <b>${esc(d.vehicle)}</b><br>
+          ${esc(d.valid_from)} ~ ${esc(d.valid_to || '至今')}</div>`).join('')
+      : '<div class="detail-empty">无</div>'}`;
+}
+
+// ---------------------------------------------------------------- 生命周期 / 计费
+function renderAnalysis() {
+  const tr = CURRENT.trace;
+  if (!tr) return;
+  const lc = DICT.lifecycle.order;
+  const events = CURRENT.facts.filter(f => f.kind === 'event').map(f => f.object);
+  const visited = new Set(events.map(e => EVENT_STATE[e]).filter(Boolean));
+  const current = (tr.order && tr.order.status) || '';
+  const seq = ['CREATED','MATCHED','DRIVER_ARRIVED','IN_TRIP','BILLED','COMPLETED'];
+  const chips = [];
+  seq.forEach((s, i) => {
+    if (i) chips.push('<span class="arrow">→</span>');
+    const isNow = s === current;
+    const done = visited.has(s);
+    chips.push(`<span class="state ${isNow ? 'now' : (done ? 'done' : '')}">${s}</span>`);
+  });
+  chips.push('<span class="arrow" style="margin:0 6px">｜</span>');
+  chips.push(`<span class="state cancel ${current === 'CANCELLED' ? 'now' : (visited.has('CANCELLED') ? 'done' : '')}">CANCELLED</span>`);
+  $('stateMachine').innerHTML = chips.join('');
+
+  const billings = tr.billing || [];
+  if (!billings.length) {
+    $('billing').innerHTML = `<div class="explain">本单未产生计费记录${current === 'CANCELLED' ? '（免费取消）' : ''}。</div>`;
+  } else {
+    $('billing').innerHTML = billings.map(b => {
+      if (b.source && b.source !== 'TRIP') {
+        return `<div class="explain">取消收费 ¥${Number(b.total).toFixed(2)}（规则 ${esc(tr.order.cancel_rule_id || '')}）</div>`;
+      }
+      const parts = [
+        ['起步价', b.base_fare, '#2563eb'], ['里程费', b.distance_fee, '#0ea5e9'],
+        ['时长费', b.time_fee, '#14b8a6'], ['区域附加', b.region_surcharge, '#f59e0b'],
+        ['优惠券', -(b.coupon_deduction || 0), '#db2777']
+      ];
+      const pos = parts.filter(p => p[1] > 0);
+      const sum = pos.reduce((a, p) => a + p[1], 0) || 1;
+      return `<div class="bar">${pos.map(p =>
+        `<span style="width:${(p[1]/sum*100).toFixed(2)}%;background:${p[2]}" title="${p[0]} ¥${p[1].toFixed(2)}"></span>`).join('')}</div>
+        <div class="barlist">${parts.map(p =>
+          `<span><i style="background:${p[2]}"></i>${p[0]} ¥${Math.abs(p[1]).toFixed(2)}${p[1] < 0 ? '（抵扣）' : ''}</span>`).join('')}</div>
+        <div class="total">合计 ¥${Number(b.total).toFixed(2)}</div>`;
+    }).join('');
+  }
+  $('explanation').textContent = tr.explanation || '—';
+}
+
+// ---------------------------------------------------------------- 约束
+function renderConstraints(data) {
+  const violations = data.violations || [];
+  const byId = {};
+  violations.forEach(v => (byId[v.constraint_id] = (byId[v.constraint_id] || 0) + 1));
+  $('constraints').innerHTML = (data.definitions || []).map(c => {
+    const n = byId[c.id] || 0;
+    return `<li>
+      <span class="cid">${esc(c.id)}</span>
+      <span class="txt">${esc(c.label)}
+        <div style="color:#94a3b8;font-size:11px">type=${esc(c.type)} · severity=${esc(c.severity)}</div>
+      </span>
+      <span class="badge ${n ? 'temporal' : 'relation'}" style="${n ? 'background:#fee2e2;color:#b91c1c' : ''}">${n ? n + ' 违规' : '通过'}</span>
+    </li>`;
+  }).join('');
+}
+
+const CHECKS = {
+  legal: {subject_type:'Passenger', predicate:'initiates', object_type:'Order', label:'乘客 —发起→ 订单'},
+  illegalDomain: {subject_type:'Vehicle', predicate:'initiates', object_type:'Order', label:'车辆 —发起→ 订单'},
+  illegalRange: {subject_type:'Order', predicate:'has_trip', object_type:'Driver', label:'订单 —对应→ 司机'}
+};
+document.querySelectorAll('[data-check]').forEach(btn => {
+  btn.onclick = async () => {
+    const c = CHECKS[btn.dataset.check];
+    const box = $('checkResult');
+    box.className = 'check-result';
+    try {
+      const res = await fetchJSON('/validate/relation', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({subject_type:c.subject_type, predicate:c.predicate, object_type:c.object_type})
+      });
+      box.className = 'check-result ' + (res.ok ? 'ok' : 'bad');
+      box.innerHTML = `<b>${res.ok ? '✓ 校验通过' : '✗ 被本体拦截'}</b> · ${esc(c.label)}<br>${esc(res.message)}`;
+    } catch (e) {
+      box.className = 'check-result bad';
+      box.textContent = '请求失败：' + e.message;
+    }
+  };
+});
+
+init();
+</script>
+</body>
+</html>

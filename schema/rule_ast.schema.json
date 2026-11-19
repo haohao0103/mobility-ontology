@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mobility-ontology.local/schema/rule_ast.schema.json",
+  "title": "Rule AST Expression",
+  "description": "规则 judge.ast 的表达式节点。只允许白名单操作符，禁止任意代码执行；字段路径在运行时按上下文解析。",
+  "type": "object",
+  "required": ["op"],
+  "additionalProperties": false,
+  "properties": {
+    "op": {
+      "type": "string",
+      "enum": [
+        "const", "field",
+        "add", "sub", "mul", "div", "floordiv", "mod", "pow",
+        "neg", "not", "and", "or",
+        "eq", "ne", "lt", "lte", "gt", "gte", "in", "not_in",
+        "if", "min", "max", "sum", "abs", "ceil", "floor", "round", "len",
+        "index", "evidence_present"
+      ]
+    },
+    "args": {
+      "type": "array",
+      "items": { "$ref": "#" }
+    },
+    "value": true,
+    "path": { "type": "string", "minLength": 1 }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "op": { "const": "field" } }, "required": ["op"] },
+      "then": { "required": ["path"] }
+    },
+    {
+      "if": { "properties": { "op": { "const": "const" } }, "required": ["op"] },
+      "then": { "required": ["value"] }
+    }
+  ]
+}

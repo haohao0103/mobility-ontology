@@ -1,0 +1,240 @@
+{
+  "meta": {
+    "name": "共享出行互联网本体 · 最小闭环 v1",
+    "scope": "乘客下单后：理解订单 → 匹配运力 → 计费 → 取消 → 客服追溯",
+    "version": "1.0.0",
+    "note": "本文件是领域词典、关系定义、约束、规则与定价的唯一口径来源。业务库、图谱、规则引擎、应用层均只读此定义。"
+  },
+
+  "classes": [
+    {"id": "Passenger",      "label": "乘客",     "kind": "主体",   "description": "发起订单的出行需求方"},
+    {"id": "Driver",         "label": "司机",     "kind": "主体",   "description": "执行行程的运力提供方，有可接单/已派单/行程中等状态"},
+    {"id": "Vehicle",        "label": "车辆",     "kind": "主体",   "description": "被驾驶的运力载体；同一车辆在不同时间可由不同司机驾驶"},
+    {"id": "Order",          "label": "订单",     "kind": "服务记录", "description": "乘客发起的一次服务请求，记录起终点、车型、时间"},
+    {"id": "Trip",           "label": "行程",     "kind": "服务记录", "description": "订单对应的实际执行过程，记录司机、车辆、实际路线和状态"},
+    {"id": "Payment",        "label": "支付",     "kind": "服务记录", "description": "账单结算事实，关联计费记录"},
+    {"id": "BillingRecord",  "label": "计费记录", "kind": "服务记录", "description": "起步价、里程费、时长费、优惠券抵扣及合计"},
+    {"id": "Address",        "label": "地址",     "kind": "空间",   "description": "订单起点/终点"},
+    {"id": "Region",         "label": "区域",     "kind": "空间",   "description": "服务区判定与区域定价的基本单元"},
+    {"id": "RoadSegment",    "label": "路段",     "kind": "空间",   "description": "行程实际经过的路段"},
+    {"id": "PricingRule",    "label": "定价规则", "kind": "配置",   "description": "按车型/区域/时段定义费率"},
+    {"id": "Coupon",         "label": "优惠券",   "kind": "配置",   "description": "抵扣金额，作用于计费记录"},
+    {"id": "Dispatch",       "label": "派单",     "kind": "事件",   "description": "系统向候选司机发送订单的动作"},
+    {"id": "SupportTicket",  "label": "客服工单", "kind": "异常",   "description": "乘客问询与争议处理记录"},
+    {"id": "Refund",         "label": "退款",     "kind": "异常",   "description": "取消或多收后的退款事实，不得超过实付"}
+  ],
+
+  "relations": [
+    {"id": "initiates",        "label": "发起",       "domain": "Passenger",     "range": "Order",         "temporal": false, "note": "谁发起"},
+    {"id": "has_trip",         "label": "对应",       "domain": "Order",         "range": "Trip",          "temporal": false, "note": "订单对应行程"},
+    {"id": "executed_by",      "label": "由司机执行", "domain": "Trip",          "range": "Driver",        "temporal": false, "note": "谁执行"},
+    {"id": "drives",           "label": "驾驶",       "domain": "Driver",        "range": "Vehicle",       "temporal": true,  "note": "必须绑定 valid_from / valid_to 时间段，不得写为车辆的固定字段"},
+    {"id": "uses_vehicle",     "label": "使用车辆",   "domain": "Trip",          "range": "Vehicle",       "temporal": true,  "note": "行程占用车辆的时间区间，用于重叠检测"},
+    {"id": "passes",           "label": "经过",       "domain": "Trip",          "range": "RoadSegment",   "temporal": false, "note": "实际路线"},
+    {"id": "produces",         "label": "产生",       "domain": "Trip",          "range": "BillingRecord", "temporal": false, "note": "产生什么结果"},
+    {"id": "has_payment",      "label": "关联",       "domain": "Trip",          "range": "Payment",       "temporal": false, "note": "行程结算"},
+    {"id": "has_origin",       "label": "起点",       "domain": "Order",         "range": "Address",       "temporal": false, "note": ""},
+    {"id": "has_destination",  "label": "终点",       "domain": "Order",         "range": "Address",       "temporal": false, "note": ""},
+    {"id": "located_in",       "label": "位于",       "domain": "Address",       "range": "Region",        "temporal": false, "note": "支撑服务区判定"},
+    {"id": "sent_to",          "label": "发送给",     "domain": "Dispatch",      "range": "Driver",        "temporal": false, "note": "派单动作"},
+    {"id": "applies_coupon",   "label": "抵扣",       "domain": "BillingRecord", "range": "Coupon",        "temporal": false, "note": ""},
+    {"id": "refunds",          "label": "退款",       "domain": "Payment",       "range": "Refund",        "temporal": false, "note": ""},
+    {"id": "has_ticket",       "label": "关联工单",   "domain": "Order",         "range": "SupportTicket", "temporal": false, "note": "客服追溯入口"}
+  ],
+
+  "properties": {
+    "Order":         ["order_id", "passenger_id", "origin", "destination", "vehicle_type", "created_at", "status", "driver_id", "region"],
+    "Trip":          ["trip_id", "order_id", "driver_id", "vehicle_id", "route", "status", "started_at", "onboard_at", "ended_at", "distance_km", "duration_min", "meter_start_at", "meter_end_at"],
+    "BillingRecord": ["billing_id", "trip_id", "base_fare", "distance_fee", "time_fee", "coupon_deduction", "total", "source"],
+    "Payment":       ["payment_id", "billing_id", "amount", "status", "paid_at"],
+    "Driver":        ["driver_id", "name", "vehicle_type", "region", "status"],
+    "Vehicle":       ["vehicle_id", "plate", "vehicle_type", "status"],
+    "Refund":        ["refund_id", "payment_id", "amount", "created_at"],
+    "SupportTicket": ["ticket_id", "order_id", "question", "created_at"]
+  },
+
+  "lifecycle": {
+    "order": {
+      "initial": "CREATED",
+      "states": ["CREATED", "MATCHED", "DRIVER_ARRIVED", "IN_TRIP", "BILLED", "COMPLETED", "CANCELLED"],
+      "transitions": {
+        "CREATED":         ["MATCHED", "CANCELLED"],
+        "MATCHED":         ["DRIVER_ARRIVED", "IN_TRIP", "CANCELLED"],
+        "DRIVER_ARRIVED":  ["IN_TRIP", "CANCELLED"],
+        "IN_TRIP":         ["BILLED", "CANCELLED"],
+        "BILLED":          ["COMPLETED", "CANCELLED"],
+        "COMPLETED":       [],
+        "CANCELLED":       []
+      }
+    },
+    "trip": {
+      "initial": "CREATED",
+      "states": ["CREATED", "ARRIVED", "ONBOARD", "ENDED", "SETTLED"],
+      "transitions": {
+        "CREATED": ["ARRIVED", "ONBOARD", "ENDED"],
+        "ARRIVED": ["ONBOARD", "ENDED"],
+        "ONBOARD": ["ENDED"],
+        "ENDED":   ["SETTLED"],
+        "SETTLED": []
+      }
+    },
+    "driver": {
+      "initial": "IDLE",
+      "states": ["IDLE", "ASSIGNED", "ARRIVED", "ON_TRIP", "OFFLINE"],
+      "transitions": {
+        "IDLE":     ["ASSIGNED", "OFFLINE"],
+        "ASSIGNED": ["ARRIVED", "ON_TRIP", "IDLE"],
+        "ARRIVED":  ["ON_TRIP", "IDLE"],
+        "ON_TRIP":  ["IDLE"],
+        "OFFLINE":  ["IDLE"]
+      }
+    },
+    "vehicle": {
+      "initial": "IDLE",
+      "states": ["IDLE", "IN_USE", "MAINTENANCE"],
+      "transitions": {
+        "IDLE":        ["IN_USE", "MAINTENANCE"],
+        "IN_USE":      ["IDLE"],
+        "MAINTENANCE": ["IDLE"]
+      }
+    }
+  },
+
+  "constraints": [
+    {"id": "C1", "label": "每笔订单必须关联一名乘客", "type": "min_count", "target": "Order", "relation": "initiates", "min": 1, "severity": "Violation"},
+    {"id": "C2", "label": "每段行程必须关联一名司机", "type": "min_count", "target": "Trip", "relation": "executed_by", "min": 1, "severity": "Violation"},
+    {"id": "C3", "label": "行程开始时司机和车辆不能为空", "type": "required_fields", "target": "Trip", "fields": ["driver_id", "vehicle_id"], "when_status": ["CREATED", "ARRIVED", "ONBOARD", "ENDED"], "severity": "Violation"},
+    {"id": "C4", "label": "车辆必须先完成上一单才能进入新订单", "type": "no_overlap", "target": "Vehicle", "relation": "uses_vehicle", "severity": "Violation"},
+    {"id": "C5", "label": "支付金额不能低于优惠券抵扣后的结果", "type": "compare", "left": "Payment.amount", "op": "gte", "right": "BillingRecord.total", "severity": "Violation"},
+    {"id": "C6", "label": "退款金额不能超过实际支付金额", "type": "compare", "left": "Refund.amount", "op": "lte", "right": "Payment.amount", "severity": "Violation"},
+    {"id": "C7", "label": "司机不得同时执行两笔进行中行程", "type": "no_active_double", "target": "Driver", "severity": "Violation"},
+    {"id": "C8", "label": "关系必须符合本体定义域/值域", "type": "relation_domain_range", "severity": "Violation"}
+  ],
+
+  "service_area": ["海淀", "朝阳", "东城", "西城", "丰台", "昌平"],
+  "address_region": {
+    "中关村": "海淀", "清河站": "海淀", "五道口": "海淀", "上地": "海淀",
+    "国贸": "朝阳", "望京": "朝阳", "三里屯": "朝阳",
+    "东直门": "东城", "西单": "西城", "丰台站": "丰台", "回龙观": "昌平",
+    "亦庄": "大兴"
+  },
+
+  "pricing": {
+    "by_vehicle_type": {
+      "经济型": {"base_fare": 10.0, "per_km": 2.3, "per_min": 0.5, "min_fare": 13.0},
+      "舒适型": {"base_fare": 14.0, "per_km": 3.2, "per_min": 0.7, "min_fare": 20.0},
+      "商务型": {"base_fare": 20.0, "per_km": 4.5, "per_min": 1.0, "min_fare": 30.0}
+    },
+    "region_surcharge": {"海淀": 0.0, "朝阳": 2.0, "东城": 1.0, "西城": 1.0, "丰台": 0.0, "昌平": 0.0},
+    "coupon": {"C5": 5.0, "C10": 10.0, "NONE": 0.0},
+    "cancellation": {
+      "free_wait_minutes": 5,
+      "per_wait_minute": 1.0,
+      "wait_fee_cap": 15.0,
+      "arrived_base_fee": 5.0,
+      "driver_fault_waive": true,
+      "driver_fault_reasons": ["DRIVER_LATE", "DRIVER_CANCEL", "VEHICLE_ISSUE"],
+      "force_majeure_waive": true,
+      "force_majeure_reasons": ["WEATHER", "EMERGENCY"]
+    }
+  },
+
+  "fee_strategies": {
+    "zero":          {"label": "费用为 0", "formula": "0"},
+    "wait_time":     {"label": "按等待时长计算取消费", "formula": "min(max(0, wait_minutes - free_wait_minutes) * per_wait_minute, wait_fee_cap)"},
+    "actual_usage":  {"label": "按实际里程和时长计费", "formula": "max(min_fare, base_fare + distance_km*per_km + duration_min*per_min) + region_surcharge - coupon_deduction"},
+    "arrived":       {"label": "结合等待时长和取消原因判断费用", "formula": "arrived_base_fee + min(max(0, wait_minutes-free_wait_minutes)*per_wait_minute, wait_fee_cap); 司机责任/不可抗力减免为 0"}
+  },
+
+  "rules": [
+    {
+      "id": "D01", "domain": "dispatch", "priority": 100, "name": "校验服务区",
+      "when": {"all": [{"field": "order.in_service_area", "op": "eq", "value": true}]},
+      "judge": {"decision": "IN_SERVICE_AREA", "explain": "起终点均在服务区内，允许继续派单"},
+      "actions": ["find_candidates"]
+    },
+    {
+      "id": "D00", "domain": "dispatch", "priority": 110, "name": "起终点不在服务区",
+      "when": {"all": [{"field": "order.in_service_area", "op": "eq", "value": false}]},
+      "judge": {"decision": "REJECT_OUT_OF_SERVICE_AREA", "explain": "起或终点不在服务区，拒绝下单"},
+      "actions": ["reject"]
+    },
+    {
+      "id": "D02", "domain": "dispatch", "priority": 90, "name": "无可用运力",
+      "when": {"all": [{"field": "dispatch.candidate_count", "op": "eq", "value": 0}]},
+      "judge": {"decision": "NO_AVAILABLE_DRIVER", "explain": "附近无空闲且符合车型的司机"},
+      "actions": ["emit_no_driver"]
+    },
+    {
+      "id": "D03", "domain": "dispatch", "priority": 80, "name": "找到候选并派单",
+      "when": {"all": [{"field": "dispatch.candidate_count", "op": "gt", "value": 0}]},
+      "judge": {"decision": "DISPATCH_OK", "explain": "查找附近空闲且符合车型的司机，并向其发送订单"},
+      "actions": ["send_dispatch", "emit_dispatch"]
+    },
+    {
+      "id": "A01", "domain": "accept", "priority": 100, "name": "司机接受订单后生成行程",
+      "when": {"all": [{"field": "order.status", "op": "eq", "value": "CREATED"}, {"field": "driver.status", "op": "eq", "value": "IDLE"}]},
+      "judge": {"decision": "TRIP_CREATED", "explain": "司机接受后生成行程，绑定司机/车辆并写入带时间段的驾驶关系"},
+      "actions": ["create_trip", "open_drives_interval", "emit_accept"]
+    },
+    {
+      "id": "B01", "domain": "billing", "priority": 100, "name": "乘客上车后开始计费",
+      "when": {"all": [{"field": "event", "op": "eq", "value": "PASSENGER_ONBOARD"}]},
+      "judge": {"decision": "METER_STARTED", "explain": "计费起点 = 乘客上车时刻，不是接单或司机到达时刻"},
+      "actions": ["start_meter", "emit_meter_start"]
+    },
+    {
+      "id": "B02", "domain": "billing", "priority": 100, "name": "乘客下车后结束计费并生成账单",
+      "when": {"all": [{"field": "event", "op": "eq", "value": "PASSENGER_OFFBOARD"}]},
+      "judge": {"decision": "BILLED", "explain": "计费终点 = 乘客下车时刻；按实际里程/时长/优惠券生成计费记录与支付账单"},
+      "actions": ["stop_meter", "compute_bill", "create_payment", "emit_billing", "release_capacity", "close_drives_interval"]
+    },
+    {
+      "id": "X01", "domain": "cancel", "priority": 100, "name": "订单未匹配司机",
+      "when": {"all": [{"field": "order.status", "op": "eq", "value": "CREATED"}, {"field": "order.driver_id", "op": "is_null"}]},
+      "judge": {"decision": "FREE_CANCEL", "fee_strategy": "zero", "explain": "订单未匹配司机 → 允许取消，费用为 0"},
+      "actions": ["mark_cancelled", "release_capacity", "close_drives_interval", "emit_cancel"]
+    },
+    {
+      "id": "X02", "domain": "cancel", "priority": 90, "name": "已匹配司机、尚未到达",
+      "when": {"all": [{"field": "order.status", "op": "eq", "value": "MATCHED"}]},
+      "judge": {"decision": "WAIT_FEE", "fee_strategy": "wait_time", "explain": "订单已匹配司机、尚未到达 → 按等待时长计算取消费"},
+      "actions": ["mark_cancelled", "release_capacity", "close_drives_interval", "emit_cancel"]
+    },
+    {
+      "id": "X03", "domain": "cancel", "priority": 80, "name": "行程已经开始",
+      "when": {"all": [{"field": "order.status", "op": "eq", "value": "IN_TRIP"}]},
+      "judge": {"decision": "ACTUAL_USAGE_FEE", "fee_strategy": "actual_usage", "explain": "行程已经开始 → 按实际里程和时长计费（已发生服务费）"},
+      "actions": ["mark_cancelled", "release_capacity", "close_drives_interval", "emit_cancel"]
+    },
+    {
+      "id": "X04", "domain": "cancel", "priority": 70, "name": "司机已到达乘客位置",
+      "when": {"all": [{"field": "order.status", "op": "eq", "value": "DRIVER_ARRIVED"}]},
+      "judge": {"decision": "ARRIVED_FEE", "fee_strategy": "arrived", "explain": "司机已到达 → 结合等待时长和取消原因判断费用（司机责任/不可抗力减免）"},
+      "actions": ["mark_cancelled", "release_capacity", "close_drives_interval", "emit_cancel"]
+    },
+    {
+      "id": "P01", "domain": "payment", "priority": 100, "name": "实付低于应付",
+      "when": {"all": [{"field": "payment.amount", "op": "lt", "value_ref": "billing.total"}]},
+      "judge": {"decision": "REJECT_UNDERPAY", "explain": "支付金额不能低于优惠券抵扣后的结果"},
+      "actions": ["reject"]
+    },
+    {
+      "id": "P02", "domain": "payment", "priority": 90, "name": "支付校验通过并结算",
+      "when": {"all": [{"field": "payment.amount", "op": "gte", "value_ref": "billing.total"}]},
+      "judge": {"decision": "PAID", "explain": "支付金额合法，账单结算完成"},
+      "actions": ["settle", "emit_payment"]
+    },
+    {
+      "id": "R01", "domain": "refund", "priority": 100, "name": "退款超过实付",
+      "when": {"all": [{"field": "refund.amount", "op": "gt", "value_ref": "payment.amount"}]},
+      "judge": {"decision": "REJECT_OVER_REFUND", "explain": "退款金额不能超过实际支付金额"},
+      "actions": ["reject"]},
+    {
+      "id": "R02", "domain": "refund", "priority": 90, "name": "退款合法",
+      "when": {"all": [{"field": "refund.amount", "op": "lte", "value_ref": "payment.amount"}]},
+      "judge": {"decision": "REFUNDED", "explain": "退款金额在实付范围内"},
+      "actions": ["create_refund", "emit_refund"]
+    }
+  ]
+}

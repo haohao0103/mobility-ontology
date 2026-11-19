@@ -1,0 +1,734 @@
+{
+  "meta": {
+    "name": "货拉拉订单本体 · 可执行语义层",
+    "version": "1.1.0-demo",
+    "scope": "从货主下单、订单生成运单、司机承运、费用产生、结算开票到异常处理",
+    "note": "本体只持久化类、关系、规则、动作与数据源映射；业务事实经 MCP / API 按需查询，不写入本体库。",
+    "storage_policy": "knowledge-only",
+    "based_on": "1.0.0",
+    "released_at": "2026-11-18T09:41:19+08:00"
+  },
+  "classes": [
+    {
+      "id": "Shipper",
+      "label": "货主",
+      "key": "shipper_id",
+      "description": "下运输需求、承担结算责任的主体。",
+      "statuses": [
+        "ACTIVE",
+        "DISABLED"
+      ],
+      "properties": [
+        "shipper_id",
+        "shipper_name",
+        "settlement_subject",
+        "contact",
+        "status"
+      ]
+    },
+    {
+      "id": "Order",
+      "label": "订单",
+      "key": "order_id",
+      "description": "货主发起的一次运输需求，是需求口径。",
+      "statuses": [
+        "CREATED",
+        "DISPATCHED",
+        "CANCELLED",
+        "COMPLETED"
+      ],
+      "properties": [
+        "order_id",
+        "shipper_id",
+        "origin",
+        "destination",
+        "cargo",
+        "vehicle_type",
+        "estimated_fee",
+        "created_at",
+        "status"
+      ]
+    },
+    {
+      "id": "Waybill",
+      "label": "运单",
+      "key": "waybill_id",
+      "description": "履约主体，整条链路唯一的业务主键，费用、结算、异常最终都挂到它身上。",
+      "statuses": [
+        "CREATED",
+        "ACCEPTED",
+        "REASSIGNED",
+        "LOADED",
+        "DELIVERED"
+      ],
+      "properties": [
+        "waybill_id",
+        "order_id",
+        "driver_id",
+        "vehicle_id",
+        "status",
+        "estimated_fee",
+        "actual_fee",
+        "variance",
+        "waiting_minutes",
+        "free_wait_minutes",
+        "accepted_at",
+        "loading_confirmed_at",
+        "delivered_at",
+        "proof_of_delivery"
+      ]
+    },
+    {
+      "id": "Driver",
+      "label": "司机",
+      "key": "driver_id",
+      "description": "实际承运人，接单、到场、装货、送达动作的发起者。",
+      "statuses": [
+        "IDLE",
+        "ASSIGNED",
+        "ON_TRIP",
+        "OFFLINE"
+      ],
+      "properties": [
+        "driver_id",
+        "driver_name",
+        "fleet",
+        "qualification",
+        "status"
+      ]
+    },
+    {
+      "id": "Vehicle",
+      "label": "车辆",
+      "key": "vehicle_id",
+      "description": "运力的物理载体，车型与载重决定可承接范围。",
+      "statuses": [
+        "IDLE",
+        "IN_USE",
+        "MAINTENANCE"
+      ],
+      "properties": [
+        "vehicle_id",
+        "plate",
+        "vehicle_type",
+        "capacity_t",
+        "fleet",
+        "status"
+      ]
+    },
+    {
+      "id": "FeeItem",
+      "label": "费用项",
+      "key": "fee_id",
+      "description": "运单产生的每一笔费用，保留计费依据、来源与时间。",
+      "statuses": [
+        "NORMAL",
+        "DISPUTED",
+        "WAIVED"
+      ],
+      "properties": [
+        "fee_id",
+        "fee_type",
+        "fee_label",
+        "quoted_amount",
+        "expected_amount",
+        "actual_amount",
+        "waived_amount",
+        "calc_basis",
+        "occurred_at",
+        "source_system",
+        "status"
+      ]
+    },
+    {
+      "id": "Settlement",
+      "label": "结算单",
+      "key": "settlement_id",
+      "description": "按周期汇总费用项形成应收应付；已入账后只能冲正。",
+      "statuses": [
+        "DRAFT",
+        "PENDING",
+        "POSTED",
+        "ON_HOLD",
+        "REVERSED"
+      ],
+      "properties": [
+        "settlement_id",
+        "period",
+        "amount",
+        "reversed_amount",
+        "status",
+        "posted_at"
+      ]
+    },
+    {
+      "id": "Invoice",
+      "label": "发票",
+      "key": "invoice_id",
+      "description": "开给货主的税务凭证，金额必须与结算单一致。",
+      "statuses": [
+        "DRAFT",
+        "ISSUED",
+        "VOIDED"
+      ],
+      "properties": [
+        "invoice_id",
+        "invoice_no",
+        "title",
+        "amount",
+        "tax_rate",
+        "status",
+        "issued_at"
+      ]
+    },
+    {
+      "id": "ExceptionTicket",
+      "label": "异常工单",
+      "key": "ticket_id",
+      "description": "把履约异常收口为可跟踪、可分派、可关闭的工单。",
+      "statuses": [
+        "OPEN",
+        "PROCESSING",
+        "CLOSED"
+      ],
+      "properties": [
+        "ticket_id",
+        "ticket_type",
+        "reason",
+        "assignee",
+        "status",
+        "resolution",
+        "opened_at",
+        "closed_at"
+      ]
+    },
+    {
+      "id": "Evidence",
+      "label": "证据",
+      "key": "evidence_id",
+      "description": "来自源系统、带时间戳和版本号的可核对事实。",
+      "statuses": [
+        "VALID",
+        "VOID"
+      ],
+      "properties": [
+        "evidence_id",
+        "evidence_type",
+        "source_system",
+        "occurred_at",
+        "version",
+        "summary",
+        "checksum",
+        "status"
+      ]
+    }
+  ],
+  "relations": [
+    {
+      "id": "shipper_places_order",
+      "label": "下单",
+      "domain": "Shipper",
+      "range": "Order",
+      "temporal": false
+    },
+    {
+      "id": "order_generates_waybill",
+      "label": "生成运单",
+      "domain": "Order",
+      "range": "Waybill",
+      "temporal": false
+    },
+    {
+      "id": "waybill_assigned_to_driver",
+      "label": "指派给司机",
+      "domain": "Waybill",
+      "range": "Driver",
+      "temporal": false
+    },
+    {
+      "id": "waybill_uses_vehicle",
+      "label": "使用车辆",
+      "domain": "Waybill",
+      "range": "Vehicle",
+      "temporal": false
+    },
+    {
+      "id": "waybill_produces_fee",
+      "label": "产生费用项",
+      "domain": "Waybill",
+      "range": "FeeItem",
+      "temporal": false
+    },
+    {
+      "id": "fee_included_in_settlement",
+      "label": "汇总进结算单",
+      "domain": "FeeItem",
+      "range": "Settlement",
+      "temporal": false
+    },
+    {
+      "id": "settlement_generates_invoice",
+      "label": "生成发票",
+      "domain": "Settlement",
+      "range": "Invoice",
+      "temporal": false
+    },
+    {
+      "id": "waybill_has_exception",
+      "label": "关联异常工单",
+      "domain": "Waybill",
+      "range": "ExceptionTicket",
+      "temporal": false
+    },
+    {
+      "id": "invoice_billed_to_shipper",
+      "label": "开给货主",
+      "domain": "Invoice",
+      "range": "Shipper",
+      "temporal": false
+    },
+    {
+      "id": "fee_supported_by_evidence",
+      "label": "计费证据",
+      "domain": "FeeItem",
+      "range": "Evidence",
+      "temporal": false
+    },
+    {
+      "id": "waybill_supported_by_evidence",
+      "label": "履约证据",
+      "domain": "Waybill",
+      "range": "Evidence",
+      "temporal": false
+    },
+    {
+      "id": "settlement_supported_by_evidence",
+      "label": "结算证据",
+      "domain": "Settlement",
+      "range": "Evidence",
+      "temporal": false
+    },
+    {
+      "id": "invoice_supported_by_evidence",
+      "label": "开票证据",
+      "domain": "Invoice",
+      "range": "Evidence",
+      "temporal": false
+    },
+    {
+      "id": "exception_supported_by_evidence",
+      "label": "异常证据",
+      "domain": "ExceptionTicket",
+      "range": "Evidence",
+      "temporal": false
+    }
+  ],
+  "pricing": {
+    "waiting": {
+      "free_minutes": 20,
+      "block_minutes": 5,
+      "per_block": 2.4,
+      "rule_id": "R-WAIT-01"
+    },
+    "highway": {
+      "source": "ETC",
+      "rule_id": "R-HIGHWAY-01"
+    }
+  },
+  "data_sources": [
+    {
+      "class": "Shipper",
+      "system": "CRM",
+      "tool": "crm.get_shipper",
+      "key": "shipper_id",
+      "description": "货主主数据与结算主体，按 shipper_id 读取。"
+    },
+    {
+      "class": "Order",
+      "system": "TMS",
+      "tool": "tms.get_order",
+      "key": "order_id",
+      "description": "运输需求与订单状态，按 order_id 读取。"
+    },
+    {
+      "class": "Waybill",
+      "system": "TMS",
+      "tool": "tms.get_waybill",
+      "key": "waybill_id",
+      "description": "履约主数据、费用汇总与状态，按 waybill_id 读取。"
+    },
+    {
+      "class": "Driver",
+      "system": "TMS",
+      "tool": "tms.get_driver",
+      "key": "driver_id",
+      "description": "司机档案与从业资质，按 driver_id 读取。"
+    },
+    {
+      "class": "Vehicle",
+      "system": "TMS",
+      "tool": "tms.get_vehicle",
+      "key": "vehicle_id",
+      "description": "车辆档案、车型与载重，按 vehicle_id 读取。"
+    },
+    {
+      "class": "FeeItem",
+      "system": "计费中心",
+      "tool": "billing.list_fee_items",
+      "key": "fee_id",
+      "description": "按运单读取费用项、金额口径与规则依据。"
+    },
+    {
+      "class": "Settlement",
+      "system": "结算系统",
+      "tool": "finance.get_settlement",
+      "key": "settlement_id",
+      "description": "按运单读取关联结算单与入账状态。"
+    },
+    {
+      "class": "Invoice",
+      "system": "发票系统",
+      "tool": "finance.get_invoice",
+      "key": "invoice_id",
+      "description": "按结算单读取发票与开票状态。"
+    },
+    {
+      "class": "ExceptionTicket",
+      "system": "客服工单",
+      "tool": "cs.list_exceptions",
+      "key": "ticket_id",
+      "description": "按运单读取异常 / 争议工单。"
+    },
+    {
+      "class": "Evidence",
+      "system": "证据中心",
+      "tool": "evidence.list",
+      "key": "evidence_id",
+      "description": "按对象读取支撑证据、版本与原始 payload。"
+    }
+  ],
+  "relation_source": {
+    "system": "图查询 / MCP",
+    "tool": "graph.list_relations",
+    "description": "关系实例按主语、谓语与方向实时查询；本体只保存关系定义。"
+  },
+  "rules": [
+    {
+      "id": "R-WAIT-01",
+      "name": "等候费计算规则",
+      "domain": "FeeItem",
+      "when": {
+        "all": [
+          {
+            "field": "fee_type",
+            "op": "eq",
+            "value": "waiting"
+          }
+        ]
+      },
+      "judge": {
+        "formula": "ceil(max(0, waiting_minutes - free_wait_minutes) / 5) * 2.4",
+        "explain": "等候费按每 5 分钟 2.4 元计，前 20 分钟免费。",
+        "severity": "HIGH"
+      }
+    },
+    {
+      "id": "R-HIGHWAY-01",
+      "name": "高速费据实结算",
+      "domain": "FeeItem",
+      "when": {
+        "all": [
+          {
+            "field": "fee_type",
+            "op": "eq",
+            "value": "highway"
+          }
+        ]
+      },
+      "judge": {
+        "formula": "以 ETC 扣费记录为准",
+        "explain": "高速费必须有 ETC 扣费记录作为证据，不能手工估算。",
+        "severity": "MEDIUM"
+      }
+    },
+    {
+      "id": "R-WAYBILL-01",
+      "name": "装货后不可改派",
+      "domain": "Waybill",
+      "when": {
+        "all": [
+          {
+            "field": "status",
+            "op": "in",
+            "value": [
+              "LOADED",
+              "DELIVERED"
+            ]
+          }
+        ]
+      },
+      "judge": {
+        "forbidden_actions": [
+          "reassign_waybill"
+        ],
+        "explain": "货物已装车后改派会破坏履约连续性；只能走异常工单流程。",
+        "severity": "HIGH"
+      }
+    },
+    {
+      "id": "R-SETTLE-01",
+      "name": "已入账只能冲正",
+      "domain": "Settlement",
+      "when": {
+        "all": [
+          {
+            "field": "status",
+            "op": "eq",
+            "value": "POSTED"
+          }
+        ]
+      },
+      "judge": {
+        "forbidden_actions": [
+          "hold_settlement"
+        ],
+        "allowed_actions": [
+          "reverse_entry"
+        ],
+        "explain": "结算单已入账后不能直接改数或挂起，只能通过冲正留下调整痕迹。",
+        "severity": "HIGH"
+      }
+    },
+    {
+      "id": "R-INVOICE-01",
+      "name": "发票金额同步结算单",
+      "domain": "Invoice",
+      "when": {
+        "all": [
+          {
+            "field": "status",
+            "op": "in",
+            "value": [
+              "DRAFT",
+              "ISSUED"
+            ]
+          }
+        ]
+      },
+      "judge": {
+        "formula": "invoice.amount == settlement.amount",
+        "explain": "发票金额必须与结算单一致；结算冲正后发票需同步红冲。",
+        "severity": "HIGH"
+      }
+    }
+  ],
+  "actions": [
+    {
+      "id": "accept_order",
+      "label": "接单",
+      "target": "Waybill",
+      "roles": [
+        "driver",
+        "dispatcher"
+      ],
+      "from_status": [
+        "CREATED",
+        "REASSIGNED"
+      ],
+      "to_status": "ACCEPTED",
+      "params": [],
+      "description": "司机确认承接运单，记录接单时间。"
+    },
+    {
+      "id": "reassign_waybill",
+      "label": "改派",
+      "target": "Waybill",
+      "roles": [
+        "dispatcher",
+        "supervisor"
+      ],
+      "from_status": [
+        "CREATED",
+        "ACCEPTED"
+      ],
+      "to_status": "REASSIGNED",
+      "params": [
+        {
+          "name": "new_driver_id",
+          "label": "新司机 ID",
+          "type": "string",
+          "required": true
+        }
+      ],
+      "description": "装货前可改派；装货后必须走异常工单。"
+    },
+    {
+      "id": "confirm_loading",
+      "label": "装货确认",
+      "target": "Waybill",
+      "roles": [
+        "driver"
+      ],
+      "from_status": [
+        "ACCEPTED"
+      ],
+      "to_status": "LOADED",
+      "params": [],
+      "description": "司机确认货物已装载，记录装货完成时间并生成证据。"
+    },
+    {
+      "id": "complete",
+      "label": "送达",
+      "target": "Waybill",
+      "roles": [
+        "driver"
+      ],
+      "from_status": [
+        "LOADED"
+      ],
+      "to_status": "DELIVERED",
+      "params": [
+        {
+          "name": "proof_of_delivery",
+          "label": "回单编号",
+          "type": "string",
+          "required": true
+        }
+      ],
+      "description": "送达并上传回单，缺回单不能进入结算。"
+    },
+    {
+      "id": "dispute_charge",
+      "label": "发起费用申诉",
+      "target": "FeeItem",
+      "roles": [
+        "shipper",
+        "customer_service",
+        "driver"
+      ],
+      "from_status": [
+        "NORMAL"
+      ],
+      "to_status": "DISPUTED",
+      "params": [
+        {
+          "name": "reason",
+          "label": "申诉原因",
+          "type": "string",
+          "required": true
+        }
+      ],
+      "description": "对费用发起申诉，自动创建并关联异常工单。"
+    },
+    {
+      "id": "waive_charge",
+      "label": "减免费用",
+      "target": "FeeItem",
+      "roles": [
+        "finance",
+        "supervisor"
+      ],
+      "from_status": [
+        "DISPUTED"
+      ],
+      "to_status": "WAIVED",
+      "params": [
+        {
+          "name": "amount",
+          "label": "减免金额",
+          "type": "number",
+          "required": true
+        }
+      ],
+      "description": "审批通过后减免费用；结算已入账时还需执行冲正。"
+    },
+    {
+      "id": "hold_settlement",
+      "label": "挂起结算",
+      "target": "Settlement",
+      "roles": [
+        "finance"
+      ],
+      "from_status": [
+        "DRAFT",
+        "PENDING"
+      ],
+      "to_status": "ON_HOLD",
+      "params": [
+        {
+          "name": "reason",
+          "label": "挂起原因",
+          "type": "string",
+          "required": false
+        }
+      ],
+      "description": "未入账的结算单可以挂起；已入账只能冲正。"
+    },
+    {
+      "id": "reverse_entry",
+      "label": "冲正",
+      "target": "Settlement",
+      "roles": [
+        "finance",
+        "supervisor"
+      ],
+      "from_status": [
+        "POSTED"
+      ],
+      "to_status": "REVERSED",
+      "params": [
+        {
+          "name": "amount",
+          "label": "冲正金额（留空按已减免金额）",
+          "type": "number",
+          "required": false
+        }
+      ],
+      "description": "对已入账结算做冲正，并同步发票金额与状态。"
+    },
+    {
+      "id": "void_invoice",
+      "label": "发票红冲",
+      "target": "Invoice",
+      "roles": [
+        "finance"
+      ],
+      "from_status": [
+        "ISSUED"
+      ],
+      "to_status": "VOIDED",
+      "params": [
+        {
+          "name": "reason",
+          "label": "红冲原因",
+          "type": "string",
+          "required": false
+        }
+      ],
+      "description": "结算冲正后同步红冲发票。"
+    },
+    {
+      "id": "close_exception",
+      "label": "关闭异常工单",
+      "target": "ExceptionTicket",
+      "roles": [
+        "customer_service",
+        "supervisor"
+      ],
+      "from_status": [
+        "OPEN",
+        "PROCESSING"
+      ],
+      "to_status": "CLOSED",
+      "params": [
+        {
+          "name": "resolution",
+          "label": "处理结论",
+          "type": "string",
+          "required": true
+        }
+      ],
+      "description": "关闭异常工单必须留下处理结论。"
+    }
+  ]
+}

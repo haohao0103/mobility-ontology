@@ -1,0 +1,321 @@
+{
+  "version": 1,
+  "description": "C1~C8 SHACL 回归用例：每条约束至少 1 条正例与 1 条反例。",
+  "cases": [
+    {
+      "id": "C1-POS-01",
+      "constraint_id": "C1",
+      "kind": "positive",
+      "nodes": [
+        {"id": "p1", "type": "Passenger", "props": {}},
+        {"id": "o1", "type": "Order", "props": {"order_id": "O-1"}}
+      ],
+      "relations": [
+        {"subject": "p1", "predicate": "initiates", "object": "o1"}
+      ]
+    },
+    {
+      "id": "C1-NEG-01",
+      "constraint_id": "C1",
+      "kind": "negative",
+      "nodes": [
+        {"id": "o1", "type": "Order", "props": {"order_id": "O-1"}}
+      ],
+      "relations": []
+    },
+    {
+      "id": "C2-POS-01",
+      "constraint_id": "C2",
+      "kind": "positive",
+      "nodes": [
+        {"id": "t1", "type": "Trip", "props": {"trip_id": "T-1", "status": "SETTLED"}},
+        {"id": "d1", "type": "Driver", "props": {"driver_id": "D-1"}}
+      ],
+      "relations": [
+        {"subject": "t1", "predicate": "executed_by", "object": "d1"}
+      ]
+    },
+    {
+      "id": "C2-NEG-01",
+      "constraint_id": "C2",
+      "kind": "negative",
+      "nodes": [
+        {"id": "t1", "type": "Trip", "props": {"trip_id": "T-1", "status": "SETTLED"}}
+      ],
+      "relations": []
+    },
+    {
+      "id": "C3-POS-01",
+      "constraint_id": "C3",
+      "kind": "positive",
+      "nodes": [
+        {
+          "id": "t1",
+          "type": "Trip",
+          "props": {
+            "trip_id": "T-1",
+            "status": "CREATED",
+            "driver_id": "D-1",
+            "vehicle_id": "V-1"
+          }
+        },
+        {"id": "d1", "type": "Driver", "props": {"driver_id": "D-1"}}
+      ],
+      "relations": [
+        {"subject": "t1", "predicate": "executed_by", "object": "d1"}
+      ]
+    },
+    {
+      "id": "C3-NEG-01",
+      "constraint_id": "C3",
+      "kind": "negative",
+      "nodes": [
+        {
+          "id": "t1",
+          "type": "Trip",
+          "props": {
+            "trip_id": "T-1",
+            "status": "CREATED",
+            "driver_id": "D-1"
+          }
+        }
+      ],
+      "relations": []
+    },
+    {
+      "id": "C4-POS-01",
+      "constraint_id": "C4",
+      "kind": "positive",
+      "nodes": [
+        {"id": "v1", "type": "Vehicle", "props": {"vehicle_id": "V-1"}},
+        {"id": "d1", "type": "Driver", "props": {"driver_id": "D-1"}},
+        {
+          "id": "t1",
+          "type": "Trip",
+          "props": {
+            "trip_id": "T-1",
+            "status": "SETTLED",
+            "driver_id": "D-1",
+            "vehicle_id": "V-1",
+            "started_at": "2025-01-01T10:00:00",
+            "ended_at": "2025-01-01T11:00:00"
+          }
+        },
+        {
+          "id": "t2",
+          "type": "Trip",
+          "props": {
+            "trip_id": "T-2",
+            "status": "SETTLED",
+            "driver_id": "D-1",
+            "vehicle_id": "V-1",
+            "started_at": "2025-01-01T11:30:00",
+            "ended_at": "2025-01-01T12:30:00"
+          }
+        }
+      ],
+      "relations": [
+        {"subject": "t1", "predicate": "executed_by", "object": "d1"},
+        {"subject": "t2", "predicate": "executed_by", "object": "d1"}
+      ]
+    },
+    {
+      "id": "C4-NEG-01",
+      "constraint_id": "C4",
+      "kind": "negative",
+      "nodes": [
+        {"id": "v1", "type": "Vehicle", "props": {"vehicle_id": "V-1"}},
+        {"id": "d1", "type": "Driver", "props": {"driver_id": "D-1"}},
+        {
+          "id": "t1",
+          "type": "Trip",
+          "props": {
+            "trip_id": "T-1",
+            "status": "SETTLED",
+            "driver_id": "D-1",
+            "vehicle_id": "V-1",
+            "started_at": "2025-01-01T10:00:00",
+            "ended_at": "2025-01-01T11:00:00"
+          }
+        },
+        {
+          "id": "t2",
+          "type": "Trip",
+          "props": {
+            "trip_id": "T-2",
+            "status": "SETTLED",
+            "driver_id": "D-1",
+            "vehicle_id": "V-1",
+            "started_at": "2025-01-01T10:30:00",
+            "ended_at": "2025-01-01T11:30:00"
+          }
+        }
+      ],
+      "relations": [
+        {"subject": "t1", "predicate": "executed_by", "object": "d1"},
+        {"subject": "t2", "predicate": "executed_by", "object": "d1"}
+      ]
+    },
+    {
+      "id": "C5-POS-01",
+      "constraint_id": "C5",
+      "kind": "positive",
+      "nodes": [
+        {
+          "id": "p1",
+          "type": "Payment",
+          "props": {"payment_id": "P-1", "billing_id": "B-1", "amount": 20}
+        },
+        {
+          "id": "b1",
+          "type": "BillingRecord",
+          "props": {"billing_id": "B-1", "total": 20}
+        }
+      ],
+      "relations": []
+    },
+    {
+      "id": "C5-NEG-01",
+      "constraint_id": "C5",
+      "kind": "negative",
+      "nodes": [
+        {
+          "id": "p1",
+          "type": "Payment",
+          "props": {"payment_id": "P-1", "billing_id": "B-1", "amount": 10}
+        },
+        {
+          "id": "b1",
+          "type": "BillingRecord",
+          "props": {"billing_id": "B-1", "total": 20}
+        }
+      ],
+      "relations": []
+    },
+    {
+      "id": "C6-POS-01",
+      "constraint_id": "C6",
+      "kind": "positive",
+      "nodes": [
+        {
+          "id": "p1",
+          "type": "Payment",
+          "props": {"payment_id": "P-1", "amount": 20}
+        },
+        {
+          "id": "r1",
+          "type": "Refund",
+          "props": {"refund_id": "R-1", "payment_id": "P-1", "amount": 5}
+        }
+      ],
+      "relations": []
+    },
+    {
+      "id": "C6-NEG-01",
+      "constraint_id": "C6",
+      "kind": "negative",
+      "nodes": [
+        {
+          "id": "p1",
+          "type": "Payment",
+          "props": {"payment_id": "P-1", "amount": 10}
+        },
+        {
+          "id": "r1",
+          "type": "Refund",
+          "props": {"refund_id": "R-1", "payment_id": "P-1", "amount": 20}
+        }
+      ],
+      "relations": []
+    },
+    {
+      "id": "C7-POS-01",
+      "constraint_id": "C7",
+      "kind": "positive",
+      "nodes": [
+        {"id": "d1", "type": "Driver", "props": {"driver_id": "D-1"}},
+        {
+          "id": "t1",
+          "type": "Trip",
+          "props": {
+            "trip_id": "T-1",
+            "status": "ONBOARD",
+            "driver_id": "D-1",
+            "vehicle_id": "V-1"
+          }
+        },
+        {
+          "id": "t2",
+          "type": "Trip",
+          "props": {
+            "trip_id": "T-2",
+            "status": "ENDED",
+            "driver_id": "D-1",
+            "vehicle_id": "V-1"
+          }
+        }
+      ],
+      "relations": [
+        {"subject": "t1", "predicate": "executed_by", "object": "d1"},
+        {"subject": "t2", "predicate": "executed_by", "object": "d1"}
+      ]
+    },
+    {
+      "id": "C7-NEG-01",
+      "constraint_id": "C7",
+      "kind": "negative",
+      "nodes": [
+        {"id": "d1", "type": "Driver", "props": {"driver_id": "D-1"}},
+        {
+          "id": "t1",
+          "type": "Trip",
+          "props": {
+            "trip_id": "T-1",
+            "status": "CREATED",
+            "driver_id": "D-1",
+            "vehicle_id": "V-1"
+          }
+        },
+        {
+          "id": "t2",
+          "type": "Trip",
+          "props": {
+            "trip_id": "T-2",
+            "status": "CREATED",
+            "driver_id": "D-1",
+            "vehicle_id": "V-1"
+          }
+        }
+      ],
+      "relations": [
+        {"subject": "t1", "predicate": "executed_by", "object": "d1"},
+        {"subject": "t2", "predicate": "executed_by", "object": "d1"}
+      ]
+    },
+    {
+      "id": "C8-POS-01",
+      "constraint_id": "C8",
+      "kind": "positive",
+      "nodes": [
+        {"id": "p1", "type": "Passenger", "props": {}},
+        {"id": "o1", "type": "Order", "props": {"order_id": "O-1"}}
+      ],
+      "relations": [
+        {"subject": "p1", "predicate": "initiates", "object": "o1"}
+      ]
+    },
+    {
+      "id": "C8-NEG-01",
+      "constraint_id": "C8",
+      "kind": "negative",
+      "nodes": [
+        {"id": "p1", "type": "Passenger", "props": {}},
+        {"id": "o1", "type": "Order", "props": {"order_id": "O-1"}}
+      ],
+      "relations": [
+        {"subject": "p1", "predicate": "initiates", "object": "o1"},
+        {"subject": "p1", "predicate": "has_trip", "object": "o1"}
+      ]
+    }
+  ]
+}

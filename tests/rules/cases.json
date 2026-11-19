@@ -1,0 +1,636 @@
+{
+  "schema_version": "1.0",
+  "description": "freight 规则回归用例。每条规则至少 2 个正例与 2 个反例；正例表示规则命中并给出预期结果，反例表示条件不命中或判定为不通过。",
+  "cases": [
+    {
+      "id": "R-WAIT-01-POS-01",
+      "rule_id": "R-WAIT-01",
+      "kind": "positive",
+      "ctx": {
+        "fee_type": "waiting",
+        "waiting_minutes": 47,
+        "vehicle_type": "van",
+        "tariff": { "free_minutes": 20, "block_minutes": 5, "per_block": 1.8 }
+      },
+      "expect": { "matched": true, "value": 10.8 }
+    },
+    {
+      "id": "R-WAIT-01-POS-02",
+      "rule_id": "R-WAIT-01",
+      "kind": "positive",
+      "ctx": {
+        "fee_type": "waiting",
+        "waiting_minutes": 40,
+        "vehicle_type": "truck",
+        "tariff": { "free_minutes": 30, "block_minutes": 10, "per_block": 4 }
+      },
+      "expect": { "matched": true, "value": 4.0 }
+    },
+    {
+      "id": "R-WAIT-01-NEG-01",
+      "rule_id": "R-WAIT-01",
+      "kind": "negative",
+      "ctx": {
+        "fee_type": "base",
+        "waiting_minutes": 47,
+        "vehicle_type": "van",
+        "tariff": { "free_minutes": 20, "block_minutes": 5, "per_block": 1.8 }
+      },
+      "expect": { "matched": false, "value": null }
+    },
+    {
+      "id": "R-WAIT-01-NEG-02",
+      "rule_id": "R-WAIT-01",
+      "kind": "negative",
+      "ctx": {
+        "fee_type": "waiting",
+        "waiting_minutes": 15,
+        "vehicle_type": "van",
+        "tariff": { "free_minutes": 20, "block_minutes": 5, "per_block": 1.8 }
+      },
+      "expect": { "matched": true, "value": 0.0 }
+    },
+
+    {
+      "id": "R-HIGHWAY-01-POS-01",
+      "rule_id": "R-HIGHWAY-01",
+      "kind": "positive",
+      "ctx": {
+        "fee_type": "highway",
+        "evidence": [{ "type": "etc_toll_record", "source_system": "ETC" }]
+      },
+      "expect": { "matched": true, "value": true }
+    },
+    {
+      "id": "R-HIGHWAY-01-POS-02",
+      "rule_id": "R-HIGHWAY-01",
+      "kind": "positive",
+      "ctx": {
+        "fee_type": "highway",
+        "evidence": ["etc_toll_record"]
+      },
+      "expect": { "matched": true, "value": true }
+    },
+    {
+      "id": "R-HIGHWAY-01-NEG-01",
+      "rule_id": "R-HIGHWAY-01",
+      "kind": "negative",
+      "ctx": { "fee_type": "highway", "evidence": [] },
+      "expect": { "matched": true, "value": false }
+    },
+    {
+      "id": "R-HIGHWAY-01-NEG-02",
+      "rule_id": "R-HIGHWAY-01",
+      "kind": "negative",
+      "ctx": { "fee_type": "base", "evidence": [] },
+      "expect": { "matched": false, "value": null }
+    },
+
+    {
+      "id": "R-WAYBILL-01-POS-01",
+      "rule_id": "R-WAYBILL-01",
+      "kind": "positive",
+      "ctx": { "status": "LOADED", "waybill_id": "WB001" },
+      "expect": {
+        "matched": true,
+        "value": true,
+        "forbidden_actions": ["reassign_waybill"]
+      }
+    },
+    {
+      "id": "R-WAYBILL-01-POS-02",
+      "rule_id": "R-WAYBILL-01",
+      "kind": "positive",
+      "ctx": { "status": "DELIVERED", "waybill_id": "WB002" },
+      "expect": {
+        "matched": true,
+        "value": true,
+        "forbidden_actions": ["reassign_waybill"]
+      }
+    },
+    {
+      "id": "R-WAYBILL-01-NEG-01",
+      "rule_id": "R-WAYBILL-01",
+      "kind": "negative",
+      "ctx": { "status": "CREATED", "waybill_id": "WB003" },
+      "expect": { "matched": false, "value": false }
+    },
+    {
+      "id": "R-WAYBILL-01-NEG-02",
+      "rule_id": "R-WAYBILL-01",
+      "kind": "negative",
+      "ctx": { "status": "ASSIGNED", "waybill_id": "WB004" },
+      "expect": { "matched": false, "value": false }
+    },
+
+    {
+      "id": "R-SETTLE-01-POS-01",
+      "rule_id": "R-SETTLE-01",
+      "kind": "positive",
+      "ctx": { "status": "POSTED", "settlement_id": "S001", "amount": 100 },
+      "expect": {
+        "matched": true,
+        "value": true,
+        "allowed_actions": ["reverse_entry"],
+        "forbidden_actions": ["hold_settlement"]
+      }
+    },
+    {
+      "id": "R-SETTLE-01-POS-02",
+      "rule_id": "R-SETTLE-01",
+      "kind": "positive",
+      "ctx": { "status": "POSTED", "settlement_id": "S002", "amount": 250 },
+      "expect": {
+        "matched": true,
+        "value": true,
+        "allowed_actions": ["reverse_entry"],
+        "forbidden_actions": ["hold_settlement"]
+      }
+    },
+    {
+      "id": "R-SETTLE-01-NEG-01",
+      "rule_id": "R-SETTLE-01",
+      "kind": "negative",
+      "ctx": { "status": "DRAFT", "settlement_id": "S003" },
+      "expect": { "matched": false, "value": false }
+    },
+    {
+      "id": "R-SETTLE-01-NEG-02",
+      "rule_id": "R-SETTLE-01",
+      "kind": "negative",
+      "ctx": { "status": "VOID", "settlement_id": "S004" },
+      "expect": { "matched": false, "value": false }
+    },
+
+    {
+      "id": "R-INVOICE-01-POS-01",
+      "rule_id": "R-INVOICE-01",
+      "kind": "positive",
+      "ctx": {
+        "status": "ISSUED",
+        "invoice": { "amount": 100 },
+        "settlement": { "amount": 100 }
+      },
+      "expect": { "matched": true, "value": true }
+    },
+    {
+      "id": "R-INVOICE-01-POS-02",
+      "rule_id": "R-INVOICE-01",
+      "kind": "positive",
+      "ctx": {
+        "status": "DRAFT",
+        "invoice": { "amount": 0 },
+        "settlement": { "amount": 0 }
+      },
+      "expect": { "matched": true, "value": true }
+    },
+    {
+      "id": "R-INVOICE-01-NEG-01",
+      "rule_id": "R-INVOICE-01",
+      "kind": "negative",
+      "ctx": {
+        "status": "ISSUED",
+        "invoice": { "amount": 100 },
+        "settlement": { "amount": 90 }
+      },
+      "expect": { "matched": true, "value": false }
+    },
+    {
+      "id": "R-INVOICE-01-NEG-02",
+      "rule_id": "R-INVOICE-01",
+      "kind": "negative",
+      "ctx": {
+        "status": "PAID",
+        "invoice": { "amount": 100 },
+        "settlement": { "amount": 100 }
+      },
+      "expect": { "matched": false, "value": null }
+    },
+
+    {
+      "id": "R-BASE-01-POS-01",
+      "rule_id": "R-BASE-01",
+      "kind": "positive",
+      "ctx": {
+        "fee_type": "base",
+        "vehicle_type": "4.2米厢货",
+        "params": { "base_fare_by_vehicle_type": { "4.2米厢货": 380, "小货车": 280 } }
+      },
+      "expect": { "matched": true, "value": 380 }
+    },
+    {
+      "id": "R-BASE-01-POS-02",
+      "rule_id": "R-BASE-01",
+      "kind": "positive",
+      "ctx": {
+        "fee_type": "base",
+        "vehicle_type": "小货车",
+        "params": { "base_fare_by_vehicle_type": { "4.2米厢货": 380, "小货车": 280 } }
+      },
+      "expect": { "matched": true, "value": 280 }
+    },
+    {
+      "id": "R-BASE-01-NEG-01",
+      "rule_id": "R-BASE-01",
+      "kind": "negative",
+      "ctx": { "fee_type": "mileage" },
+      "expect": { "matched": false, "value": null }
+    },
+    {
+      "id": "R-BASE-01-NEG-02",
+      "rule_id": "R-BASE-01",
+      "kind": "negative",
+      "ctx": { "fee_type": "loading" },
+      "expect": { "matched": false, "value": null }
+    },
+
+    {
+      "id": "R-MILEAGE-01-POS-01",
+      "rule_id": "R-MILEAGE-01",
+      "kind": "positive",
+      "ctx": {
+        "fee_type": "mileage",
+        "actual_distance_km": 40,
+        "params": { "per_km": 1.5 }
+      },
+      "expect": { "matched": true, "value": 60 }
+    },
+    {
+      "id": "R-MILEAGE-01-POS-02",
+      "rule_id": "R-MILEAGE-01",
+      "kind": "positive",
+      "ctx": {
+        "fee_type": "mileage",
+        "actual_distance_km": 10,
+        "params": { "per_km": 2 }
+      },
+      "expect": { "matched": true, "value": 20 }
+    },
+    {
+      "id": "R-MILEAGE-01-NEG-01",
+      "rule_id": "R-MILEAGE-01",
+      "kind": "negative",
+      "ctx": { "fee_type": "base" },
+      "expect": { "matched": false, "value": null }
+    },
+    {
+      "id": "R-MILEAGE-01-NEG-02",
+      "rule_id": "R-MILEAGE-01",
+      "kind": "negative",
+      "ctx": { "fee_type": "waiting" },
+      "expect": { "matched": false, "value": null }
+    },
+
+    {
+      "id": "R-LOADING-01-POS-01",
+      "rule_id": "R-LOADING-01",
+      "kind": "positive",
+      "ctx": { "fee_type": "loading", "params": { "per_order": 20 } },
+      "expect": { "matched": true, "value": 20 }
+    },
+    {
+      "id": "R-LOADING-01-POS-02",
+      "rule_id": "R-LOADING-01",
+      "kind": "positive",
+      "ctx": { "fee_type": "loading", "params": { "per_order": 35 } },
+      "expect": { "matched": true, "value": 35 }
+    },
+    {
+      "id": "R-LOADING-01-NEG-01",
+      "rule_id": "R-LOADING-01",
+      "kind": "negative",
+      "ctx": { "fee_type": "base" },
+      "expect": { "matched": false, "value": null }
+    },
+    {
+      "id": "R-LOADING-01-NEG-02",
+      "rule_id": "R-LOADING-01",
+      "kind": "negative",
+      "ctx": { "fee_type": "other" },
+      "expect": { "matched": false, "value": null }
+    },
+
+    {
+      "id": "R-INSURANCE-01-POS-01",
+      "rule_id": "R-INSURANCE-01",
+      "kind": "positive",
+      "ctx": { "fee_type": "insurance", "params": { "per_order": 10 } },
+      "expect": { "matched": true, "value": 10 }
+    },
+    {
+      "id": "R-INSURANCE-01-POS-02",
+      "rule_id": "R-INSURANCE-01",
+      "kind": "positive",
+      "ctx": { "fee_type": "insurance", "params": { "per_order": 25 } },
+      "expect": { "matched": true, "value": 25 }
+    },
+    {
+      "id": "R-INSURANCE-01-NEG-01",
+      "rule_id": "R-INSURANCE-01",
+      "kind": "negative",
+      "ctx": { "fee_type": "loading" },
+      "expect": { "matched": false, "value": null }
+    },
+    {
+      "id": "R-INSURANCE-01-NEG-02",
+      "rule_id": "R-INSURANCE-01",
+      "kind": "negative",
+      "ctx": { "fee_type": "highway" },
+      "expect": { "matched": false, "value": null }
+    },
+
+    {
+      "id": "R-OTHER-01-POS-01",
+      "rule_id": "R-OTHER-01",
+      "kind": "positive",
+      "ctx": { "fee_type": "other", "params": { "per_order": 10 } },
+      "expect": { "matched": true, "value": 10 }
+    },
+    {
+      "id": "R-OTHER-01-POS-02",
+      "rule_id": "R-OTHER-01",
+      "kind": "positive",
+      "ctx": { "fee_type": "other", "params": { "per_order": 12.5 } },
+      "expect": { "matched": true, "value": 12.5 }
+    },
+    {
+      "id": "R-OTHER-01-NEG-01",
+      "rule_id": "R-OTHER-01",
+      "kind": "negative",
+      "ctx": { "fee_type": "base" },
+      "expect": { "matched": false, "value": null }
+    },
+    {
+      "id": "R-OTHER-01-NEG-02",
+      "rule_id": "R-OTHER-01",
+      "kind": "negative",
+      "ctx": { "fee_type": "insurance" },
+      "expect": { "matched": false, "value": null }
+    },
+
+    {
+      "id": "R-QUOTE-01-POS-01",
+      "rule_id": "R-QUOTE-01",
+      "kind": "positive",
+      "ctx": {
+        "status": "ACTIVE",
+        "quote": { "total_amount": 100 },
+        "quote_item_amounts": [60, 40]
+      },
+      "expect": { "matched": true, "value": true }
+    },
+    {
+      "id": "R-QUOTE-01-POS-02",
+      "rule_id": "R-QUOTE-01",
+      "kind": "positive",
+      "ctx": {
+        "status": "SUPERSEDED",
+        "quote": { "total_amount": 50 },
+        "quote_item_amounts": [20, 30]
+      },
+      "expect": { "matched": true, "value": true }
+    },
+    {
+      "id": "R-QUOTE-01-NEG-01",
+      "rule_id": "R-QUOTE-01",
+      "kind": "negative",
+      "ctx": {
+        "status": "ACTIVE",
+        "quote": { "total_amount": 100 },
+        "quote_item_amounts": [60, 30]
+      },
+      "expect": { "matched": true, "value": false }
+    },
+    {
+      "id": "R-QUOTE-01-NEG-02",
+      "rule_id": "R-QUOTE-01",
+      "kind": "negative",
+      "ctx": { "status": "DRAFT" },
+      "expect": { "matched": false, "value": null }
+    },
+
+    {
+      "id": "R-PRICE-01-POS-01",
+      "rule_id": "R-PRICE-01",
+      "kind": "positive",
+      "ctx": {
+        "status": "APPROVED",
+        "pricing_rule": {
+          "effective_from": "2025-01-01",
+          "effective_to": "2025-12-31"
+        },
+        "fee": { "occurred_at": "2025-06-01" }
+      },
+      "expect": { "matched": true, "value": true }
+    },
+    {
+      "id": "R-PRICE-01-POS-02",
+      "rule_id": "R-PRICE-01",
+      "kind": "positive",
+      "ctx": {
+        "status": "APPROVED",
+        "pricing_rule": {
+          "effective_from": "2025-06-01",
+          "effective_to": "2025-06-01"
+        },
+        "fee": { "occurred_at": "2025-06-01" }
+      },
+      "expect": { "matched": true, "value": true }
+    },
+    {
+      "id": "R-PRICE-01-NEG-01",
+      "rule_id": "R-PRICE-01",
+      "kind": "negative",
+      "ctx": {
+        "status": "APPROVED",
+        "pricing_rule": {
+          "effective_from": "2025-01-01",
+          "effective_to": "2025-12-31"
+        },
+        "fee": { "occurred_at": "2026-01-01" }
+      },
+      "expect": { "matched": true, "value": false }
+    },
+    {
+      "id": "R-PRICE-01-NEG-02",
+      "rule_id": "R-PRICE-01",
+      "kind": "negative",
+      "ctx": {
+        "status": "WAIVED",
+        "pricing_rule": {
+          "effective_from": "2025-01-01",
+          "effective_to": "2025-12-31"
+        },
+        "fee": { "occurred_at": "2025-06-01" }
+      },
+      "expect": { "matched": false, "value": null }
+    },
+
+    {
+      "id": "R-TRACK-01-POS-01",
+      "rule_id": "R-TRACK-01",
+      "kind": "positive",
+      "ctx": {
+        "fee_type": "mileage",
+        "track": { "distance_km": 40.0 },
+        "fee": { "calc_basis": { "distance_km": 40.05 } }
+      },
+      "expect": { "matched": true, "value": true }
+    },
+    {
+      "id": "R-TRACK-01-POS-02",
+      "rule_id": "R-TRACK-01",
+      "kind": "positive",
+      "ctx": {
+        "fee_type": "mileage",
+        "track": { "distance_km": 40.0 },
+        "fee": { "calc_basis": { "distance_km": 39.95 } }
+      },
+      "expect": { "matched": true, "value": true }
+    },
+    {
+      "id": "R-TRACK-01-NEG-01",
+      "rule_id": "R-TRACK-01",
+      "kind": "negative",
+      "ctx": {
+        "fee_type": "mileage",
+        "track": { "distance_km": 40.0 },
+        "fee": { "calc_basis": { "distance_km": 40.2 } }
+      },
+      "expect": { "matched": true, "value": false }
+    },
+    {
+      "id": "R-TRACK-01-NEG-02",
+      "rule_id": "R-TRACK-01",
+      "kind": "negative",
+      "ctx": { "fee_type": "base" },
+      "expect": { "matched": false, "value": null }
+    },
+
+    {
+      "id": "R-MULTISTOP-01-POS-01",
+      "rule_id": "R-MULTISTOP-01",
+      "kind": "positive",
+      "ctx": {
+        "status": "LOADED",
+        "waiting_minutes": 30,
+        "stop_waiting_minutes": [10, 20]
+      },
+      "expect": { "matched": true, "value": 0 }
+    },
+    {
+      "id": "R-MULTISTOP-01-POS-02",
+      "rule_id": "R-MULTISTOP-01",
+      "kind": "positive",
+      "ctx": {
+        "status": "DELIVERED",
+        "waiting_minutes": 45,
+        "stop_waiting_minutes": [15, 30]
+      },
+      "expect": { "matched": true, "value": 0 }
+    },
+    {
+      "id": "R-MULTISTOP-01-NEG-01",
+      "rule_id": "R-MULTISTOP-01",
+      "kind": "negative",
+      "ctx": {
+        "status": "LOADED",
+        "waiting_minutes": 40,
+        "stop_waiting_minutes": [10, 20]
+      },
+      "expect": { "matched": true, "value": 10 }
+    },
+    {
+      "id": "R-MULTISTOP-01-NEG-02",
+      "rule_id": "R-MULTISTOP-01",
+      "kind": "negative",
+      "ctx": { "status": "CREATED" },
+      "expect": { "matched": false, "value": null }
+    },
+
+    {
+      "id": "R-STOP-01-POS-01",
+      "rule_id": "R-STOP-01",
+      "kind": "positive",
+      "ctx": {
+        "status": "ARRIVED",
+        "arrived_at": "2025-01-01T10:00:00",
+        "departed_at": "2025-01-01T11:00:00"
+      },
+      "expect": { "matched": true, "value": true }
+    },
+    {
+      "id": "R-STOP-01-POS-02",
+      "rule_id": "R-STOP-01",
+      "kind": "positive",
+      "ctx": {
+        "status": "COMPLETED",
+        "arrived_at": "2025-01-01T12:00:00",
+        "departed_at": "2025-01-01T12:00:00"
+      },
+      "expect": { "matched": true, "value": true }
+    },
+    {
+      "id": "R-STOP-01-NEG-01",
+      "rule_id": "R-STOP-01",
+      "kind": "negative",
+      "ctx": {
+        "status": "ARRIVED",
+        "arrived_at": "2025-01-01T11:00:00",
+        "departed_at": "2025-01-01T10:00:00"
+      },
+      "expect": { "matched": true, "value": false }
+    },
+    {
+      "id": "R-STOP-01-NEG-02",
+      "rule_id": "R-STOP-01",
+      "kind": "negative",
+      "ctx": { "status": "CREATED" },
+      "expect": { "matched": false, "value": null }
+    },
+
+    {
+      "id": "R-SUBCONTRACT-01-POS-01",
+      "rule_id": "R-SUBCONTRACT-01",
+      "kind": "positive",
+      "ctx": {
+        "status": "CONFIRMED",
+        "allocated_amount": 700,
+        "waybill_revenue": 1000,
+        "min_margin_rate": 0.3
+      },
+      "expect": { "matched": true, "value": 0 }
+    },
+    {
+      "id": "R-SUBCONTRACT-01-POS-02",
+      "rule_id": "R-SUBCONTRACT-01",
+      "kind": "positive",
+      "ctx": {
+        "status": "COMPLETED",
+        "allocated_amount": 500,
+        "waybill_revenue": 1000,
+        "min_margin_rate": 0.3
+      },
+      "expect": { "matched": true, "value": 0 }
+    },
+    {
+      "id": "R-SUBCONTRACT-01-NEG-01",
+      "rule_id": "R-SUBCONTRACT-01",
+      "kind": "negative",
+      "ctx": {
+        "status": "CONFIRMED",
+        "allocated_amount": 800,
+        "waybill_revenue": 1000,
+        "min_margin_rate": 0.3
+      },
+      "expect": { "matched": true, "value": 100 }
+    },
+    {
+      "id": "R-SUBCONTRACT-01-NEG-02",
+      "rule_id": "R-SUBCONTRACT-01",
+      "kind": "negative",
+      "ctx": { "status": "DRAFT" },
+      "expect": { "matched": false, "value": null }
+    }
+  ]
+}

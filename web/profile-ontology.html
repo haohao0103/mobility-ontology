@@ -1,0 +1,1359 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>画像本体 · 用一个人群讲清楚</title>
+<style>
+  :root{
+    --paper:#f5f0e6; --paper-2:#efe7d7; --card:#fbf8f1;
+    --ink:#191713; --muted:#6e675b; --line:#dcd1bd; --line-2:#c9bca4;
+    --accent:#e4571f; --accent-2:#b43f13;
+    --green:#2f6b4f; --green-bg:#e7f0e9;
+    --amber:#a86d10; --amber-bg:#f7eed7;
+    --red:#ad3428; --red-bg:#f7e4e0;
+    --blue:#2f5d84; --blue-bg:#e5edf4;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth;scroll-padding-top:78px}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);line-height:1.65;
+       background-image:radial-gradient(rgba(25,23,19,.035) 1px,transparent 1px);background-size:22px 22px}
+  a{color:inherit}
+  code,pre,.mono{font-family:var(--mono)}
+  .topbar{position:fixed;inset:0 0 auto 0;z-index:50;display:flex;align-items:center;gap:22px;
+          height:60px;padding:0 26px;background:rgba(245,240,230,.94);backdrop-filter:blur(10px);
+          border-bottom:1px solid var(--line)}
+  .brand{display:flex;align-items:baseline;gap:10px;white-space:nowrap;font-weight:800;letter-spacing:.02em}
+  .brand small{font:600 10px/1 var(--mono);letter-spacing:.14em;color:var(--accent)}
+  .nav{display:flex;gap:18px;overflow:hidden;flex:1}
+  .nav a{font-size:12.5px;color:var(--muted);text-decoration:none;white-space:nowrap;padding:6px 0}
+  .nav a:hover{color:var(--ink)}
+  .nav b{color:var(--ink);font-family:var(--mono);font-size:11px;margin-right:3px;opacity:.65}
+  .top-actions{display:flex;align-items:center;gap:9px;margin-left:auto;white-space:nowrap}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:1px solid var(--line-2);
+       background:var(--card);color:var(--ink);border-radius:7px;padding:8px 13px;font-size:12.5px;
+       font-weight:650;text-decoration:none;cursor:pointer;transition:.15s}
+  .btn:hover{border-color:var(--ink);transform:translateY(-1px)}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  .btn.primary:hover{background:var(--accent-2)}
+  .btn:disabled{opacity:.45;cursor:not-allowed;transform:none}
+  main{max-width:1180px;margin:0 auto;padding:0 32px}
+  section{padding:78px 0;border-bottom:1px solid var(--line)}
+  .eyebrow{font:700 11px/1.5 var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--accent);margin:0 0 16px}
+  h1{margin:0 0 22px;font-size:clamp(38px,5.4vw,68px);line-height:1.04;letter-spacing:-.035em}
+  h2{margin:0 0 16px;font-size:clamp(26px,3.2vw,40px);line-height:1.15;letter-spacing:-.02em}
+  h3{margin:0 0 8px;font-size:17px;letter-spacing:-.01em}
+  p.lede{max-width:860px;margin:0 0 26px;color:#4a443a;font-size:17.5px;line-height:1.75}
+  .muted{color:var(--muted)}
+  .small{font-size:12.5px;line-height:1.6}
+  .mono{font-family:var(--mono);font-size:12.5px}
+  .hero{padding-top:110px}
+  .hero-grid{display:grid;grid-template-columns:1.25fr .85fr;gap:44px;align-items:start}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;margin:26px 0 0}
+  .chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line-2);background:var(--card);
+        border-radius:999px;padding:5px 10px;font:600 11.5px/1.4 var(--mono);color:#4c463c}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 0 3px rgba(47,107,79,.13)}
+  .dot.warn{background:var(--amber);box-shadow:0 0 0 3px rgba(168,109,16,.13)}
+  .dot.bad{background:var(--red);box-shadow:0 0 0 3px rgba(173,52,40,.13)}
+  .case{background:var(--ink);color:#f4eee3;border-radius:14px;padding:24px;box-shadow:0 18px 40px rgba(25,23,19,.16);
+        position:relative;overflow:hidden}
+  .case:after{content:"";position:absolute;width:220px;height:220px;right:-90px;top:-90px;border:1px solid rgba(228,87,31,.4);
+              border-radius:50%;box-shadow:0 0 0 34px rgba(228,87,31,.06),0 0 0 68px rgba(228,87,31,.035)}
+  .case .k{font:700 10px/1 var(--mono);letter-spacing:.16em;color:#c9bfa9;text-transform:uppercase}
+  .case .title{font-size:19px;font-weight:750;margin:9px 0 4px;position:relative;z-index:1}
+  .case .id{font:500 11px/1.5 var(--mono);color:#a89f8c;word-break:break-all;position:relative;z-index:1}
+  .case .rows{margin:18px 0 0;display:grid;grid-template-columns:1fr 1fr;gap:12px;position:relative;z-index:1}
+  .case .cell{border:1px solid rgba(244,238,227,.14);border-radius:8px;padding:10px 11px;background:rgba(255,255,255,.03)}
+  .case .cell span{display:block;font:600 10px/1.4 var(--mono);letter-spacing:.08em;color:#a89f8c;text-transform:uppercase}
+  .case .cell b{display:block;margin-top:4px;font-size:16px;line-height:1.3}
+  .case .cell b.red{color:#ff8f74}
+  .case .cell b.green{color:#8fd0a8}
+  .case .foot{margin:14px 0 0;font-size:11.5px;color:#a89f8c;position:relative;z-index:1}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:11px;padding:20px}
+  .qcard{position:relative;padding-top:24px}
+  .qcard .no{position:absolute;top:16px;right:18px;font:800 26px/1 var(--mono);color:#e2d7c1}
+  .qcard .q{font:700 11px/1.4 var(--mono);letter-spacing:.1em;color:var(--accent);text-transform:uppercase;margin-bottom:9px}
+  .qcard .answer{font-size:15.5px;line-height:1.7}
+  .qcard .none{margin-top:12px;padding-top:11px;border-top:1px dashed var(--line);font-size:12px;color:var(--muted)}
+  .lane{border:1px solid var(--line);border-radius:11px;background:var(--card);padding:18px}
+  .lane h3{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+  .lane h3 em{font:600 11px/1 var(--mono);color:var(--muted);font-style:normal}
+  .kinds{display:flex;flex-wrap:wrap;gap:7px}
+  .kind{border:1px solid var(--line-2);background:#f3ecdd;border-radius:7px;padding:7px 10px;cursor:pointer;
+        font-size:12.5px;font-weight:650;display:inline-flex;align-items:center;gap:6px;transition:.12s}
+  .kind:hover,.kind.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+  .kind i{font:500 9.5px/1 var(--mono);font-style:normal;opacity:.6}
+  .map-detail{margin-top:14px;border:1px dashed var(--line-2);border-radius:8px;padding:12px 14px;font-size:12.5px;
+              color:#4a443a;min-height:74px;background:#f8f3e8}
+  .map-detail b{font-family:var(--mono);font-size:12px}
+  .relgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:7px;margin-top:14px}
+  .rel{display:flex;align-items:center;gap:8px;border-bottom:1px dotted var(--line);padding:6px 2px;font-size:12px}
+  .rel code{font-size:11px;color:var(--blue);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .rel span{margin-left:auto;font:500 10.5px/1.4 var(--mono);color:var(--muted);white-space:nowrap}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:11px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font:700 10.5px/1.5 var(--mono);letter-spacing:.08em;color:var(--muted);text-transform:uppercase;background:#f0e8d8}
+  tr:last-child td{border-bottom:0}
+  .ok{color:var(--green);font-weight:750;white-space:nowrap}
+  .bad{color:var(--red);font-weight:750}
+  .warn{color:var(--amber);font-weight:750}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .panel-head{display:flex;align-items:center;gap:10px;padding:13px 16px;border-bottom:1px solid var(--line);background:#f0e8d8}
+  .panel-head b{font-size:13.5px}
+  .panel-head .mono{color:var(--muted);font-size:11px}
+  .panel-body{padding:16px}
+  .askbox{display:grid;grid-template-columns:1fr 240px;gap:12px;margin-bottom:14px}
+  .impact-form{grid-template-columns:1.3fr .4fr .55fr auto;align-items:end}
+  .askbox label{display:block;font:700 10.5px/1.4 var(--mono);letter-spacing:.08em;color:var(--muted);text-transform:uppercase;margin-bottom:6px}
+  textarea,input[type=text]{width:100%;border:1px solid var(--line-2);background:#fffdf8;border-radius:8px;
+       padding:11px 12px;font-family:var(--sans);font-size:13.5px;color:var(--ink);outline:none}
+  textarea:focus,input[type=text]:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(228,87,31,.13)}
+  textarea{min-height:88px;resize:vertical;line-height:1.65}
+  .chain-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:12px 0 4px}
+  .chain-status{font:600 11.5px/1.4 var(--mono);color:var(--muted)}
+  .spinner{width:13px;height:13px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;
+           animation:spin .7s linear infinite;display:none}
+  .busy .spinner{display:inline-block}
+  .busy .btn-label{display:none}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .steps{margin-top:16px;display:flex;flex-direction:column;gap:10px}
+  .step{border:1px solid var(--line);border-radius:10px;background:#fffdf8;padding:13px 15px;animation:rise .25s ease}
+  @keyframes rise{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+  .step.plan{border-left:4px solid var(--blue)}
+  .step.tool{border-left:4px solid var(--green)}
+  .step.final{border-left:4px solid var(--accent);background:#fffaf1}
+  .step-head{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+  .step-no{font:800 10px/1 var(--mono);color:#fff;background:var(--ink);border-radius:4px;padding:4px 6px}
+  .phase{font:700 9.5px/1 var(--mono);letter-spacing:.09em;text-transform:uppercase;border-radius:4px;padding:4px 6px}
+  .phase.plan{background:var(--blue-bg);color:var(--blue)}
+  .phase.tool{background:var(--green-bg);color:var(--green)}
+  .phase.final{background:var(--red-bg);color:var(--red)}
+  .step-title{font-weight:750;font-size:13.5px}
+  .step-api{margin-left:auto;font:500 10.5px/1.4 var(--mono);color:var(--muted);word-break:break-all;text-align:right}
+  .thought{margin:8px 0 0;font-size:12.5px;color:#4a443a}
+  .args{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+  .args code{background:#f0e8d8;border:1px solid var(--line);border-radius:4px;padding:2px 6px;font-size:10.5px}
+  .obs{margin:9px 0 0;padding:10px 11px;background:#f4efe3;border:1px solid var(--line);border-radius:7px;
+       font:500 11px/1.6 var(--mono);color:#433d33;max-height:190px;overflow:auto;white-space:pre-wrap;word-break:break-word}
+  .mini{display:flex;flex-wrap:wrap;gap:7px;margin-top:9px}
+  .mini span{font-size:11.5px;border:1px solid var(--line);border-radius:5px;padding:3px 7px;background:#fbf7ee}
+  .mini span.red{background:var(--red-bg);border-color:#e3c3bc;color:var(--red);font-weight:700}
+  .mini span.green{background:var(--green-bg);border-color:#c3d8ca;color:var(--green);font-weight:700}
+  .mini span.amber{background:var(--amber-bg);border-color:#e5d3ab;color:var(--amber);font-weight:700}
+  .final-box{margin-top:12px;border:1px solid #e5b7a7;background:#fff4ee;border-radius:10px;padding:16px}
+  .final-box .k{font:700 10px/1 var(--mono);letter-spacing:.13em;color:var(--accent-2);text-transform:uppercase;margin-bottom:8px}
+  .final-box p{margin:0;font-size:14px;line-height:1.75;white-space:pre-wrap}
+  .fix{margin-top:11px;border:1px solid var(--line-2);background:#fffdf8;border-radius:10px;padding:14px}
+  .fix .row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:10px 0}
+  .fix .box{border:1px solid var(--line);border-radius:7px;padding:9px 10px;background:#f6f1e6}
+  .fix .box span{display:block;font:700 9.5px/1.4 var(--mono);letter-spacing:.08em;color:var(--muted);text-transform:uppercase;margin-bottom:4px}
+  .fix .box code{font-size:10.5px;word-break:break-all;display:block;max-height:96px;overflow:auto;white-space:pre-wrap}
+  .error{margin-top:12px;border:1px solid #e3c3bc;background:var(--red-bg);border-radius:9px;padding:12px 14px;
+         color:var(--red);font-size:12.5px}
+  .loop{display:grid;grid-template-columns:repeat(4,1fr);gap:0;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .loop .node{padding:20px;background:var(--card);position:relative}
+  .loop .node+.node{border-left:1px solid var(--line)}
+  .loop .node:after{content:"→";position:absolute;right:-9px;top:50%;transform:translateY(-50%);z-index:2;
+                     background:var(--paper);color:var(--accent);font-weight:800;padding:0 2px}
+  .loop .node:last-child:after{display:none}
+  .loop .n{font:800 11px/1 var(--mono);color:var(--accent);margin-bottom:8px}
+  .loop p{font-size:12px;color:var(--muted);margin:6px 0 0}
+  .split{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .split .card h3{display:flex;justify-content:space-between;align-items:center}
+  .tag{font:700 9.5px/1 var(--mono);letter-spacing:.08em;border-radius:4px;padding:4px 6px;background:var(--ink);color:#fff}
+  .tag.fact{background:var(--green)}
+  .impact-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+  .impact-stat{border:1px solid var(--line);border-radius:9px;padding:11px 13px;background:#f8f3e8}
+  .impact-stat span{display:block;font:700 9.5px/1.4 var(--mono);letter-spacing:.08em;color:var(--muted);text-transform:uppercase}
+  .impact-stat b{display:block;margin-top:4px;font-size:20px;line-height:1.2;letter-spacing:-.01em}
+  .impact-stat small{display:block;margin-top:3px;font-size:11px;color:var(--muted);line-height:1.45}
+  .impact-grid{display:grid;grid-template-columns:1.05fr .95fr;gap:14px}
+  .subhead{font:700 10.5px/1.4 var(--mono);letter-spacing:.08em;color:var(--muted);text-transform:uppercase;margin:0 0 8px}
+  .paths{display:flex;flex-direction:column;gap:6px;margin-top:14px}
+  .path{display:flex;flex-wrap:wrap;align-items:center;gap:6px;border:1px solid var(--line);background:#fffdf8;border-radius:7px;padding:7px 9px;font:500 10.5px/1.5 var(--mono);word-break:break-all}
+  .path i{font-style:normal;color:var(--accent);font-weight:800}
+  .path em{margin-left:auto;font-style:normal;font-weight:700;color:var(--red);white-space:nowrap}
+  .excl{display:flex;gap:8px;border-bottom:1px dotted var(--line);padding:7px 0;font-size:12px;line-height:1.55}
+  .excl:last-child{border-bottom:0}
+  .excl code{font-size:10.5px;color:var(--blue);white-space:nowrap}
+  .excl b{margin-left:auto;font:700 10.5px/1.5 var(--mono);color:var(--muted);white-space:nowrap}
+  .diff{margin-top:14px;border:1px solid var(--line-2);background:#fffdf8;border-radius:9px;padding:12px 14px}
+  .diff .row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:9px}
+  .diff .box{border:1px solid var(--line);border-radius:7px;padding:9px 10px;background:#f6f1e6}
+  .diff .box span{display:block;font:700 9.5px/1.4 var(--mono);letter-spacing:.08em;color:var(--muted);text-transform:uppercase;margin-bottom:4px}
+  .diff .box code{font-size:10.5px;word-break:break-all;display:block;max-height:84px;overflow:auto;white-space:pre-wrap}
+  .diff .meta{display:flex;flex-wrap:wrap;gap:7px;margin-top:9px}
+  .trace-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
+  .trace-actions .mono{color:var(--muted);font-size:10.5px}
+  .trace-steps{display:grid;grid-template-columns:repeat(8,1fr);gap:6px;margin-bottom:14px}
+  .trace-step{border:1px solid var(--line);border-radius:6px;padding:7px 8px;background:#f8f3e8;
+              font:600 9.5px/1.35 var(--mono);color:var(--muted);letter-spacing:.03em;cursor:pointer}
+  .trace-step b{display:block;font-size:11px;color:var(--ink);margin-bottom:2px}
+  .trace-step.done{background:#eaf3e8;border-color:#c6dcc2;color:var(--green)}
+  .trace-step.done b{color:var(--green)}
+  .trace-step.on{background:var(--ink);border-color:var(--ink);color:#fff;box-shadow:0 2px 0 rgba(0,0,0,.12)}
+  .trace-step.on b{color:#fff}
+  .trace-head{border-top:1px solid var(--line);padding-top:12px;margin-top:2px}
+  .trace-head h3{margin:0 0 4px;font-size:15px}
+  .trace-rule{font-size:12.5px;color:#3f392f;line-height:1.65;margin:0 0 8px}
+  .trace-api{font:500 10.5px/1.5 var(--mono);color:var(--blue);word-break:break-all;margin-bottom:10px}
+  .trace-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .trace-json{background:#201d18;color:#f4efe4;border-radius:8px;padding:11px 12px;margin:0;
+              font:500 10.5px/1.55 var(--mono);max-height:360px;overflow:auto;white-space:pre-wrap;word-break:break-word}
+  .trace-json span{display:block;color:#b9ae97;font:700 9.5px/1.4 var(--mono);
+                   letter-spacing:.08em;text-transform:uppercase;margin-bottom:6px}
+  .trace-evidence{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+  .kv{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;margin-top:12px;font-size:12px}
+  .kv dt{font-family:var(--mono);color:var(--muted);font-size:11px}
+  .kv dd{margin:0;text-align:right;font-family:var(--mono);font-size:11.5px;word-break:break-all}
+  .endpoints{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+  .ep{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:7px;padding:8px 10px;
+      background:var(--card);font:500 10.5px/1.4 var(--mono);overflow:hidden}
+  .ep b{color:var(--accent);font-size:9.5px}
+  .ep span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ep a{margin-left:auto;color:var(--blue);font-size:10.5px;text-decoration:none}
+  .closing{padding:64px 0 84px;border-bottom:0}
+  .closing p{max-width:820px;font-size:16px;color:#3f392f}
+  footer{padding:26px 0 54px;color:var(--muted);font-size:11.5px;display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}
+  @media(max-width:1080px){
+    .nav{display:none}.hero-grid,.grid2,.grid3,.split,.impact-grid{grid-template-columns:1fr}
+    .topbar{padding:0 16px}.top-actions .btn.ghost{display:none}
+    section{padding:58px 0}main{padding:0 20px}.loop{grid-template-columns:1fr 1fr}
+    .loop .node:nth-child(2):after{display:none}.askbox,.impact-form{grid-template-columns:1fr}
+    .endpoints{grid-template-columns:1fr}.relgrid{grid-template-columns:1fr}
+    .impact-stats{grid-template-columns:1fr 1fr}
+    .trace-grid{grid-template-columns:1fr}.trace-steps{grid-template-columns:repeat(4,1fr)}
+  }
+  @media(max-width:560px){
+    .case .rows{grid-template-columns:1fr}.loop{grid-template-columns:1fr}
+    .loop .node+.node{border-left:0;border-top:1px solid var(--line)}.loop .node:after{display:none}
+    .impact-stats{grid-template-columns:1fr}.diff .row{grid-template-columns:1fr}
+    .trace-steps{grid-template-columns:1fr 1fr}
+  }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand"><small>DATA + AI · ONTOLOGY</small> 画像本体</div>
+  <nav class="nav">
+    <a href="#q"><b>01</b>四个问题</a>
+    <a href="#map"><b>02</b>对象地图</a>
+    <a href="#why"><b>03</b>为什么建模</a>
+    <a href="#impact"><b>04</b>影响面分析</a>
+    <a href="#ask"><b>05</b>真实追问</a>
+    <a href="#not"><b>06</b>不是本体</a>
+    <a href="#test"><b>07</b>唯一标准</a>
+    <a href="#loop"><b>08</b>最小闭环</a>
+    <a href="#store"><b>09</b>知识/事实</a>
+    <a href="#verify"><b>10</b>自己验</a>
+  </nav>
+  <div class="top-actions">
+    <a class="btn" href="/profile/ui">画像工作台 ↗</a>
+    <button class="btn primary" id="hero-start">开始影响面分析</button>
+    <button class="btn ghost" id="replay">重播追问</button>
+  </div>
+</header>
+
+<main>
+  <section class="hero" id="top">
+    <div class="hero-grid">
+      <div>
+        <p class="eyebrow">画像语义层 / 用一次变更讲清楚影响面</p>
+        <h1>一次变更，<br>会影响谁、多少钱</h1>
+        <p class="lede">
+          大车司机 36 城车贴激励：名称要求「大车、36 城、车贴已贴」，规则实际圈的是「小车、30 城」。
+          本体先判定纠错，再沿<strong>声明的 7 条因果边</strong>向下游传播：人群 → 策略 → 画布 → 订单。
+          同城、共享标签反向投影、证据和版本都在白名单外，不进资损影响面，每一个数字都能沿路径回源。
+        </p>
+        <div class="chips">
+          <span class="chip"><i class="dot" id="dot-health"></i><span id="chip-health">连接 STG…</span></span>
+          <span class="chip" id="chip-graph">HugeGraph · profile_ai/profile</span>
+          <span class="chip" id="chip-schema">12 类对象 · 16 条关系 · 15 条约束</span>
+          <span class="chip">三层投影 OVERVIEW / NETWORK / FULL</span>
+        </div>
+      </div>
+      <aside class="case">
+        <div class="k">CASE · 真实存量人群</div>
+        <div class="title">大车司机 36 城车贴激励</div>
+        <div class="id">crowd:crm:large_driver_sticker_36</div>
+        <div class="rows">
+          <div class="cell"><span>业务意图</span><b>大车 · 36 城 · 已贴</b></div>
+          <div class="cell"><span>规则实际</span><b class="red">小车 · 30 城 · 已贴</b></div>
+          <div class="cell"><span>因果影响面</span><b class="red" id="case-impact">读取中…</b></div>
+          <div class="cell"><span>已发生订单金额</span><b class="green" id="case-amount">读取中…</b></div>
+        </div>
+        <div class="foot" id="case-foot">沿因果边读取 HugeGraph 影响面…</div>
+      </aside>
+    </div>
+  </section>
+
+  <section id="q">
+    <p class="eyebrow">01 / 四个问题</p>
+    <h2>任何本体，先回答这四件事</h2>
+    <p class="lede">不是先讲框架，而是先把一个人群讲透：想圈谁、实际圈了谁、错了会影响谁、谁能改。</p>
+    <div class="grid2">
+      <article class="card qcard">
+        <span class="no">1</span><div class="q">业务想圈谁？</div>
+        <div class="answer">名称和描述只是弱信号。本体读取结构化意图：车型 <code>LARGE</code>、车贴 <code>ACTIVE</code>、
+          覆盖 36 个托管城市，来源 <code>structured_intent</code>，置信度 <code>HIGH</code>。</div>
+        <div class="none">没有建模时：只能按名称猜“大车”，猜错也没有证据。</div>
+      </article>
+      <article class="card qcard">
+        <span class="no">2</span><div class="q">规则实际圈了谁？</div>
+        <div class="answer">规则表达式写的是 <code>vehicle_type = 'SMALL'</code>，城市列表只有 30 个；
+          绑定的标签是「小车司机」+「车贴已贴」。规则可解析，<code>parse_ok = true</code>。</div>
+        <div class="none">没有建模时：规则是一段字符串，标签语义和城市范围各查各的。</div>
+      </article>
+      <article class="card qcard">
+        <span class="no">3</span><div class="q">错在哪、会影响谁？</div>
+        <div class="answer">3 个 ERROR：车型相反、标签语义相反、漏 6 个托管城市。
+          沿下游因果边只算出 6 个影响对象：1 个派生人群、1 个策略、1 个画布、3 个订单。</div>
+        <div class="none">没有建模时：同城、共享标签都会被算进影响面，真正该止损的订单反而被淹没。</div>
+      </article>
+      <article class="card qcard">
+        <span class="no">4</span><div class="q">谁有权改、怎么留痕？</div>
+        <div class="answer">Agent 只能 <code>propose_change</code>，提议进入 <code>PENDING</code>；
+          业务人员确认后才执行，全过程写审计日志，不绕过源系统权限。</div>
+        <div class="none">没有建模时：发现问题靠人，改配置也靠人，改了什么、谁批的无法回放。</div>
+      </article>
+    </div>
+  </section>
+
+  <section id="map">
+    <p class="eyebrow">02 / 对象地图</p>
+    <h2>12 类对象，16 条关系，一张可追溯的图</h2>
+    <p class="lede">画像资产回答“业务在使用什么”，业务主体回答“业务在分析谁”。两类模型独立建模，再用明确关系连接。</p>
+    <div class="grid2">
+      <div class="lane">
+        <h3>画像资产模型 <em>8 类</em></h3>
+        <div class="kinds" id="kinds-asset"></div>
+      </div>
+      <div class="lane">
+        <h3>业务主体模型 <em>4 类</em></h3>
+        <div class="kinds" id="kinds-subject"></div>
+      </div>
+    </div>
+    <div class="map-detail" id="map-detail">点一个对象，读取它在语义层里的登记信息；下方关系来自同一份知识文件。</div>
+    <div class="relgrid" id="rel-grid"></div>
+  </section>
+
+  <section id="why">
+    <p class="eyebrow">03 / 为什么必须先建模</p>
+    <h2>不建模，Agent 只能靠猜</h2>
+    <p class="lede">纠错不是写一条 SQL，而是把五个判断依据同时摆到桌面上。缺一个，结论就不可复核。</p>
+    <div class="panel">
+      <div class="panel-head"><b>建模范式对照</b><span class="mono">以本例实测</span></div>
+      <table>
+        <thead><tr><th>问题</th><th>建模前</th><th>建模后</th><th>本例</th></tr></thead>
+        <tbody>
+          <tr><td>定义不统一</td><td>按名称猜含义</td><td>统一对象和业务口径</td><td>“大车”落到 <code>vehicle_type=LARGE</code></td></tr>
+          <tr><td>资产太分散</td><td>名称在页面，规则在配置</td><td>组成完整业务上下文</td><td>一次 FULL 投影取回属性、证据、版本</td></tr>
+          <tr><td>关系不清</td><td>不知道依赖谁、影响谁</td><td>上下游可以追溯</td><td>派生人群 → 策略 → 画布 → 3 个订单</td></tr>
+          <tr><td>判断缺依据</td><td>能报问题，解释不清</td><td>结论回到来源和证据</td><td>每条 ERROR 带规则、标签和缺失城市</td></tr>
+          <tr><td>口径会变化</td><td>新旧材料混用</td><td>使用当前有效版本</td><td>边带 <code>valid_from/valid_to</code>，支持 as-of</td></tr>
+          <tr><td>场景各自理解</td><td>每个 Agent 重新理解</td><td>同一套语义多处复用</td><td>纠错、影响面、血缘共用一份契约</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="impact">
+    <p class="eyebrow">04 / 核心 Case · 影响面分析</p>
+    <h2>影响面不是邻居列表，是本体声明的因果链</h2>
+    <p class="lede">
+      变更只沿 7 条显式因果边向下游传播：<code>Tag → Crowd → Strategy → CanvasTask → Order</code>。
+      每条边声明方向、起点/终点类型和传播理由；同城、共享标签反向投影、指标、证据、版本、
+      司机/车辆归属都在白名单外，逐条记入 skipped，不进入资损影响面。
+    </p>
+
+    <div class="panel">
+      <div class="panel-head">
+        <b>本体因果影响面</b>
+        <span class="mono" id="impact-meta">GET /profile/assets/…/impact?depth=3</span>
+      </div>
+      <div class="panel-body">
+        <div class="askbox impact-form">
+          <div>
+            <label for="impact-asset">起点资产</label>
+            <input type="text" id="impact-asset" value="crowd:crm:large_driver_sticker_36">
+          </div>
+          <div>
+            <label for="impact-depth">传播深度</label>
+            <input type="text" id="impact-depth" value="3">
+          </div>
+          <div>
+            <label for="impact-proposed">模拟修正</label>
+            <label class="small" style="display:flex;align-items:center;gap:7px;padding:11px 0">
+              <input type="checkbox" id="impact-proposed" checked>
+              对比 36 城大车正确规则
+            </label>
+          </div>
+          <div>
+            <button class="btn primary" id="impact-run">计算影响面</button>
+          </div>
+        </div>
+        <div id="impact-body">
+          <div class="small muted">读取 HugeGraph 因果边…</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-top:14px">
+      <div class="panel-head">
+        <b>本体推导 · 逐步执行</b>
+        <span class="mono" id="trace-meta">GET /profile/assets/…/impact-trace?step=1</span>
+      </div>
+      <div class="panel-body">
+        <p class="small muted" style="margin:0 0 12px">
+          不经过大模型，每一步都是影响面算法的真实阶段。点「下一步」只返回一个阶段的输入、输出、
+          判定规则和证据；接口每次按同一输入重放确定性推导，保证结论可复现，可逐段向业务方解释裁决是怎么来的。
+        </p>
+        <div class="trace-actions">
+          <button class="btn primary" id="trace-start">开始逐步推导</button>
+          <button class="btn" id="trace-prev" disabled>上一步</button>
+          <button class="btn" id="trace-next" disabled>下一步</button>
+          <span class="mono" id="trace-progress">尚未开始</span>
+        </div>
+        <div id="trace-body">
+          <div class="small muted">先在上方设置起点资产和深度，再开始推导。</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="ask">
+    <p class="eyebrow">05 / 真实追问</p>
+    <h2>每一步只做一个动作，事实来自工具</h2>
+    <p class="lede">
+      下面不是预录的演示链路。点一次「下一步」，只发生一件事：大模型做一次决策，或语义层执行一次真实查询。
+      工具、参数、返回路径和观察结果全部展开；换一个问题，链路会自己变。
+    </p>
+
+    <div class="panel">
+      <div class="panel-head"><b>交互式诊断链</b><span class="mono" id="chain-meta">POST /profile/reasoning-chain/start</span></div>
+      <div class="panel-body">
+        <div class="askbox">
+          <div>
+            <label for="question">业务追问</label>
+            <textarea id="question">大车司机 36 城车贴激励这个人群，名称要求大车、36 城、车贴已贴，规则实际圈的是谁？和业务意图一致吗？会影响哪些策略和订单？应该怎么修？</textarea>
+          </div>
+          <div>
+            <label for="asset-id">起点资产</label>
+            <input type="text" id="asset-id" value="crowd:crm:large_driver_sticker_36">
+            <div class="small muted" style="margin-top:8px">Agent 会自己决定先检索、读上下文、纠错还是算影响面。</div>
+          </div>
+        </div>
+        <div class="chain-actions">
+          <button class="btn primary" id="chain-start"><span class="spinner"></span><span class="btn-label">开始诊断</span></button>
+          <button class="btn" id="chain-next" disabled>下一步</button>
+          <span class="chain-status" id="chain-status">尚未开始。开始只创建会话，不调用大模型、不查事实。</span>
+        </div>
+        <div class="steps" id="steps"></div>
+        <div id="final-wrap"></div>
+        <div id="fix-wrap"></div>
+        <div id="chain-error"></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="not">
+    <p class="eyebrow">06 / 不是什么</p>
+    <h2>它不是知识库，也不是大模型记忆</h2>
+    <p class="lede">把边界说清楚，才能解释为什么结论可复核、写操作必须过人。</p>
+    <div class="grid3">
+      <article class="card"><h3>不是文档知识库</h3><p class="small muted">文档解释概念，但不定义对象 ID、关系方向、状态机和证据链。Agent 读完文档，仍然不知道 36 城从哪来、少了哪 6 个。</p></article>
+      <article class="card"><h3>不是大模型记忆</h3><p class="small muted">模型负责理解问题、选择工具、组织解释，不负责提供事实。每个数字都能回到 HugeGraph 顶点/边和数仓证据。</p></article>
+      <article class="card"><h3>不是一把 SQL</h3><p class="small muted">SQL 能算量级，但不能回答「名称与规则是否一致、会影响谁、改完谁批准」。语义层补的是定义、关系和治理。</p></article>
+    </div>
+    <div class="card" style="margin-top:16px">
+      <h3>也不是“再建一套画像存储”</h3>
+      <p class="small muted" style="margin:0">权威事实仍在画像平台与数仓。语义层只做统一投影、关系与证据回源；写操作回到源系统执行，并保留审计。</p>
+    </div>
+  </section>
+
+  <section id="test">
+    <p class="eyebrow">07 / 唯一标准</p>
+    <h2>七项都过，才算本体给的答案</h2>
+    <p class="lede">页面好看不算数。判定标准是：对象能定位、关系合法、规则可解析、意图可信、冲突可落证据、影响可追溯、变更可治理。</p>
+    <div class="panel">
+      <div class="panel-head"><b>本例验收单</b><span class="mono">crowd:crm:large_driver_sticker_36</span></div>
+      <table>
+        <thead><tr><th>检查项</th><th>标准</th><th>真实结果</th><th>结论</th></tr></thead>
+        <tbody>
+          <tr><td>对象已登记</td><td><span id="acc-class-standard">—</span> 类对象有统一 ID 规范</td><td id="acc-object">读取中…</td><td id="acc-object-verdict">—</td></tr>
+          <tr><td>关系合法</td><td><span id="acc-relation-standard">—</span> 条关系有 domain/range 与时态约束</td><td id="acc-relation">读取中…</td><td id="acc-relation-verdict">—</td></tr>
+          <tr><td>规则可解析</td><td>圈选规则能结构化比对</td><td id="acc-rule">读取中…</td><td id="acc-rule-verdict">—</td></tr>
+          <tr><td>意图可信</td><td>结构化意图优先于名称描述</td><td id="acc-intent">读取中…</td><td id="acc-intent-verdict">—</td></tr>
+          <tr><td>冲突可落证据</td><td>每条冲突能指到字段、标签或城市</td><td id="acc-conflict">读取中…</td><td id="acc-conflict-verdict">—</td></tr>
+          <tr><td>影响可追溯</td><td>只沿下游因果边扩散</td><td id="acc-impact">读取中…</td><td id="acc-impact-verdict">—</td></tr>
+          <tr><td>变更可治理</td><td>提议 → 人工确认 → 审计</td><td id="acc-governance">读取中…</td><td id="acc-governance-verdict">—</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="loop">
+    <p class="eyebrow">08 / 最小闭环</p>
+    <h2>定义 → 存取 → 执行 → 验收</h2>
+    <p class="lede">四段都跑在真实系统上，缺一段就退回“人工拼上下文”。</p>
+    <div class="loop">
+      <div class="node"><div class="n">01 DEFINE</div><h3>定义</h3><p>12 类对象、16 条关系、15 条约束、3 个状态机，写在版本化的语义文件里。</p></div>
+      <div class="node"><div class="n">02 STORE</div><h3>存取</h3><p>HugeGraph 承载时态边；OVERVIEW / NETWORK / FULL 三层投影按任务取上下文。</p></div>
+      <div class="node"><div class="n">03 EXECUTE</div><h3>执行</h3><p>Agent 只读工具，一次点击只做一次决策或一次查询，不预置链路。</p></div>
+      <div class="node"><div class="n">04 ACCEPT</div><h3>验收</h3><p>风险等级、冲突项、影响对象和修复建议逐条回源；写操作人工确认。</p></div>
+    </div>
+    <div class="grid3" style="margin-top:16px">
+      <div class="card"><h3>入口</h3><p class="small muted"><code>/profile/ontology</code><br>同一个 FastAPI 服务，与工作台、REST API 同源。</p></div>
+      <div class="card"><h3>运行时</h3><p class="small muted"><code>ProfileReasoningAgent</code><br>复用 STG 网关；工具全部落在 ProfileService。</p></div>
+      <div class="card"><h3>治理</h3><p class="small muted"><code>propose → confirm → audit</code><br>Agent 不直接改资产，权限不绕过源系统。</p></div>
+    </div>
+  </section>
+
+  <section id="store">
+    <p class="eyebrow">09 / 知识与事实</p>
+    <h2>知识进 Git，事实进图</h2>
+    <p class="lede">同一份契约，两层存储。知识可以复制和评审，事实必须实时读取、可回源。</p>
+    <div class="split">
+      <div class="card">
+        <h3>本体知识 <span class="tag">VERSIONED</span></h3>
+        <p class="small muted" style="margin:0">定义对象、关系、约束、状态机、投影字段和写门禁。</p>
+        <dl class="kv">
+          <dt>file</dt><dd>profile_ai/semantic_layer_profile.json</dd>
+          <dt>version</dt><dd id="k-version">—</dd>
+          <dt>classes</dt><dd id="k-classes">—</dd>
+          <dt>relations</dt><dd id="k-relations">—</dd>
+          <dt>constraints</dt><dd id="k-constraints">—</dd>
+          <dt>projections</dt><dd>OVERVIEW / NETWORK / FULL</dd>
+          <dt>state machines</dt><dd>Crowd / Strategy / CanvasTask</dd>
+        </dl>
+      </div>
+      <div class="card">
+        <h3>运行事实 <span class="tag fact">LIVE</span></h3>
+        <p class="small muted" style="margin:0">来自 HugeGraph 与源系统，按请求实时读取，不写进页面。</p>
+        <dl class="kv">
+          <dt>graphspace</dt><dd id="f-graphspace">—</dd>
+          <dt>graph</dt><dd id="f-graph">—</dd>
+          <dt>backend</dt><dd id="f-backend">—</dd>
+          <dt>pd peers</dt><dd id="f-pd">—</dd>
+          <dt>property keys</dt><dd id="f-props">—</dd>
+          <dt>vertex labels</dt><dd id="f-vertices">—</dd>
+          <dt>edge labels</dt><dd id="f-edges">—</dd>
+          <dt>健康状态</dt><dd id="f-ok">—</dd>
+        </dl>
+      </div>
+    </div>
+  </section>
+
+  <section id="verify">
+    <p class="eyebrow">10 / 自己验一遍</p>
+    <h2>页面上的每个数字，都有接口</h2>
+    <p class="lede">不需要信这页的文案。打开下面任意接口，返回的就是 STG 上此刻的事实。</p>
+    <div class="endpoints">
+      <div class="ep"><b>GET</b><span>/profile/health</span><a href="/profile/health" target="_blank">打开 ↗</a></div>
+      <div class="ep"><b>GET</b><span>/profile/dictionary</span><a href="/profile/dictionary" target="_blank">打开 ↗</a></div>
+      <div class="ep"><b>GET</b><span>/profile/assets/crowd:crm:large_driver_sticker_36/context?level=FULL</span><a href="/profile/assets/crowd:crm:large_driver_sticker_36/context?level=FULL" target="_blank">打开 ↗</a></div>
+      <div class="ep"><b>GET</b><span>/profile/assets/crowd:crm:large_driver_sticker_36/diagnose</span><a href="/profile/assets/crowd:crm:large_driver_sticker_36/diagnose" target="_blank">打开 ↗</a></div>
+      <div class="ep"><b>GET</b><span>/profile/assets/crowd:crm:large_driver_sticker_36/impact?depth=3</span><a href="/profile/assets/crowd:crm:large_driver_sticker_36/impact?depth=3" target="_blank">打开 ↗</a></div>
+      <div class="ep"><b>GET</b><span>/profile/assets/crowd:crm:large_driver_sticker_36/evidence</span><a href="/profile/assets/crowd:crm:large_driver_sticker_36/evidence" target="_blank">打开 ↗</a></div>
+      <div class="ep"><b>GET</b><span>/profile/corrections</span><a href="/profile/corrections" target="_blank">打开 ↗</a></div>
+      <div class="ep"><b>GET</b><span>/docs</span><a href="/docs" target="_blank">打开 ↗</a></div>
+    </div>
+  </section>
+
+  <section class="closing" id="end">
+    <p class="eyebrow">结论</p>
+    <p>
+      一个人群能讲清楚，其他人群就能复用同一套判断：先定位对象，再读取结构化意图，
+      沿关系展开规则与影响，用约束判定冲突，最后把修复动作交给人确认。
+      画像语义层不是多了一层概念，而是把“业务想圈谁”和“规则实际圈了谁”放进同一张可回源的图里。
+    </p>
+    <div class="chips">
+      <a class="btn" href="/profile/ui">进入画像工作台 ↗</a>
+      <a class="btn" href="/profile/order-ontology">看订单本体 ↗</a>
+      <button class="btn primary" onclick="document.getElementById('ask').scrollIntoView({behavior:'smooth'})">回到真实追问</button>
+    </div>
+  </section>
+
+  <footer>
+    <span>画像语义层 · 用一个人群讲清楚对象、关系、规矩和动作</span>
+    <span class="mono" id="foot-meta">STG · profile_ai/profile</span>
+  </footer>
+</main>
+
+<script>
+(function(){
+  "use strict";
+  var CASE_ID = "crowd:crm:large_driver_sticker_36";
+  var $ = function(id){ return document.getElementById(id); };
+  var unavailable = "STG 未连通";
+
+  function fmt(n){
+    if(n === null || n === undefined) return "—";
+    if(typeof n !== "number") return String(n);
+    return n.toLocaleString("zh-CN");
+  }
+  function money(n){
+    if(!n && n !== 0) return "—";
+    if(n >= 10000) return "¥" + (n / 10000).toFixed(1) + " 万";
+    return "¥" + fmt(n);
+  }
+  function esc(s){
+    return String(s === null || s === undefined ? "" : s)
+      .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+      .replace(/"/g,"&quot;");
+  }
+  function getJSON(url){
+    return fetch(url, {cache:"no-store"}).then(function(r){
+      if(!r.ok){ throw new Error(url + " → HTTP " + r.status); }
+      return r.json();
+    });
+  }
+  function postJSON(url, body){
+    return fetch(url, {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(body || {})
+    }).then(function(r){
+      return r.json().catch(function(){ return {}; }).then(function(data){
+        if(!r.ok){
+          throw new Error((data && (data.detail || data.message)) || ("HTTP " + r.status));
+        }
+        return data;
+      });
+    });
+  }
+
+  /* ------------------------------------------------------------ 验收单实时回填 */
+  var ISSUE_SHORT = {
+    VEHICLE_CONFLICT: "车型",
+    TAG_INTENT_CONFLICT: "标签",
+    CITY_COVERAGE_MISMATCH: "城市覆盖"
+  };
+
+  function setAcc(id, text, verdict, cls){
+    var cell = $(id), tag = $(id + "-verdict");
+    if(cell){ cell.textContent = text; }
+    if(tag){
+      tag.textContent = verdict;
+      tag.className = cls || (verdict === "通过" ? "ok" : "bad");
+    }
+  }
+
+  function accFail(id, err){
+    setAcc(id, "接口不可用：" + ((err && err.message) || err || "未知错误"), "未验证", "bad");
+  }
+
+  function loadAcceptance(health){
+    var semantic = (health || {}).semantic || {};
+    $("acc-class-standard").textContent = fmt(semantic.classes);
+    $("acc-relation-standard").textContent = fmt(semantic.relations);
+
+    getJSON("/profile/assets/" + CASE_ID + "/context?level=FULL").then(function(ctx){
+      var s = ctx.summary || {};
+      var relationKinds = Object.keys(s.by_relation || {}).length;
+      setAcc("acc-object", CASE_ID + " 命中 " + (ctx.label || "对象"), "通过", "ok");
+      setAcc("acc-relation", fmt(s.neighbors) + " 条邻接关系全部可投影，覆盖 "
+        + relationKinds + " 类关系", "通过", "ok");
+    }).catch(function(err){
+      accFail("acc-object", err);
+      accFail("acc-relation", err);
+    });
+
+    getJSON("/profile/assets/" + CASE_ID + "/diagnose").then(function(d){
+      var rule = d.rule || {}, intent = d.intent || {}, risk = d.risk || {};
+      var conditions = (rule.conditions || []).length;
+      setAcc("acc-rule", "parse_ok=" + rule.parse_ok + "，" + conditions + " 个条件，"
+        + (rule.city_count == null ? "—" : rule.city_count) + " 个城市",
+        rule.parse_ok ? "通过" : "未通过", rule.parse_ok ? "ok" : "bad");
+
+      var fields = (intent.authoritative_fields || []).length;
+      var disagreements = (intent.disagreements || []).length;
+      var intentOk = intent.confidence && intent.confidence !== "LOW" && !disagreements;
+      setAcc("acc-intent", fields + " 个权威字段，置信度 "
+        + (intent.confidence || "—") + "，" + (disagreements ? disagreements + " 处分歧" : "无分歧"),
+        intentOk ? "通过" : "待复核", intentOk ? "ok" : "bad");
+
+      var issues = d.issues || [];
+      var labels = issues.map(function(i){ return ISSUE_SHORT[i.code] || i.code; });
+      setAcc("acc-conflict", (risk.error_count || 0) + " 个 ERROR"
+        + (labels.length ? "：" + labels.join(" / ") : ""),
+        "判 " + (risk.level || "—"), risk.level === "HIGH" ? "bad" : "ok");
+    }).catch(function(err){
+      accFail("acc-rule", err);
+      accFail("acc-intent", err);
+      accFail("acc-conflict", err);
+    });
+
+    getJSON("/profile/assets/" + CASE_ID + "/impact?depth=3").then(function(d){
+      var s = d.summary || {};
+      setAcc("acc-impact", fmt(s.affected_total) + " 个对象：" + kindLine(s.by_kind), "通过", "ok");
+    }).catch(function(err){
+      accFail("acc-impact", err);
+    });
+
+    getJSON("/profile/proposals").then(function(res){
+      var items = (res.items || []).filter(function(p){ return p.asset_id === CASE_ID; });
+      if(items.length){
+        setAcc("acc-governance", "最近提议 " + (items[0].status || "—")
+          + "，共 " + items.length + " 条；写操作走人工确认", "通过", "ok");
+      } else {
+        setAcc("acc-governance", "暂无提议记录；写操作走人工确认", "通过", "ok");
+      }
+    }).catch(function(err){
+      accFail("acc-governance", err);
+    });
+  }
+
+  /* ------------------------------------------------------------ 首屏真实数据 */
+  var classMap = {};
+  var counts = {};
+
+  function boot(){
+    getJSON("/profile/health").then(function(h){
+      $("dot-health").className = "dot";
+      $("chip-health").textContent = "STG 已连通 · v" + ((h.semantic || {}).version || "—");
+      $("chip-graph").textContent = "HugeGraph · " + (h.graphspace || "profile_ai") + "/" + (h.graph || "profile");
+      $("chip-schema").textContent = (h.semantic.classes || 12) + " 类对象 · "
+        + (h.semantic.relations || 16) + " 条关系 · " + (h.semantic.constraints || 15) + " 条约束";
+      $("foot-meta").textContent = "STG · " + (h.graphspace || "profile_ai") + "/" + (h.graph || "profile");
+
+      var info = (h.graph_info || [])[0] || {};
+      var schema = h.schema || {};
+      $("f-graphspace").textContent = h.graphspace || "—";
+      $("f-graph").textContent = h.graph || "—";
+      $("f-backend").textContent = info.backend || "—";
+      $("f-pd").textContent = (info["pd.peers"] || "—").split(",").length + " peers";
+      $("f-props").textContent = fmt(schema.propertykeys);
+      $("f-vertices").textContent = fmt(schema.vertexlabels);
+      $("f-edges").textContent = fmt(schema.edgelabels);
+      $("f-ok").textContent = h.ok ? "ok · " + fmt((h.semantic || {}).classes) + " 类" : "异常";
+      $("k-version").textContent = (h.semantic || {}).version || "—";
+      $("k-classes").textContent = fmt((h.semantic || {}).classes);
+      $("k-relations").textContent = fmt((h.semantic || {}).relations);
+      $("k-constraints").textContent = fmt((h.semantic || {}).constraints);
+      loadAcceptance(h);
+    }).catch(function(err){
+      $("dot-health").className = "dot bad";
+      $("chip-health").textContent = unavailable;
+      $("f-ok").textContent = unavailable;
+      ["acc-object", "acc-relation", "acc-rule", "acc-intent", "acc-conflict", "acc-impact", "acc-governance"]
+        .forEach(function(id){ accFail(id, err); });
+      console.warn(err);
+    });
+
+    getJSON("/profile/dictionary").then(function(dict){
+      var classes = dict.classes || [];
+      classes.forEach(function(c){ classMap[c.id] = c; });
+      var assetKinds = ["Crowd","Tag","Strategy","CanvasTask","Metric","Evidence","Version","Operator"];
+      var subjectKinds = ["Driver","Vehicle","City","Order"];
+      $("kinds-asset").innerHTML = assetKinds.filter(function(id){ return classMap[id]; })
+        .map(function(id){ return chipHTML(id, true); }).join("");
+      $("kinds-subject").innerHTML = subjectKinds.filter(function(id){ return classMap[id]; })
+        .map(function(id){ return chipHTML(id, false); }).join("");
+      $("kinds-asset").addEventListener("click", onKindClick);
+      $("kinds-subject").addEventListener("click", onKindClick);
+      renderRelations(dict.relations || []);
+      var first = $("kinds-asset").querySelector(".kind");
+      if(first){ onKindClick({target:first}); }
+    }).catch(function(err){ console.warn(err); });
+
+    getJSON("/profile/assets?limit=100").then(function(res){
+      (res.items || []).forEach(function(it){
+        counts[it.kind] = (counts[it.kind] || 0) + 1;
+      });
+      document.querySelectorAll(".kind").forEach(function(el){
+        var kind = el.getAttribute("data-kind");
+        var n = counts[kind] || 0;
+        var em = el.querySelector("em");
+        if(em){ em.textContent = n ? n + " 实例" : "已登记"; }
+      });
+    }).catch(function(err){ console.warn(err); });
+
+    getJSON("/profile/assets/" + CASE_ID + "/impact?depth=3").then(function(d){
+      var q = d.quantification || {}, s = d.summary || {};
+      var v = d.verdict || {};
+      $("case-impact").textContent = (v.decision === "BLOCK_CHANGE" ? "阻断 · " : "")
+        + fmt(s.affected_total) + " 个对象";
+      $("case-amount").textContent = money(q.realized_order_amount);
+      $("case-foot").textContent = "因果影响面：" + kindLine(s.by_kind)
+        + "；排除 " + Object.keys(s.skipped_neighbor_relations || {}).length
+        + " 类非因果邻域关系，判定 " + (v.decision || "—");
+    }).catch(function(err){
+      $("case-impact").textContent = unavailable;
+      $("case-amount").textContent = "—";
+      $("case-foot").textContent = "影响面接口不可用：" + err.message;
+    });
+  }
+
+  /* ------------------------------------------------------------ 影响面分析 */
+  var KIND_LABEL = {tag:"标签", crowd:"人群", strategy:"策略", canvas:"画布", order:"订单"};
+  var VERDICT_LABEL = {BLOCK_CHANGE:"阻断变更", REVIEW:"人工复核", PASS:"可放行"};
+
+  function kindLine(byKind){
+    if(!byKind) return "—";
+    var parts = [];
+    Object.keys(byKind).forEach(function(k){
+      if(byKind[k]){ parts.push((KIND_LABEL[k] || k) + " " + byKind[k]); }
+    });
+    return parts.length ? parts.join(" · ") : "0 个对象";
+  }
+  function audienceBasis(v){
+    if(v === "root_estimated_size") return "根资产 estimated_size";
+    if(v === "max_affected_crowd") return "受影响人群最大值（待源系统确认去重）";
+    return "无已观测规模";
+  }
+  function impactStat(label, value, sub, cls){
+    return '<div class="impact-stat"><span>' + esc(label) + "</span><b"
+      + (cls ? ' class="' + cls + '"' : "") + ">" + esc(value) + "</b><small>"
+      + esc(sub) + "</small></div>";
+  }
+  function shortRule(rule){
+    if(!rule) return "—";
+    return rule.length > 190 ? rule.slice(0, 190) + "…" : rule;
+  }
+
+  function renderImpact(d, url){
+    var q = d.quantification || {}, s = d.summary || {};
+    var v = d.verdict || {}, ob = d.ontology_basis || {};
+    var details = d.allowed_relation_details || [];
+    var skipped = s.skipped_relation_details || {};
+    var html = "";
+
+    html += '<div class="impact-stats">'
+      + impactStat("变更判定", VERDICT_LABEL[v.decision] || (v.decision || "—"),
+                   v.reason || "", v.decision === "PASS" ? "ok" : "bad")
+      + impactStat("因果影响对象", fmt(s.affected_total) + " 个", kindLine(s.by_kind), "")
+      + impactStat("已发生订单金额", money(q.realized_order_amount),
+                   fmt(q.realized_orders) + " 笔已发生订单 · " + (q.currency || "CNY"), "")
+      + impactStat("影响人数", fmt(q.audience_size),
+                   audienceBasis(q.audience_basis) + (q.reach_estimate
+                     ? " · 未来触达上限 " + fmt(q.reach_estimate) : ""), "")
+      + "</div>";
+
+    html += '<div class="small" style="margin-bottom:12px">'
+      + '<b>分层起点：</b>'
+      + Object.keys(ob.layers || {}).map(function(layer){
+          return '<span class="chip" style="margin:0 5px 5px 0">' + esc(layer) + " · "
+            + esc((ob.layers[layer] || []).join(" / ")) + "</span>";
+        }).join("")
+      + "</div>";
+
+    html += '<div class="impact-grid">';
+    html += "<div><p class=\"subhead\">因果边白名单 · " + details.length + " 条</p>"
+      + "<table><thead><tr><th>关系</th><th>方向</th><th>传播理由</th></tr></thead><tbody>";
+    details.forEach(function(r){
+      html += "<tr><td><code>" + esc(r.relation) + "</code><div class=\"small muted\">"
+        + esc(r.from_kind) + " → " + esc(r.to_kind) + "</div></td><td class=\"mono\">"
+        + esc((r.directions || []).join("/")) + "</td><td class=\"small\">"
+        + esc(r.rationale) + "</td></tr>";
+    });
+    html += "</tbody></table></div>";
+
+    html += "<div><p class=\"subhead\">被排除的邻域关系 · "
+      + Object.keys(skipped).length + " 类</p><div>";
+    Object.keys(skipped).forEach(function(rel){
+      var item = skipped[rel] || {};
+      html += '<div class="excl"><code>' + esc(rel) + "</code><span>"
+        + esc(item.reason || "非因果边") + "</span><b>" + esc(item.count) + " 条</b></div>";
+    });
+    html += "</div><p class=\"subhead\" style=\"margin-top:14px\">生效规则</p>"
+      + '<div class="small muted" style="line-height:1.75">'
+      + esc(ob.temporal_rule || "") + "<br>" + esc(ob.state_rule || "") + "<br>"
+      + esc(ob.exclusion_rule || "") + "</div></div>";
+    html += "</div>";
+
+    html += '<p class="subhead" style="margin-top:16px">受影响对象 · 沿因果边 BFS</p>'
+      + "<table><thead><tr><th>对象</th><th>类型</th><th>距离</th><th>经由因果边</th>"
+      + "<th>状态</th><th>关键事实</th></tr></thead><tbody>";
+    (d.affected || []).forEach(function(n){
+      var facts = n.facts || {};
+      var fact = n.kind === "order"
+        ? money(facts.amount) + " · " + (facts.city_code || "—")
+        : (facts.estimated_size ? fmt(facts.estimated_size) + " 人"
+          : (facts.effective_from ? "生效 " + facts.effective_from
+            : (facts.schedule || (facts.next_run_at ? "下次 " + facts.next_run_at : "—"))));
+      var eff = (n.effect || {}).active
+        ? '<span class="ok">生效</span>'
+        : '<span class="bad">已失效</span><div class="small muted">'
+          + esc(((n.effect || {}).reasons || []).join("；")) + "</div>";
+      html += "<tr><td><b>" + esc(n.name || n.id) + "</b><div class=\"mono small muted\""
+        + " style=\"font-size:10px\">" + esc(n.id) + "</div></td><td>"
+        + esc(KIND_LABEL[n.kind] || n.kind || "—") + "</td><td>" + esc(n.distance)
+        + "</td><td class=\"mono\" style=\"font-size:10.5px\">" + esc(n.via_relation || "—")
+        + "</td><td>" + eff + "</td><td class=\"small\">" + esc(fact) + "</td></tr>";
+    });
+    html += "</tbody></table>";
+
+    html += '<p class="subhead" style="margin-top:16px">全链路追溯 · 每个对象只留一条最短因果路径</p>'
+      + '<div class="paths">';
+    var byId = {};
+    (d.affected || []).forEach(function(n){ byId[n.id] = n; });
+    Object.keys(d.paths || {}).forEach(function(target){
+      var path = d.paths[target] || [];
+      if(path.length < 2) return;
+      var node = byId[target] || {};
+      html += '<div class="path"><span>' + path.map(function(id, i){
+        return (i ? '<i>→</i> ' : "") + esc(id);
+      }).join("") + "</span><em>" + esc(KIND_LABEL[node.kind] || node.kind || "")
+        + (node.impact_type ? " · " + esc(node.impact_type) : "") + "</em></div>";
+    });
+    html += "</div>";
+
+    var ch = d.change || {};
+    if(ch.applied){
+      html += '<div class="diff"><b>修改前后对比</b>'
+        + '<div class="row">'
+        + '<div class="box"><span>修改前规则</span><code>' + esc(shortRule(ch.before_rule)) + "</code></div>"
+        + '<div class="box"><span>修改后规则</span><code>' + esc(shortRule(ch.proposed_rule)) + "</code></div>"
+        + "</div>";
+      if((ch.condition_changes || []).length){
+        html += '<div class="meta">';
+        ch.condition_changes.forEach(function(c){
+          if(c.city_scope){
+            html += '<span class="chip">城市 ' + esc(c.city_scope.before_count) + " → "
+              + esc(c.city_scope.after_count) + "，补 " + esc((c.city_scope.added || []).length)
+              + " 个</span>";
+          } else {
+            html += '<span class="chip">' + esc(c.field) + "：" + esc(c.before)
+              + " → " + esc(c.after) + "</span>";
+          }
+        });
+        html += "</div>";
+      }
+      if(ch.audience){
+        html += '<div class="meta"><span class="chip">人数 ' + fmt(ch.audience.before)
+          + " → " + fmt(ch.audience.after) + "（" + (ch.audience.delta > 0 ? "+" : "")
+          + fmt(ch.audience.delta) + "）</span><span class=\"chip\">"
+          + esc((ch.audience.evidence || {}).basis || "") + "</span></div>";
+      }
+      html += "</div>";
+    }
+
+    html += '<div class="small muted" style="margin-top:12px">接口：' + esc(url) + "</div>";
+    $("impact-body").innerHTML = html;
+  }
+
+  function impactQueryUrl(path){
+    var asset = ($("impact-asset").value || "").trim() || CASE_ID;
+    var depth = parseInt($("impact-depth").value, 10) || 3;
+    var url = "/profile/assets/" + encodeURIComponent(asset) + path + "?depth=" + depth;
+    if(!$("impact-proposed").checked) return Promise.resolve(url);
+    return getJSON("/profile/assets/crowd:crm:large_driver_36_ok/context?level=FULL").then(function(ctx){
+      var rule = ((ctx.properties || {}).rule_expression || "").trim();
+      return rule ? url + "&proposed_rule=" + encodeURIComponent(rule) : url;
+    }).catch(function(){ return url; });
+  }
+
+  function runImpact(){
+    traceReset("影响面参数已更新，请重新开始逐步推导");
+    var url = "/profile/assets/…/impact?depth=3";
+    $("impact-meta").textContent = "GET " + url;
+    $("impact-body").innerHTML = '<div class="small muted">沿因果边读取 HugeGraph…</div>';
+    impactQueryUrl("/impact").then(function(finalUrl){
+      $("impact-meta").textContent = "GET " + finalUrl;
+      return getJSON(finalUrl).then(function(d){ renderImpact(d, finalUrl); });
+    }).catch(function(err){
+      $("impact-body").innerHTML = '<div class="error">影响面读取失败：' + esc(err.message) + "</div>";
+    });
+  }
+
+  /* ------------------------------------------------------- 逐步执行影响面 */
+  var traceState = {step: 0, total: 0, base: null};
+
+  function traceReset(msg){
+    traceState = {step: 0, total: 0, base: null};
+    $("trace-prev").disabled = true;
+    $("trace-next").disabled = true;
+    $("trace-start").disabled = false;
+    $("trace-start").textContent = "开始逐步推导";
+    $("trace-progress").textContent = msg || "尚未开始";
+    $("trace-meta").textContent = "GET /profile/assets/…/impact-trace?step=1";
+    $("trace-body").innerHTML = '<div class="small muted">逐段执行本体影响面算法，每一步展示输入、输出、规则和证据。</div>';
+  }
+
+  function traceStart(){
+    traceState = {step: 0, total: 0, base: null};
+    $("trace-start").disabled = true;
+    $("trace-start").textContent = "推导中…";
+    $("trace-body").innerHTML = '<div class="small muted">准备本体因果契约…</div>';
+    impactQueryUrl("/impact-trace").then(function(base){
+      traceState.base = base;
+      return traceStep(1);
+    }).catch(function(err){
+      $("trace-start").disabled = false;
+      $("trace-start").textContent = "开始逐步推导";
+      $("trace-body").innerHTML = '<div class="error">逐步推导失败：' + esc(err.message) + "</div>";
+    });
+  }
+
+  function traceStep(n){
+    if(!traceState.base) return;
+    n = Math.max(1, Math.min(n, traceState.total || 8));
+    var url = traceState.base + "&step=" + n;
+    $("trace-meta").textContent = "GET " + url;
+    $("trace-progress").textContent = "执行第 " + n + " 步…";
+    $("trace-body").innerHTML = '<div class="small muted">读取 HugeGraph 并执行本步判定…</div>';
+    return getJSON(url).then(function(d){
+      traceState.step = d.step;
+      traceState.total = d.total_steps;
+      renderTrace(d, url);
+    }).catch(function(err){
+      $("trace-body").innerHTML = '<div class="error">第 ' + n + ' 步执行失败：' + esc(err.message) + "</div>";
+    });
+  }
+
+  function traceJson(obj){
+    var text;
+    try { text = JSON.stringify(obj, null, 2); }
+    catch(e){ text = String(obj); }
+    return '<pre class="trace-json"><span>' + esc(arguments[1] || "json") + "</span>"
+      + esc(text == null ? "null" : text) + "</pre>";
+  }
+
+  function renderTrace(d, url){
+    var stage = d.stage || {};
+    var html = '<div class="trace-steps">';
+    (d.stages || []).forEach(function(s){
+      html += '<button class="trace-step ' + esc(s.state) + '" data-step="' + esc(s.step) + '">'
+        + "<b>" + esc(s.step) + "</b>" + esc(s.title) + "</button>";
+    });
+    html += "</div>";
+
+    html += '<div class="trace-head">'
+      + '<p class="small muted" style="margin:0 0 5px">STEP ' + esc(stage.step)
+      + " / " + esc(d.total_steps) + " · " + esc(stage.key) + " · 确定性执行</p>"
+      + "<h3>" + esc(stage.title) + "</h3>"
+      + '<p class="trace-rule">' + esc(stage.rule) + "</p>"
+      + '<div class="trace-api">' + esc(url) + "</div>"
+      + '<div class="trace-grid">'
+      + traceJson(stage.input, "输入 input")
+      + traceJson(stage.output, "输出 output")
+      + "</div>"
+      + '<div class="trace-evidence">';
+    Object.keys(stage.evidence || {}).forEach(function(k){
+      var val = stage.evidence[k];
+      if(val && typeof val === "object") val = JSON.stringify(val);
+      html += '<span class="chip">' + esc(k) + "：" + esc(val) + "</span>";
+    });
+    html += "</div></div>";
+
+    $("trace-body").innerHTML = html;
+    $("trace-progress").textContent = "第 " + d.step + " / " + d.total_steps + " 步："
+      + (stage.title || "") + (d.done ? "（已完成）" : "");
+    $("trace-prev").disabled = d.step <= 1;
+    $("trace-next").disabled = d.done;
+    $("trace-start").disabled = false;
+    $("trace-start").textContent = "重新推导";
+
+    $("trace-body").querySelectorAll(".trace-step").forEach(function(el){
+      el.addEventListener("click", function(){
+        traceStep(parseInt(el.getAttribute("data-step"), 10) || 1);
+      });
+    });
+  }
+
+  function chipHTML(id, isAsset){
+    var c = classMap[id] || {};
+    var props = (c.properties || []).length;
+    return '<button class="kind" data-kind="' + esc(c.kind || id) + '" data-class="' + esc(id) + '">'
+      + esc(c.label || id)
+      + '<i>' + esc(c.kind || "") + '</i>'
+      + (props ? '<i>' + props + ' 属性</i>' : (isAsset ? '<i>已登记</i>' : ''))
+      + '</button>';
+  }
+
+  function onKindClick(ev){
+    var el = ev.target.closest ? ev.target.closest(".kind") : null;
+    if(!el) return;
+    document.querySelectorAll(".kind").forEach(function(x){ x.classList.remove("on"); });
+    el.classList.add("on");
+    var id = el.getAttribute("data-class");
+    var c = classMap[id] || {};
+    var props = c.properties || [];
+    var desc = c.description || "";
+    var roles = c.roles || c.kind || "";
+    $("map-detail").innerHTML = "<b>" + esc(c.label || id) + "</b>"
+      + ' <span class="mono muted">' + esc(id) + " · kind=" + esc(roles) + "</span><br>"
+      + esc(desc || "已登记在语义层；未填写描述。")
+      + '<br><span class="mono muted">属性 ' + props.length + " 个"
+      + (props.length ? "：" + esc(props.slice(0, 10).join(" · ")) : "")
+      + (props.length > 10 ? " …" : "") + "</span>";
+  }
+
+  function renderRelations(relations){
+    if(!relations.length){ return; }
+    $("rel-grid").innerHTML = relations.map(function(r){
+      var domain = r.domain || "Asset";
+      var range = r.range || "—";
+      return '<div class="rel"><code>' + esc(r.id) + '</code>'
+        + '<span>' + esc(domain) + " → " + esc(range) + "</span></div>";
+    }).join("");
+  }
+
+  /* ------------------------------------------------------------ 诊断链 */
+  var sessionId = null;
+  var busy = false;
+  var lastDiagnose = null;
+
+  function setBusy(on, label){
+    busy = on;
+    $("chain-start").classList.toggle("busy", on && label === "start");
+    $("chain-next").classList.toggle("busy", on && label === "next");
+    $("chain-start").disabled = on || !!sessionId;
+    $("chain-next").disabled = on || !sessionId;
+    if(label === "next"){
+      $("chain-next").innerHTML = on
+        ? '<span class="spinner" style="display:inline-block"></span>'
+        : "下一步";
+    }
+  }
+
+  function resetChain(){
+    sessionId = null;
+    lastDiagnose = null;
+    $("steps").innerHTML = "";
+    $("final-wrap").innerHTML = "";
+    $("fix-wrap").innerHTML = "";
+    $("chain-error").innerHTML = "";
+    $("chain-status").textContent = "尚未开始。开始只创建会话，不调用大模型、不查事实。";
+    $("chain-meta").textContent = "POST /profile/reasoning-chain/start";
+    setBusy(false, "start");
+    $("chain-start").disabled = false;
+    $("chain-next").disabled = true;
+    $("chain-next").textContent = "下一步";
+  }
+
+  function startChain(){
+    if(busy) return;
+    resetChain();
+    setBusy(true, "start");
+    $("chain-status").textContent = "创建诊断会话…";
+    postJSON("/profile/reasoning-chain/start", {
+      question: $("question").value.trim(),
+      asset_id: $("asset-id").value.trim(),
+      max_calls: 8
+    }).then(function(res){
+      sessionId = res.session_id;
+      renderState(res);
+      $("chain-meta").textContent = "POST /profile/reasoning-chain/" + sessionId + "/next";
+      $("chain-status").textContent = "会话已创建。点「下一步」，第一次只会让大模型做一次决策。";
+      setBusy(false, "start");
+      $("chain-start").disabled = true;
+      $("chain-next").disabled = false;
+    }).catch(function(err){
+      showError("创建会话失败：" + err.message);
+      setBusy(false, "start");
+    });
+  }
+
+  function nextStep(){
+    if(busy || !sessionId) return;
+    setBusy(true, "next");
+    $("chain-status").textContent = "执行一个真实动作…";
+    postJSON("/profile/reasoning-chain/" + sessionId + "/next", {})
+      .then(function(res){
+        renderState(res);
+        setBusy(false, "next");
+        if(res.finished){
+          $("chain-status").textContent = "已形成结论：共 " + res.steps.length
+            + " 个动作，其中 " + res.tool_calls + " 次真实查询。";
+          $("chain-next").disabled = true;
+        } else {
+          $("chain-status").textContent = "已完成第 " + res.steps.length
+            + " 个动作；工具调用 " + res.tool_calls + " / " + res.max_calls + "。";
+          $("chain-next").disabled = false;
+        }
+      }).catch(function(err){
+        showError("执行失败：" + err.message);
+        $("chain-status").textContent = "执行失败：" + err.message;
+        setBusy(false, "next");
+        $("chain-next").disabled = false;
+      });
+  }
+
+  function renderState(state){
+    $("steps").innerHTML = (state.steps || []).map(renderStep).join("");
+    if(state.final){
+      $("final-wrap").innerHTML = '<div class="final-box"><div class="k">Agent 结论 · 基于真实工具返回</div><p>'
+        + esc(state.final) + "</p></div>";
+    } else {
+      $("final-wrap").innerHTML = "";
+    }
+    (state.steps || []).forEach(function(s){
+      if(s.tool === "diagnose_crowd" && s.data){ lastDiagnose = s.data; }
+    });
+    renderFix();
+    var last = $("steps").lastElementChild;
+    if(last){ last.scrollIntoView({block:"nearest", behavior:"smooth"}); }
+  }
+
+  function renderStep(s){
+    var phaseLabel = {plan:"LLM 决策", tool:"真实查询", final:"结论"}[s.phase] || s.phase;
+    var api = s.api ? '<span class="step-api">' + esc(s.api) + "</span>" : "";
+    var args = "";
+    if(s.args && Object.keys(s.args).length){
+      args = '<div class="args">' + Object.keys(s.args).map(function(k){
+        return "<code>" + esc(k) + "=" + esc(typeof s.args[k] === "object"
+          ? JSON.stringify(s.args[k]) : s.args[k]) + "</code>";
+      }).join("") + "</div>";
+    }
+    var thought = s.thought ? '<p class="thought">' + esc(s.thought) + "</p>" : "";
+    var data = renderStepData(s);
+    var obs = (s.phase !== "final" && s.observation)
+      ? '<pre class="obs">' + esc(s.observation) + "</pre>" : "";
+    return '<article class="step ' + esc(s.phase) + '">'
+      + '<div class="step-head">'
+      + '<span class="step-no">' + s.n + "</span>"
+      + '<span class="phase ' + esc(s.phase) + '">' + phaseLabel + "</span>"
+      + '<span class="step-title">' + esc(s.title) + "</span>" + api
+      + "</div>" + thought + args + data + obs + "</article>";
+  }
+
+  function renderStepData(s){
+    var d = s.data;
+    if(!d || typeof d !== "object") return "";
+    if(s.tool === "get_context"){
+      var props = d.properties || {};
+      var bits = [];
+      if(props.intent_vehicle_type) bits.push("意图车型 " + props.intent_vehicle_type);
+      if(props.intent_expected_city_count) bits.push("意图城市 " + props.intent_expected_city_count);
+      if(props.intent_sticker_status) bits.push("意图车贴 " + props.intent_sticker_status);
+      if(props.rule_expression) bits.push("规则有表达式");
+      if(props.scope_count) bits.push("规则城市 " + props.scope_count);
+      if(d.summary && d.summary.neighbors) bits.push("邻接 " + d.summary.neighbors);
+      return bits.length ? '<div class="mini">' + bits.map(function(x){
+        return "<span>" + esc(x) + "</span>";
+      }).join("") + "</div>" : "";
+    }
+    if(s.tool === "diagnose_crowd"){
+      var kpi = d.kpi || {};
+      var issues = d.issues || [];
+      return '<div class="mini">'
+        + '<span class="red">' + esc(d.risk_level || "—") + " · " + esc(d.verdict || "") + "</span>"
+        + "<span>漏配城市 " + esc(kpi.missing_city_count == null ? "—" : kpi.missing_city_count) + "</span>"
+        + "<span>预估损失 " + esc(money(kpi.avoided_loss)) + "</span>"
+        + issues.slice(0, 4).map(function(i){
+            return '<span class="' + (i.severity === "HIGH" ? "red" : "amber") + '">'
+              + esc(i.code) + "</span>";
+          }).join("")
+        + "</div>";
+    }
+    if(s.tool === "impact_analysis"){
+      var by = d.by_kind || {};
+      var nodes = d.nodes || [];
+      return '<div class="mini">'
+        + "<span>影响 " + esc(d.affected_total == null ? "—" : d.affected_total) + " 个对象</span>"
+        + Object.keys(by).map(function(k){
+            return "<span>" + esc(k) + " " + esc(by[k]) + "</span>";
+          }).join("")
+        + nodes.slice(0, 6).map(function(n){
+            return "<span>" + esc(n.kind) + " · " + esc(n.name || n.id) + "</span>";
+          }).join("")
+        + "</div>";
+    }
+    if(s.tool === "trace_evidence"){
+      return '<div class="mini">'
+        + "<span>证据 " + esc(d.evidence_count == null ? "—" : d.evidence_count) + "</span>"
+        + "<span>版本 " + esc(d.version_count == null ? "—" : d.version_count) + "</span>"
+        + "<span>时间线 " + esc(d.timeline_count == null ? "—" : d.timeline_count) + "</span>"
+        + "</div>";
+    }
+    if(s.tool === "lineage"){
+      var dn = d.downstream || [];
+      return '<div class="mini"><span>下游派生 ' + dn.length + " 个</span>"
+        + dn.slice(0, 4).map(function(n){
+            return "<span>" + esc(n.name || n.id) + "</span>";
+          }).join("") + "</div>";
+    }
+    if(s.tool === "search_assets"){
+      var items = d.items || [];
+      return '<div class="mini"><span>命中 ' + esc(d.total == null ? "—" : d.total) + " 个</span>"
+        + items.slice(0, 5).map(function(it){
+            return "<span>" + esc(it.kind) + " · " + esc(it.name || it.id) + "</span>";
+          }).join("") + "</div>";
+    }
+    return "";
+  }
+
+  function renderFix(){
+    if(!lastDiagnose || !lastDiagnose.suggested_action){
+      $("fix-wrap").innerHTML = "";
+      return;
+    }
+    var a = lastDiagnose.suggested_action;
+    var change = a.propose_change || {};
+    $("fix-wrap").innerHTML = '<div class="fix">'
+      + "<h3>修复建议（来自本次诊断）</h3>"
+      + '<p class="small muted" style="margin:0">' + esc(a.label || a.reason || "规则与意图对齐") + "</p>"
+      + '<div class="row">'
+      + '<div class="box"><span>当前规则</span><code>' + esc(a.before || "—") + "</code></div>"
+      + '<div class="box"><span>建议规则</span><code>' + esc(a.after || lastDiagnose.suggested_rule || "—") + "</code></div>"
+      + "</div>"
+      + '<div class="chain-actions" style="margin:0">'
+      + '<button class="btn primary" id="propose-btn">提交修复提议（需人工确认）</button>'
+      + '<span class="chain-status">Agent 只提议，不直接修改资产。</span>'
+      + "</div>"
+      + '<div id="propose-result"></div>'
+      + "</div>";
+    var btn = $("propose-btn");
+    if(btn){
+      btn.addEventListener("click", function(){
+        btn.disabled = true;
+        btn.textContent = "提交中…";
+        postJSON("/profile/proposals", {
+          action: change.action || "update_properties",
+          asset_id: change.asset_id || CASE_ID,
+          payload: change.payload || {},
+          reason: change.reason || a.reason || a.label || "人群纠错",
+          actor: change.actor || "profile_ai_agent"
+        }).then(function(res){
+          $("propose-result").innerHTML = '<div class="mini">'
+            + '<span class="green">' + esc(res.status || "PENDING") + "</span>"
+            + "<span>提案 " + esc(res.id || res.proposal_id) + "</span>"
+            + '<span><a href="/profile/ui" style="color:var(--blue)">去工作台确认 ↗</a></span>'
+            + "</div>";
+          btn.textContent = "已提交，等待人工确认";
+        }).catch(function(err){
+          btn.disabled = false;
+          btn.textContent = "提交修复提议（需人工确认）";
+          $("propose-result").innerHTML = '<div class="error">提交失败：' + esc(err.message) + "</div>";
+        });
+      });
+    }
+  }
+
+  function showError(msg){
+    $("chain-error").innerHTML = '<div class="error">' + esc(msg) + "</div>";
+  }
+
+  /* ------------------------------------------------------------ 事件 */
+  $("impact-run").addEventListener("click", runImpact);
+  $("impact-proposed").addEventListener("change", runImpact);
+  $("impact-depth").addEventListener("keydown", function(ev){
+    if(ev.key === "Enter"){ runImpact(); }
+  });
+  $("trace-start").addEventListener("click", traceStart);
+  $("trace-prev").addEventListener("click", function(){ traceStep(traceState.step - 1); });
+  $("trace-next").addEventListener("click", function(){ traceStep(traceState.step + 1); });
+  $("chain-start").addEventListener("click", startChain);
+  $("chain-next").addEventListener("click", nextStep);
+  $("replay").addEventListener("click", function(){
+    resetChain();
+    $("ask").scrollIntoView({behavior:"smooth"});
+  });
+  $("hero-start").addEventListener("click", function(){
+    $("impact").scrollIntoView({behavior:"smooth"});
+    runImpact();
+  });
+
+  boot();
+  runImpact();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,2260 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<title>画像 AI 语义层 · 可视化</title>
+<style>
+  :root{
+    --bg:#f3f5f9; --panel:#fff; --ink:#1f2937; --muted:#6b7280; --line:#e5e7eb;
+    --accent:#2563eb; --ok:#16a34a; --bad:#dc2626; --warn:#f59e0b;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+       font-size:13px;line-height:1.55}
+  header{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:16px;
+         padding:11px 20px;background:#0f172a;color:#e2e8f0;flex-wrap:wrap}
+  header .brand{font-size:16px;font-weight:700;letter-spacing:.3px}
+  header .brand small{font-weight:400;color:#94a3b8;margin-left:8px;font-size:12px}
+  .stats{display:flex;gap:8px;flex-wrap:wrap}
+  .stat{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);
+        border-radius:8px;padding:3px 10px;font-size:12px;color:#cbd5e1}
+  .stat b{color:#fff;font-size:14px;margin-left:4px}
+  header .spacer{flex:1}
+  header .asof{display:flex;align-items:center;gap:5px;font-size:12px;color:#cbd5e1}
+  header .asof input{background:#1e293b;border:1px solid #334155;color:#e2e8f0;
+        border-radius:6px;padding:3px 6px;font-size:11px}
+  header .asof button{background:#334155;border:1px solid #475569;color:#e2e8f0;
+        border-radius:6px;padding:3px 8px;font-size:11px}
+  header .asof button:hover{background:#475569}
+  a.navlink{color:#93c5fd;text-decoration:none;font-size:12px}
+  a.navlink:hover{text-decoration:underline}
+  button,select,input,textarea{font:inherit}
+  button{cursor:pointer}
+  main{display:grid;grid-template-columns:296px minmax(0,1fr);gap:14px;
+       padding:14px 18px 30px;max-width:1680px;margin:0 auto}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+         box-shadow:0 1px 2px rgba(15,23,42,.04);min-width:0}
+  .panel h2{font-size:13px;margin:0;padding:11px 14px;border-bottom:1px solid var(--line);
+            color:#111827;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .panel h2 .tag{font-size:11px;font-weight:400;color:var(--muted)}
+  .sidebar{display:flex;flex-direction:column;overflow:hidden;align-self:start;
+           position:sticky;top:64px;max-height:calc(100vh - 80px)}
+  .filters{padding:10px 12px;border-bottom:1px solid var(--line);display:grid;gap:7px}
+  .filters input,.filters select{width:100%;border:1px solid #d5dbe4;border-radius:8px;
+        padding:6px 9px;background:#fff;color:#111827}
+  .filters .row{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+  .asset-list{list-style:none;margin:0;padding:6px;overflow:auto;flex:1}
+  .asset-list li{padding:7px 9px;border-radius:8px;cursor:pointer;border:1px solid transparent}
+  .asset-list li:hover{background:#f8fafc;border-color:#eef2f7}
+  .asset-list li.active{background:#eff6ff;border-color:#bfdbfe}
+  .asset-list .aid{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;
+        color:#334155;word-break:break-all}
+  .asset-list .ameta{display:flex;gap:6px;align-items:center;margin-top:2px;color:var(--muted);font-size:11px}
+  .dot{width:8px;height:8px;border-radius:50%;display:inline-block;flex:none}
+  .content{display:flex;flex-direction:column;gap:12px;min-width:0}
+  .asset-head{padding:13px 16px}
+  .asset-head .top{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+  .asset-head .id{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;
+        color:#475569;word-break:break-all}
+  .asset-head .name{font-size:17px;font-weight:700;color:#0f172a}
+  .asset-head .desc{color:#475569;margin-top:6px;font-size:12px}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}
+  .chip{background:#f1f5f9;border:1px solid #e2e8f0;border-radius:999px;padding:2px 9px;
+        font-size:11px;color:#334155;display:inline-flex;align-items:center;gap:4px}
+  .chip b{color:#0f172a}
+  .badge{font-size:10px;padding:1px 7px;border-radius:999px;white-space:nowrap;border:1px solid transparent}
+  .badge.kind{color:#fff}
+  .badge.status{background:#eef2f7;color:#475569;border-color:#dbe3ec}
+  .tabs{display:flex;gap:4px;flex-wrap:wrap;background:#fff;border:1px solid var(--line);
+        border-radius:12px;padding:5px 6px}
+  .tabs button{border:1px solid transparent;background:transparent;color:#475569;
+        border-radius:8px;padding:6px 11px;font-size:12px}
+  .tabs button:hover{background:#f8fafc}
+  .tabs button.active{background:var(--accent);color:#fff;font-weight:600}
+  .pane{padding:14px 16px;min-height:420px}
+  .graph-wrap{position:relative;height:610px;border:1px solid #eef2f7;border-radius:10px;
+      overflow:hidden;background:radial-gradient(circle at 1px 1px,#e2e8f0 1px,transparent 0) 0 0/22px 22px}
+  svg.graph{width:100%;height:100%;display:block}
+  .legend{position:absolute;right:10px;top:10px;background:rgba(255,255,255,.95);
+      border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-size:11px;
+      display:flex;gap:10px;flex-wrap:wrap;max-width:320px}
+  .legend span{display:inline-flex;align-items:center;gap:4px;color:#374151}
+  .legend i{width:9px;height:9px;border-radius:50%;display:inline-block}
+  .graph-hint{position:absolute;left:12px;bottom:10px;color:var(--muted);font-size:11px;
+      background:rgba(255,255,255,.92);padding:2px 8px;border-radius:6px;border:1px solid var(--line)}
+  .checks{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:8px;margin-bottom:12px}
+  .check{border:1px solid #e5e7eb;border-radius:9px;padding:8px 10px;font-size:12px;
+      display:flex;gap:7px;align-items:center}
+  .check.ok{background:#f0fdf4;border-color:#bbf7d0;color:#166534}
+  .check.bad{background:#fef2f2;border-color:#fecaca;color:#991b1b}
+  .check .mark{font-weight:700}
+  .clist{list-style:none;margin:0;padding:0}
+  .clist li{display:flex;gap:8px;padding:6px 2px;border-bottom:1px dashed #eef1f5;font-size:12px}
+  .clist .cid{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;
+      color:#475569;min-width:26px}
+  .risk{font-size:22px;font-weight:800;letter-spacing:.5px}
+  .risk.HIGH{color:var(--bad)} .risk.MEDIUM{color:var(--warn)} .risk.LOW{color:var(--ok)}
+  .impact-head{display:flex;align-items:center;gap:18px;flex-wrap:wrap;margin-bottom:12px}
+  .impact-head .chips{margin-top:0}
+  .bar-row{display:grid;grid-template-columns:110px 1fr 24px;align-items:center;gap:8px;
+      font-size:12px;margin:7px 0;color:#334155}
+  .bar-track{height:8px;background:#eef2f7;border-radius:99px;overflow:hidden}
+  .bar-track i{display:block;height:100%;border-radius:99px;
+      background:linear-gradient(90deg,#3b82f6,#60a5fa)}
+  .legend-inline{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;
+      color:#475569;margin:0 0 8px 4px}
+  .legend-inline span{display:inline-flex;align-items:center;gap:5px}
+  .legend-inline i{width:9px;height:9px;border-radius:50%;display:inline-block}
+  .split{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(300px,1fr);gap:14px}
+  .table{width:100%;border-collapse:collapse;font-size:12px}
+  .table th{text-align:left;color:#64748b;font-weight:600;padding:6px 8px;
+      border-bottom:1px solid var(--line);white-space:nowrap}
+  .table td{padding:6px 8px;border-bottom:1px dashed #eef1f5;vertical-align:top}
+  .table tr:hover td{background:#fafcff}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;word-break:break-all}
+  .kv{display:grid;grid-template-columns:110px 1fr;gap:5px 10px;margin-bottom:10px}
+  .kv .k{color:var(--muted)}
+  .kv .v{word-break:break-all}
+  .timeline{list-style:none;margin:0;padding:0}
+  .timeline li{display:grid;grid-template-columns:130px 66px 1fr;gap:9px;align-items:start;
+      padding:7px 4px;border-bottom:1px dashed #eef1f5}
+  .timeline .time{color:#64748b;font-variant-numeric:tabular-nums;font-size:11px}
+  .badge.event{background:#e0f2fe;color:#0369a1}
+  .badge.version{background:#dcfce7;color:#15803d}
+  .evidence-grid,.metric-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px}
+  .card{border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;background:#fff}
+  .card .ct{font-weight:600;color:#0f172a;margin-bottom:3px}
+  .card .cm{color:#64748b;font-size:11px;word-break:break-all}
+  .card .cv{font-size:21px;font-weight:800;color:#0f172a;margin:6px 0 2px}
+  .gate{display:grid;grid-template-columns:minmax(320px,420px) minmax(0,1fr);gap:14px}
+  .form{border:1px solid #e5e7eb;border-radius:10px;padding:12px;display:grid;gap:8px;background:#fcfdff}
+  .form label{font-size:11px;color:#64748b;font-weight:600}
+  .form input,.form select,.form textarea{width:100%;border:1px solid #d5dbe4;border-radius:8px;
+      padding:6px 9px;background:#fff;color:#111827}
+  .form textarea{min-height:86px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px}
+  .form button{border:0;border-radius:8px;padding:8px 12px;background:var(--accent);color:#fff;font-weight:600}
+  .form button:hover{filter:brightness(1.05)}
+  .btn-sm{border:1px solid #cbd5e1;background:#fff;border-radius:7px;padding:3px 8px;
+      font-size:11px;color:#334155;margin-right:4px}
+  .btn-sm.ok{border-color:#86efac;color:#15803d}
+  .btn-sm.bad{border-color:#fecaca;color:#b91c1c}
+  .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(142px,1fr));gap:9px;margin-bottom:12px}
+  .kpi{border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;background:#fff}
+  .kpi span{display:block;color:#64748b;font-size:11px;font-weight:600}
+  .kpi b{display:block;font-size:22px;line-height:1.25;color:#0f172a}
+  .kpi.hot{border-color:#fecaca;background:#fff7f7}
+  .kpi.hot b{color:#b91c1c}
+  .risk{display:inline-block;border-radius:999px;padding:1px 8px;font-size:11px;font-weight:700;
+      border:1px solid transparent}
+  .risk.HIGH{background:#fee2e2;color:#b91c1c;border-color:#fecaca}
+  .risk.MEDIUM{background:#fef3c7;color:#b45309;border-color:#fde68a}
+  .risk.LOW{background:#dcfce7;color:#15803d;border-color:#bbf7d0}
+  .corr-row{cursor:pointer}
+  .corr-row.active td{background:#eff6ff}
+  .issue{border:1px solid #e5e7eb;border-left-width:4px;border-radius:8px;padding:8px 10px;
+      margin-bottom:7px;background:#fff;font-size:12px}
+  .issue.HIGH{border-left-color:#dc2626;background:#fffafa}
+  .issue.MEDIUM{border-left-color:#d97706;background:#fffdf5}
+  .issue .it{display:flex;gap:7px;align-items:center;margin-bottom:3px}
+  .issue .mono{font-size:10px;color:#64748b}
+  .suggestion{border:1px solid #dbeafe;border-radius:8px;padding:9px 10px;background:#f8fbff;
+      margin-bottom:7px;font-size:12px}
+  .suggestion .st{font-weight:700;color:#1d4ed8;margin-bottom:4px}
+  .suggestion code{background:#eef2ff;color:#3730a3;border-radius:4px;padding:0 4px;
+      font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;word-break:break-all}
+  .rulebox{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;
+      background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;line-height:1.55;
+      word-break:break-all;max-height:150px;overflow:auto}
+  .empty{padding:34px;text-align:center;color:var(--muted)}
+  .trace{display:grid;gap:7px}
+  .trace-step{display:grid;grid-template-columns:26px minmax(0,1fr);gap:9px;
+      border-left:3px solid #bfdbfe;background:#f8fbff;border-radius:0 9px 9px 0;
+      padding:8px 10px}
+  .trace-step.bad{border-left-color:#fca5a5;background:#fffafa}
+  .trace-step.ok{border-left-color:#86efac;background:#f7fef9}
+  .trace-step .num{width:24px;height:24px;border-radius:50%;background:#dbeafe;color:#1d4ed8;
+      display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700}
+  .trace-step.bad .num{background:#fee2e2;color:#b91c1c}
+  .trace-step.ok .num{background:#dcfce7;color:#15803d}
+  .trace-step .tt{font-weight:700;color:#0f172a;font-size:12px;display:flex;gap:7px;
+      align-items:center;flex-wrap:wrap}
+  .trace-step .tsrc{font-size:10px;font-weight:500;color:#64748b;background:#eef2f7;
+      border-radius:999px;padding:1px 7px}
+  .trace-step .tq{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;
+      color:#475569;margin-top:3px;word-break:break-all}
+  .trace-step .td{display:flex;gap:5px;flex-wrap:wrap;margin-top:5px}
+  .trace-step .td span{background:#fff;border:1px solid #e2e8f0;border-radius:6px;
+      padding:1px 7px;font-size:11px;color:#334155}
+  .trace-step.bad .td span{border-color:#fecaca;background:#fff}
+  .trace-step .tc{font-size:12px;color:#334155;margin-top:5px}
+  .trace-step .tc b{color:#0f172a}
+  .trace-step .to{font-size:10px;color:#64748b;margin-top:5px}
+  .trace-step .to b{color:#475569;font-weight:600}
+  .trace-step[hidden]{display:none}
+  .trace-nav{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 10px;
+      border:1px solid #dbeafe;border-radius:9px;background:#f8fbff}
+  .trace-nav .tp{font-size:12px;font-weight:700;color:#1d4ed8;white-space:nowrap}
+  .trace-nav .tbar{width:110px;height:5px;background:#dbeafe;border-radius:99px;overflow:hidden}
+  .trace-nav .tbar i{display:block;height:100%;background:#2563eb;border-radius:99px;
+      transition:width .18s ease}
+  .trace-nav .tsp{font-size:11px;color:#64748b}
+  .trace-nav button{border:1px solid #cbd5e1;background:#fff;border-radius:7px;padding:3px 10px;
+      font-size:11px;color:#334155;cursor:pointer}
+  .trace-nav button:disabled{opacity:.4;cursor:not-allowed}
+  .trace-nav button.primary{background:#2563eb;border-color:#2563eb;color:#fff}
+  .llm-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+  .llm-card{border:1px solid #e5e7eb;border-radius:9px;padding:9px 11px;background:#fff}
+  .llm-card.bad{border-color:#fecaca;background:#fffafa}
+  .llm-card.ok{border-color:#bbf7d0;background:#f7fef9}
+  .llm-card .lt{font-weight:700;font-size:12px;margin-bottom:5px}
+  .llm-card.bad .lt{color:#b91c1c}.llm-card.ok .lt{color:#15803d}
+  .llm-card ul{margin:0;padding-left:16px;color:#475569;font-size:11px;line-height:1.65}
+  .llm-card li{margin:2px 0}
+  .llm-note{margin-top:7px;border:1px dashed #cbd5e1;border-radius:8px;padding:8px 10px;
+      font-size:12px;color:#334155;background:#fcfdff}
+  .llm-note b{color:#0f172a}
+  .cmp-big{font-size:24px;font-weight:800;line-height:1.1;margin:1px 0 2px}
+  .llm-card.bad .cmp-big{color:#b91c1c}.llm-card.ok .cmp-big{color:#15803d}
+  .cmp-sub{font-size:10px;color:#64748b;margin-bottom:6px}
+  .cmp-list{list-style:none;padding:0;margin:6px 0 0;display:flex;flex-direction:column;gap:3px}
+  .cmp-list li{font-size:11px;color:#334155;line-height:1.55;padding-left:13px;position:relative}
+  .cmp-list li:before{content:"•";position:absolute;left:2px;color:#94a3b8}
+  .cmp-list li.miss{color:#94a3b8}
+  .cmp-foot{font-size:11px;color:#475569;line-height:1.6;margin-top:7px;
+      border-top:1px dashed #e2e8f0;padding-top:6px}
+  .sq-src{font-size:10px;color:#475569;margin-top:5px;background:#fff;
+      border:1px solid #e2e8f0;border-radius:6px;padding:3px 7px}
+  .sq-src b{color:#1d4ed8;margin-right:4px}
+  .onto-hero{border:1px solid #dbeafe;background:linear-gradient(135deg,#f8fbff,#fff);
+      border-radius:12px;padding:13px 15px;margin-bottom:12px}
+  .onto-hero .ot{font-size:15px;font-weight:700;color:#0f172a}
+  .onto-hero .od{font-size:12px;color:#475569;margin-top:4px;max-width:1000px}
+  .onto-hero .okpis{display:flex;gap:7px;flex-wrap:wrap;margin-top:8px}
+  .onto-kpi{background:#fff;border:1px solid #dbeafe;border-radius:8px;padding:3px 9px;
+      font-size:11px;color:#475569}
+  .onto-kpi b{color:#1d4ed8;font-size:14px;margin-left:4px}
+  .onto-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:10px}
+  .onto-card{border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;background:#fff}
+  .onto-card .oh{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+  .onto-card .oh b{font-size:13px;color:#0f172a}
+  .onto-card .oh code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;
+      background:#f1f5f9;border:1px solid #e2e8f0;border-radius:5px;padding:1px 5px;color:#475569}
+  .onto-card .odesc{font-size:11px;color:#64748b;margin:5px 0 0;min-height:30px}
+  .onto-sec{font-size:10px;font-weight:700;color:#64748b;margin:9px 0 4px;letter-spacing:.3px}
+  .onto-props,.onto-rels{display:flex;gap:4px;flex-wrap:wrap}
+  .prop{font-size:10px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:5px;
+      padding:1px 5px;color:#334155;white-space:nowrap}
+  .prop.req{background:#eff6ff;border-color:#bfdbfe;color:#1d4ed8}
+  .prop i{font-style:normal;color:#94a3b8;margin-left:3px;font-size:9px}
+  .relchip{font-size:10px;background:#f5f3ff;border:1px solid #ddd6fe;color:#6d28d9;
+      border-radius:5px;padding:1px 5px;white-space:nowrap}
+  .relchip.in{background:#f0fdf4;border-color:#bbf7d0;color:#15803d}
+  .onto-note{font-size:11px;color:#64748b;margin-top:6px}
+  .schema-box{margin-top:11px;border:1px solid #e5e7eb;border-radius:10px;background:#fff;padding:10px 12px}
+  .schema-box .st{font-size:12px;font-weight:700;color:#0f172a;margin-bottom:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .schema-box .st .tag{font-size:10px;font-weight:400;color:#64748b}
+  .schema-sum{cursor:pointer;color:#2563eb;font-size:10px;margin-top:4px}
+  .step-query{margin-top:9px;border:1px solid #e2e8f0;border-radius:9px;padding:8px 10px;background:#f8fafc}
+  .step-query .sqh{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:11px;font-weight:700;color:#334155}
+  .step-query .sqh .tag{font-weight:400;color:#64748b;font-size:10px}
+  .step-query .sqh .mode{font-size:9px;font-weight:600;border-radius:4px;padding:1px 5px;
+      background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe}
+  .step-query .sqh .mode.app{background:#f1f5f9;color:#475569;border-color:#e2e8f0}
+  .mini-graph{display:block;width:100%;height:auto;max-height:430px;margin-top:6px;
+      background:#fff;border:1px solid #eef2f7;border-radius:7px}
+  .sq-note{font-size:10px;color:#64748b;margin-top:5px;line-height:1.5}
+  .sq-empty{font-size:11px;color:#64748b;padding:8px 9px;margin-top:6px;
+      background:#fff;border:1px dashed #cbd5e1;border-radius:6px}
+  .sq-list{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;max-height:120px;overflow:auto}
+  .sq-list .prop{font-size:9px}
+  @media (max-width:720px){.llm-grid{grid-template-columns:1fr}.onto-grid{grid-template-columns:1fr}}
+  .err{background:#fef2f2;border:1px solid #fecaca;color:#991b1b;border-radius:8px;
+      padding:9px 11px;font-size:12px;margin-bottom:10px;word-break:break-all}
+  .subhead{font-size:11px;font-weight:600;color:#475569;margin:12px 0 6px;letter-spacing:.4px}
+  #toast{position:fixed;right:18px;bottom:18px;z-index:50;display:grid;gap:8px;max-width:420px}
+  #toast .t{background:#0f172a;color:#e2e8f0;border-radius:9px;padding:9px 12px;font-size:12px;
+      box-shadow:0 6px 24px rgba(15,23,42,.28);animation:fade .2s}
+  #toast .t.bad{background:#7f1d1d}
+  @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  @media (max-width:1080px){
+    main{grid-template-columns:1fr}
+    .sidebar{position:static;max-height:none}
+    .split,.gate{grid-template-columns:1fr}
+    .graph-wrap{height:480px}
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">画像 AI 语义层<small>HugeGraph PD · 本体校验 · Agent 工具 · 写操作门禁</small></div>
+  <div class="stats" id="stats"></div>
+  <div class="spacer"></div>
+  <div class="asof">
+    <span>as-of</span>
+    <input type="datetime-local" id="asOf" step="1">
+    <button id="asOfClear" type="button">实时</button>
+  </div>
+  <a class="navlink" href="#ontology" style="font-weight:700;color:#fbbf24">本体说明</a>
+  <a class="navlink" href="/profile/order-ontology" target="_blank" rel="noreferrer">订单本体 ↗</a>
+  <a class="navlink" href="/" target="_blank" rel="noreferrer">出行本体 ↗</a>
+  <a class="navlink" href="/docs" target="_blank" rel="noreferrer">REST /docs ↗</a>
+  <a class="navlink" href="/profile/ui">刷新</a>
+</header>
+
+<main>
+  <aside class="panel sidebar">
+    <h2>资产检索 <span class="tag" id="assetTotal"></span></h2>
+    <div class="filters">
+      <input id="q" placeholder="搜索人群 / 标签 / 策略 / 指标…" autocomplete="off">
+      <div class="row">
+        <select id="kind">
+          <option value="">全部类型</option>
+          <option value="crowd">人群 Crowd</option>
+          <option value="tag">标签 Tag</option>
+          <option value="strategy">策略 Strategy</option>
+          <option value="canvas">画布 CanvasTask</option>
+          <option value="metric">指标 Metric</option>
+          <option value="evidence">证据 Evidence</option>
+          <option value="version">版本 Version</option>
+          <option value="operator">操作人 Operator</option>
+          <option value="driver">司机 Driver</option>
+          <option value="vehicle">车辆 Vehicle</option>
+          <option value="city">城市 City</option>
+          <option value="order">订单 Order</option>
+        </select>
+        <select id="status">
+          <option value="">全部状态</option>
+          <option value="ACTIVE">ACTIVE</option>
+          <option value="DRAFT">DRAFT</option>
+          <option value="PAUSED">PAUSED</option>
+          <option value="RUNNING">RUNNING</option>
+        </select>
+      </div>
+    </div>
+    <ul class="asset-list" id="assetList"></ul>
+  </aside>
+
+  <section class="content">
+    <div class="panel asset-head" id="assetHead"><div class="empty">请选择一个资产</div></div>
+    <nav class="tabs" id="tabs"></nav>
+    <div class="panel pane" id="pane"><div class="empty">正在加载画像资产…</div></div>
+  </section>
+</main>
+
+<div id="toast"></div>
+
+<script>
+const API = '/profile';
+const KIND_COLOR = {crowd:'#2563eb',tag:'#7c3aed',strategy:'#059669',canvas:'#ea580c',
+  metric:'#0891b2',evidence:'#ca8a04',version:'#64748b',operator:'#db2777',
+  driver:'#0d9488',vehicle:'#4f46e5',city:'#9333ea',order:'#c2410c'};
+const KIND_LABEL = {crowd:'人群',tag:'标签',strategy:'策略',canvas:'画布',
+  metric:'指标',evidence:'证据',version:'版本',operator:'操作人',
+  driver:'司机',vehicle:'车辆',city:'城市',order:'订单'};
+const REL_LABEL = {crowd_has_tag:'含标签',crowd_derived_from:'派生自',
+  strategy_targets_crowd:'触达人群',strategy_uses_tag:'使用标签',
+  canvas_references_crowd:'引用人群',canvas_references_strategy:'引用策略',
+  canvas_generates_order:'画布生成订单',
+  asset_has_metric:'关联指标',asset_has_evidence:'关联证据',
+  asset_has_version:'关联版本',version_generated_by:'生成人',
+  crowd_scope_city:'人群覆盖城市',driver_owns_vehicle:'司机绑定车辆',
+  driver_in_city:'司机所属城市',order_served_by_driver:'订单由司机服务',
+  order_in_city:'订单所属城市'};
+const PROP_LABEL = {name:'名称',display_name:'展示名',description:'描述',status:'状态',
+  status_reason:'状态原因',owner:'负责人',domain:'业务域',source_system:'源系统',
+  source_id:'源 ID',source_url:'源链接',keywords:'关键词',estimated_size:'预估规模',
+  target_size:'目标规模',priority:'优先级',permission_scope:'权限范围',
+  rule_expression:'圈选规则',rule_language:'规则语言',referenced_tags:'引用标签',
+  scope:'范围',crowd_type:'人群类型',expected_city_count:'声明城市数',
+  created_at:'创建时间',updated_at:'更新时间',metadata:'元数据',definition:'标签定义',
+  expression:'标签表达式',value_type:'值类型',managed:'是否托管',city_code:'城市编码',
+  city_name:'城市名',region:'区域',action:'动作',channel:'渠道',effective_from:'生效起点',
+  effective_to:'生效终点',metric_name:'指标名',value:'值',unit:'单位',period:'周期',
+  confidence:'置信度',observed_at:'观测时间',valid_from:'生效起点',valid_to:'失效起点',
+  weight:'权重',asset_type:'资产类型',approved_by:'审批人'};
+const TABS = [['ontology','本体说明'],['graph','关系图'],['overview','概览'],
+  ['correction','人群纠错'],['forensic','图谱查询取证'],['validate','语义校验'],['impact','影响面'],
+  ['lineage','派生血缘'],['evidence','证据链'],['metrics','指标'],['gate','写操作门禁']];
+
+const state = {assets:[],asset:null,context:null,impact:null,validation:null,
+  evidence:null,lineage:null,metrics:null,corrections:null,dictionary:null,selectedCrowd:null,
+  caseContext:null,caseImpact:{},proposals:[],audit:[],activeTab:'correction',asOf:''};
+
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c =>
+  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const trunc = (s,n) => { s = String(s ?? ''); return s.length > n ? s.slice(0,n) + '…' : s; };
+
+function toast(msg, bad) {
+  const el = document.createElement('div');
+  el.className = 't' + (bad ? ' bad' : '');
+  el.textContent = msg;
+  $('#toast').appendChild(el);
+  setTimeout(() => el.remove(), 3200);
+}
+
+async function api(path, opts = {}) {
+  const res = await fetch(API + path, {headers:{'Content-Type':'application/json'}, ...opts});
+  let data = null;
+  try { data = await res.json(); } catch (e) { data = null; }
+  if (!res.ok) {
+    const d = data && data.detail;
+    throw new Error(typeof d === 'string' ? d : (d ? JSON.stringify(d) : res.statusText));
+  }
+  return data;
+}
+
+// as-of 时态快照：非空时所有查询只返回该时间点有效的边。
+const atQuery = () => state.asOf ? `&at=${encodeURIComponent(state.asOf)}` : '';
+const atLabel = () => state.asOf
+  ? `<span class="chip">as-of <b>${esc(state.asOf)}</b></span>`
+  : '<span class="chip">实时快照</span>';
+
+const kindColor = k => KIND_COLOR[k] || '#64748b';
+const kindLabel = k => KIND_LABEL[k] || k || '未知';
+const propName = p => PROP_LABEL[p] || p;
+const propDef = p => ((state.dictionary && state.dictionary.property_defs) || {})[p] || {};
+const schemaClass = n => {
+  const classes = (state.dictionary && state.dictionary.classes) || [];
+  return classes.find(c => n && c.id === n.label) ||
+    classes.find(c => n && c.kind === n.kind) || null;
+};
+const schemaRelation = e => {
+  const relations = (state.dictionary && state.dictionary.relations) || [];
+  return relations.find(r => r.id === e.relation) || null;
+};
+function statusStyle(s) {
+  if (['ACTIVE','RUNNING','COMPLETED'].includes(s)) return 'background:#dcfce7;color:#15803d;border-color:#bbf7d0';
+  if (['PAUSED','REVIEW','SCHEDULED'].includes(s)) return 'background:#fef3c7;color:#b45309;border-color:#fde68a';
+  if (['FAILED','CANCELLED','ARCHIVED'].includes(s)) return 'background:#fee2e2;color:#b91c1c;border-color:#fecaca';
+  return '';
+}
+const kindBadge = k => `<span class="badge kind" style="background:${kindColor(k)}">${esc(kindLabel(k))}</span>`;
+const statusBadge = s => s
+  ? `<span class="badge status" style="${statusStyle(s)}">${esc(s)}</span>`
+  : '<span class="badge status">-</span>';
+const riskBadge = r => `<span class="risk ${esc(r || 'LOW')}">${esc(r || '-')}</span>`;
+const money = v => '¥' + Number(v || 0).toLocaleString('zh-CN', {maximumFractionDigits: 0});
+
+/* ------------------------------------------------------------- 初始化 */
+async function loadHealth() {
+  try {
+    const h = await api('/health');
+    const sc = h.schema || {}, sem = h.semantic || {};
+    $('#stats').innerHTML = [
+      `<div class="stat">状态<b style="color:${h.ok?'#4ade80':'#f87171'}">${h.ok?'OK':'DOWN'}</b></div>`,
+      `<div class="stat">图谱<b>${esc(h.graphspace||'-')}/${esc(h.graph||'-')}</b></div>`,
+      `<div class="stat">顶点类<b>${sc.vertexlabels ?? sem.classes ?? 0}</b></div>`,
+      `<div class="stat">边类<b>${sc.edgelabels ?? sem.relations ?? 0}</b></div>`,
+      `<div class="stat">属性键<b>${sc.propertykeys ?? 0}</b></div>`
+    ].join('');
+  } catch (e) {
+    $('#stats').innerHTML = '<div class="stat">状态<b style="color:#f87171">DOWN</b></div>';
+    toast('健康检查失败：' + e.message, true);
+  }
+}
+
+async function searchAssets() {
+  const q = $('#q').value.trim(), kind = $('#kind').value, status = $('#status').value;
+  try {
+    const data = await api(`/assets?query=${encodeURIComponent(q)}&kind=${encodeURIComponent(kind)}`
+      + `&status=${encodeURIComponent(status)}&limit=100`);
+    state.assets = data.items || [];
+    $('#assetTotal').textContent = `共 ${data.total} 个`;
+    renderAssetList();
+    if (state.assets.length && (!state.asset || !state.assets.some(a => a.id === state.asset))) {
+      selectAsset(state.assets[0].id);
+    }
+  } catch (e) {
+    $('#assetList').innerHTML = `<li class="err">${esc(e.message)}</li>`;
+  }
+}
+
+function renderAssetList() {
+  const list = $('#assetList');
+  if (!state.assets.length) { list.innerHTML = '<li class="empty">没有匹配资产</li>'; return; }
+  list.innerHTML = state.assets.map(a => `
+    <li data-id="${esc(a.id)}" class="${a.id === state.asset ? 'active' : ''}">
+      <div class="aid">${esc(a.id)}</div>
+      <div class="ameta">
+        <span class="dot" style="background:${kindColor(a.kind)}"></span>${esc(kindLabel(a.kind))}
+        ${a.status ? statusBadge(a.status) : ''}${a.owner ? `<span>· ${esc(a.owner)}</span>` : ''}
+      </div>
+    </li>`).join('');
+  list.querySelectorAll('li[data-id]').forEach(li =>
+    li.addEventListener('click', () => selectAsset(li.dataset.id)));
+}
+
+/* ------------------------------------------------------------- 资产详情 */
+async function selectAsset(id) {
+  state.asset = id;
+  state.context = state.impact = state.validation = state.evidence = null;
+  state.lineage = null;
+  state.metrics = null;
+  renderAssetList();
+  renderHead();
+  renderTabs();
+  $('#pane').innerHTML = `<div class="empty">正在加载 ${esc(id)} …</div>`;
+  try {
+    state.context = await api(`/assets/${encodeURIComponent(id)}/context?level=NETWORK${atQuery()}`);
+  } catch (e) {
+    $('#pane').innerHTML = `<div class="err">${esc(e.message)}</div>`;
+    return;
+  }
+  renderHead();
+  await loadTab(state.activeTab);
+}
+
+function renderHead() {
+  const c = state.context;
+  if (!c) { $('#assetHead').innerHTML = '<div class="empty">请选择一个资产</div>'; return; }
+  const s = c.summary || {};
+  $('#assetHead').innerHTML = `
+    <div class="top">
+      ${kindBadge(c.kind)}
+      <span class="name">${esc(c.display_name || c.name || c.asset_id)}</span>
+      ${statusBadge(c.status)}
+      ${c.owner ? `<span class="chip">Owner <b>${esc(c.owner)}</b></span>` : ''}
+    </div>
+    <div class="id">${esc(c.asset_id)}</div>
+    ${c.description ? `<div class="desc">${esc(c.description)}</div>` : ''}
+    <div class="chips">
+      <span class="chip">关系 <b>${s.neighbors ?? 0}</b></span>
+      <span class="chip">标签 <b>${s.tags ?? 0}</b></span>
+      <span class="chip">证据 <b>${s.evidence ?? 0}</b></span>
+      <span class="chip">版本 <b>${s.versions ?? 0}</b></span>
+      <span class="chip">指标 <b>${s.metrics ?? 0}</b></span>
+      <span class="chip">策略 <b>${s.strategies ?? 0}</b></span>
+      <span class="chip">画布 <b>${s.canvases ?? 0}</b></span>
+      <span class="chip">更新 <b>${esc(c.updated_at || '-')}</b></span>
+    </div>`;
+}
+
+/* ------------------------------------------------------------------ tabs */
+function renderTabs() {
+  $('#tabs').innerHTML = TABS.map(([k, label]) =>
+    `<button data-tab="${k}" class="${k === state.activeTab ? 'active' : ''}">${label}</button>`).join('');
+  $('#tabs').querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
+    state.activeTab = b.dataset.tab;
+    if (location.hash.slice(1) !== state.activeTab) {
+      history.replaceState(null, '', '#' + state.activeTab);
+    }
+    renderTabs();
+    loadTab(state.activeTab);
+  }));
+}
+
+async function loadTab(tab) {
+  const pane = $('#pane');
+  if (tab === 'ontology') { await loadOntology(); return; }
+  if (!state.context) return;
+  if (tab === 'graph') {
+    pane.innerHTML = graphShell();
+    try { await ensureDictionary(); } catch (e) { state.dictionary = null; }
+    drawContextGraph();
+    return;
+  }
+  if (tab === 'overview') { pane.innerHTML = overviewShell(); return; }
+  pane.innerHTML = '<div class="empty">加载中…</div>';
+  try {
+    if (tab === 'correction') {
+      state.corrections = await api('/corrections?limit=200');
+      state.caseContext = null;
+      const items = state.corrections.items || [];
+      if (!state.selectedCrowd || !items.some(i => i.crowd_id === state.selectedCrowd)) {
+        state.selectedCrowd = defaultCrowdId(items);
+      }
+      renderCorrection();
+    } else if (tab === 'forensic') {
+      await loadForensics();
+    } else if (tab === 'validate') {
+      state.validation = await api(`/assets/${encodeURIComponent(state.asset)}/validate`);
+      renderValidation();
+    } else if (tab === 'impact') {
+      state.impact = await api(`/assets/${encodeURIComponent(state.asset)}/impact?depth=3${atQuery()}`);
+      renderImpact();
+    } else if (tab === 'lineage') {
+      state.lineage = await api(`/assets/${encodeURIComponent(state.asset)}/lineage?depth=3${atQuery()}`);
+      renderLineage();
+    } else if (tab === 'evidence') {
+      state.evidence = await api(`/assets/${encodeURIComponent(state.asset)}/evidence?${atQuery().slice(1)}`);
+      renderEvidence();
+    } else if (tab === 'metrics') {
+      state.metrics = await api(`/metrics?asset_id=${encodeURIComponent(state.asset)}&limit=50`);
+      renderMetrics();
+    } else if (tab === 'gate') {
+      await loadGate();
+    }
+  } catch (e) {
+    pane.innerHTML = `<div class="err">${esc(e.message)}</div>`;
+  }
+}
+
+/* ----------------------------------------------------------- 本体说明 */
+async function ensureDictionary() {
+  if (!state.dictionary) state.dictionary = await api('/dictionary');
+  return state.dictionary;
+}
+
+async function loadOntology() {
+  const pane = $('#pane');
+  if (!state.dictionary) pane.innerHTML = '<div class="empty">加载本体定义…</div>';
+  try {
+    await ensureDictionary();
+  } catch (e) {
+    pane.innerHTML = `<div class="err">${esc(e.message)}</div>`;
+    return;
+  }
+  renderOntology();
+}
+
+function renderOntology() {
+  const d = state.dictionary;
+  const classes = d.classes || [], relations = d.relations || [];
+  const constraints = d.constraints || [], machines = d.state_machines || {};
+  const defs = d.property_defs || {};
+  const propLabel = p => PROP_LABEL[p] || p;
+  const propType = p => (defs[p] && defs[p].data_type) || '';
+  const classLabel = id => {
+    const c = classes.find(x => x.id === id);
+    return c ? c.label : (id || '任意资产');
+  };
+  const outRels = c => relations.filter(r => (r.domains || []).includes(c.id));
+  const inRels = c => relations.filter(r => r.range === c.id);
+  const relsOf = c => outRels(c).map(r =>
+      `<span class="relchip" title="${esc(r.id)}">${esc(r.label)} → ${esc(classLabel(r.range))}</span>`).join('')
+    + inRels(c).map(r =>
+      `<span class="relchip in" title="${esc(r.id)}">${esc((r.domains || []).map(classLabel).join(' / '))} → ${esc(r.label)}</span>`).join('');
+  const crowd = classes.find(c => c.id === 'Crowd');
+  const crowdText = crowd
+    ? `以 Crowd 为例：它不是标签，也不是圈人策略，而是可计算的<b>人群资产</b>；共 ${crowd.properties.length} 个属性，其中 ${crowd.required.length} 个必填，并通过 crowd_has_tag、crowd_scope_city 等关系连接标签与城市。`
+    : '';
+  const clsCards = classes.map(c => {
+    const req = new Set(c.required || []);
+    const props = (c.properties || []).map(p =>
+      `<span class="prop ${req.has(p) ? 'req' : ''}">${esc(propLabel(p))}<i>${esc(propType(p))}</i></span>`).join('');
+    const rels = relsOf(c);
+    return `<div class="onto-card">
+      <div class="oh"><span class="dot" style="background:${kindColor(c.kind)}"></span>
+        <b>${esc(c.label)}</b><code>${esc(c.id)}</code>
+        <span class="chip">${esc(c.properties.length)} 属性</span></div>
+      <div class="odesc">${esc(c.description)}</div>
+      <div class="onto-sec">必填属性 · ${(c.required || []).length}</div>
+      <div class="onto-props">${(c.required || []).map(p =>
+        `<span class="prop req">${esc(propLabel(p))}</span>`).join('') || '<span class="onto-note">无</span>'}</div>
+      <div class="onto-sec">全部属性 · ${c.properties.length}（蓝色为必填）</div>
+      <div class="onto-props">${props || '<span class="onto-note">无</span>'}</div>
+      <div class="onto-sec">关联关系 · ${outRels(c).length + inRels(c).length}</div>
+      <div class="onto-rels">${rels || '<span class="onto-note">无</span>'}</div>
+    </div>`;
+  }).join('');
+  const relRows = relations.map(r => `<tr>
+    <td><b>${esc(r.label)}</b><div class="mono">${esc(r.id)}</div></td>
+    <td>${esc((r.domains || []).map(classLabel).join(' / ') || '任意资产')}</td>
+    <td>${esc(classLabel(r.range))}</td>
+    <td>${r.temporal ? '<span class="badge status">时态边</span>' : '—'}</td>
+    <td>${(r.properties || []).map(p => `<span class="prop">${esc(propLabel(p))}</span>`).join('') || '—'}</td>
+    <td>${esc(r.description || '')}</td>
+  </tr>`).join('');
+  const correctionUsed = new Set(['C7', 'C12', 'C13', 'C14', 'C15']);
+  const conRows = constraints.map(c => `<tr>
+    <td><b>${esc(c.id)}</b><div class="mono">${esc(c.type || '')}</div></td>
+    <td>${esc(c.label || '')}${correctionUsed.has(c.id) ? ' <span class="badge status">纠错直用</span>' : ''}
+      <div class="mono" style="color:#64748b">${esc(c.message || '')}</div></td>
+    <td><span class="badge status">${esc(c.severity || '')}</span></td>
+    <td>${esc(c.target || '')}</td>
+  </tr>`).join('');
+  const smCards = Object.entries(machines).map(([cid, m]) => {
+    const trans = Object.entries(m.transitions || {}).filter(([, to]) => (to || []).length)
+      .map(([from, to]) => `<span class="relchip">${esc(from)} → ${esc(to.join(' / '))}</span>`).join('');
+    return `<div class="onto-card">
+      <div class="oh"><b>${esc(classLabel(cid))}</b><code>${esc(cid)}</code>
+        <span class="chip">初始态 ${esc(m.initial)}</span></div>
+      <div class="onto-sec">全部状态</div>
+      <div class="onto-props">${(m.states || []).map(s =>
+        `<span class="prop">${esc(s)}</span>`).join('')}</div>
+      <div class="onto-sec">允许迁移</div>
+      <div class="onto-rels">${trans || '<span class="onto-note">终态，无出边</span>'}</div>
+    </div>`;
+  }).join('');
+  const gate = d.write_gate || {};
+  const gateHtml = `<div class="onto-card" style="margin-top:10px">
+    <div class="oh"><b>写操作门禁</b><code>write_gate</code></div>
+    <div class="odesc">${esc(gate.policy || '')}</div>
+    <div class="onto-sec">允许动作</div>
+    <div class="onto-props">${(gate.allowed_actions || []).map(a =>
+      `<span class="prop req">${esc(a)}</span>`).join('')}</div>
+    <div class="onto-sec">禁止动作</div>
+    <div class="onto-props">${(gate.forbidden || []).map(a =>
+      `<span class="prop">${esc(a)}</span>`).join('')}</div>
+  </div>`;
+  $('#pane').innerHTML = `
+    <div class="onto-hero">
+      <div class="ot">本体说明 · ${d.class_count} 类顶点不是 ${d.class_count} 个圆圈，而是 ${d.class_count} 种带属性、带约束的业务对象</div>
+      <div class="od">看关系图只能看到“谁连着谁”。这里把图背后的定义展开：
+        顶点 = 名词 + 属性；边 = 动词 + 定义域/值域 + 时态；约束 = 什么时候判冲突。
+        ${crowdText}</div>
+      <div class="okpis">
+        <span class="onto-kpi">顶点类<b>${d.class_count}</b></span>
+        <span class="onto-kpi">全局属性<b>${Object.keys(defs).length}</b></span>
+        <span class="onto-kpi">关系类<b>${d.relation_count}</b></span>
+        <span class="onto-kpi">约束<b>${d.constraint_count}</b></span>
+        <span class="onto-kpi">状态机<b>${d.state_machine_count}</b></span>
+      </div>
+    </div>
+    <div class="subhead" style="margin-top:0">12 类顶点 · 每类有哪些属性、连到哪些类</div>
+    <div class="onto-grid">${clsCards}</div>
+    <div class="subhead">15 类关系 · 定义域 → 值域，时态边可追溯</div>
+    <div style="overflow:auto">
+      <table class="table">
+        <thead><tr><th>关系</th><th>定义域</th><th>值域</th><th>时态</th><th>关系属性</th><th>说明</th></tr></thead>
+        <tbody>${relRows}</tbody>
+      </table>
+    </div>
+    <div class="subhead">15 条约束 · 诊断冲突就是在这里判出来的</div>
+    <div style="overflow:auto">
+      <table class="table">
+        <thead><tr><th>约束 ID</th><th>规则</th><th>级别</th><th>作用对象</th></tr></thead>
+        <tbody>${conRows}</tbody>
+      </table>
+    </div>
+    <div class="subhead">状态机 · 不是任意状态都能随便跳</div>
+    <div class="onto-grid">${smCards}</div>
+    <div class="subhead">写操作契约 · Agent 只能提议，不能直接落图</div>
+    ${gateHtml}`;
+}
+
+/* ------------------------------------------------------- 图上的 Schema */
+function renderGraphSchema(nodes, edges, sel, scope) {
+  const el = $(sel);
+  if (!el) return;
+  const nameOf = id => {
+    const n = nodes.find(x => x.id === id);
+    return n ? (n.name || n.data && n.data.name || id) : id;
+  };
+  const reserved = new Set(['id', 'label', 'kind', 'name', 'display_name', 'properties',
+    'neighbors', 'summary', 'trust', 'evidence', 'versions', 'metrics', 'lineage']);
+  const nodeRows = nodes.map(n => {
+    const cls = schemaClass(n);
+    const data = n.data || {};
+    const actual = ['status', 'owner', 'source_system', 'updated_at', 'description']
+      .filter(k => data[k] !== undefined && data[k] !== null && data[k] !== '')
+      .map(k => `<span class="prop">${esc(propName(k))}=${esc(trunc(String(data[k]), 90))}</span>`);
+    const allActual = Object.keys(data).filter(k => !reserved.has(k) &&
+        data[k] !== undefined && data[k] !== null && data[k] !== '' &&
+        typeof data[k] !== 'object')
+      .map(k => `<span class="prop">${esc(propName(k))}=${esc(trunc(String(data[k]), 120))}</span>`);
+    const actualHtml = `${actual.join('') || '<span class="onto-note">-</span>'}
+      ${allActual.length > actual.length ? `<details><summary class="schema-sum">
+        全部 ${allActual.length} 项实例数据</summary>
+        <div class="onto-props" style="margin-top:4px">${allActual.join('')}</div></details>` : ''}`;
+    const schema = cls ? `<b>${esc(cls.label)}</b> <code>${esc(cls.id)}</code>
+      <div class="onto-props" style="margin-top:4px">${(cls.required || []).map(p =>
+        `<span class="prop req">${esc(propName(p))}</span>`).join('')}</div>
+      <details><summary class="schema-sum">全部 ${(cls.properties || []).length} 个属性</summary>
+        <div class="onto-props" style="margin-top:4px">${(cls.properties || []).map(p => {
+          const t = (propDef(p) || {}).data_type || '';
+          return `<span class="prop ${(cls.required || []).includes(p) ? 'req' : ''}">${esc(propName(p))}<i>${esc(t)}</i></span>`;
+        }).join('')}</div>
+      </details>` : '<span class="onto-note">本体中未找到该类</span>';
+    return `<tr>
+      <td><span class="dot" style="background:${kindColor(n.kind)}"></span>
+        <b>${esc(nameOf(n.id))}</b><div class="mono">${esc(n.id)}</div></td>
+      <td>${schema}</td>
+      <td>${actualHtml}</td>
+    </tr>`;
+  }).join('');
+  const edgeRows = edges.map(e => {
+    const r = schemaRelation(e);
+    const relation = r ? `<b>${esc(r.label)}</b> <code>${esc(r.id)}</code>
+      <div class="mono">${esc((r.domains || []).map(d =>
+        (schemaClass({ label: d }) || { label: d }).label).join(' / '))} → ${esc((schemaClass({ label: r.range }) || { label: r.range }).label)}</div>
+      <div class="onto-note">${r.temporal ? '时态边 · valid_from/valid_to 可追溯' : '普通边'}</div>
+      <div class="onto-props" style="margin-top:4px">${(r.properties || []).map(p =>
+        `<span class="prop">${esc(propName(p))}</span>`).join('') || '无关系属性'}</div>`
+      : `<b>${esc(e.relation)}</b><div class="onto-note">本体中未找到该关系</div>`;
+    const actual = Object.entries(e.properties || {}).map(([k, v]) =>
+      `<span class="prop">${esc(propName(k))}=${esc(trunc(String(v), 70))}</span>`).join('');
+    return `<tr>
+      <td><b>${esc(nameOf(e.source))}</b>
+        <div style="color:#64748b;font-size:10px">${esc(REL_LABEL[e.relation] || e.relation)}
+        ${e.active === false ? ' · 已失效' : ''}</div>
+        <div class="mono">→ ${esc(nameOf(e.target))}</div></td>
+      <td>${relation}</td>
+      <td>${actual || '<span class="onto-note">-</span>'}</td>
+    </tr>`;
+  }).join('');
+  el.innerHTML = `<div class="schema-box">
+    <div class="st">${esc(scope || '本次图')} · 顶点 Schema 与实例数据
+      <span class="tag">${nodes.length} 个顶点 · 点击“全部属性”展开完整 Schema</span></div>
+    <div style="overflow:auto"><table class="table">
+      <thead><tr><th>顶点</th><th>类 Schema</th><th>实例数据</th></tr></thead>
+      <tbody>${nodeRows}</tbody></table></div>
+    <div class="st" style="margin-top:12px">${esc(scope || '本次图')} · 边 Schema 与实例数据
+      <span class="tag">${edges.length} 条边 · 定义域 / 值域 / 时态 / 关系属性</span></div>
+    <div style="overflow:auto"><table class="table">
+      <thead><tr><th>边</th><th>关系 Schema</th><th>实例数据</th></tr></thead>
+      <tbody>${edgeRows || '<tr><td colspan="3" class="empty">本次图没有边</td></tr>'}</tbody></table></div>
+  </div>`;
+}
+
+/* --------------------------------------------------------------- 概览 */
+function overviewShell() {
+  const c = state.context, p = Object.assign({}, c, c.properties || {});
+  const rows = ['asset_id','label','kind','status','owner','updated_at','display_name','description']
+    .map(k => `<div class="k">${esc(k)}</div><div class="v">${esc(c[k] ?? p[k] ?? '-')}</div>`).join('');
+  const keys = ['domain','source_system','source_id','permission_scope','estimated_size','target_size',
+    'definition','expression','rule','action','channel','risk_level','metric_name','value','unit','period'];
+  const ret = keys.filter(k => p[k] !== undefined && p[k] !== null && p[k] !== '')
+    .map(k => `<div class="k">${esc(k)}</div><div class="v">${esc(p[k])}</div>`).join('');
+  const rel = (c.neighbors || []).slice(0, 16).map(n =>
+    `<span class="chip">${esc(REL_LABEL[n.relation] || n.relation)} → ${esc(n.vertex ? n.vertex.id : '')}</span>`).join('');
+  const byRel = (c.summary && c.summary.by_relation) || {};
+  const maxRel = Math.max(1, ...Object.values(byRel));
+  const relBars = Object.entries(byRel).map(([k, v]) => `
+    <div class="bar-row">
+      <span>${esc(REL_LABEL[k] || k)}</span>
+      <span class="bar-track"><i style="width:${Math.round(v / maxRel * 100)}%"></i></span>
+      <b>${v}</b>
+    </div>`).join('');
+  return `
+    <div class="split">
+      <div>
+        <div class="subhead" style="margin-top:0">资产属性</div>
+        <div class="kv">${rows}</div>
+        <div class="subhead">一跳关系</div>
+        <div class="chips" style="margin-top:0">${rel || '<span class="empty">暂无关系</span>'}</div>
+      </div>
+      <div>
+        <div class="subhead" style="margin-top:0">关系分布</div>
+        ${relBars || '<div class="empty">暂无关系数据</div>'}
+        <div class="subhead">领域属性</div>
+        ${ret ? `<div class="kv" style="grid-template-columns:130px 1fr">${ret}</div>`
+              : '<div class="empty">该资产没有额外领域属性</div>'}
+      </div>
+    </div>`;
+}
+
+/* ---------------------------------------------------------------- 图 */
+const graphShell = () => `
+  <div class="onto-note" style="margin:0 0 8px">
+    图上的节点是本体顶点，边是语义关系；每类顶点都有属性，每条边都有定义域/值域。
+    属性表、15 条约束和状态机见顶部「本体说明」。
+  </div>
+  <div class="graph-wrap">
+    <svg class="graph" id="graph"></svg>
+    <div class="legend" id="legend"></div>
+    <div class="graph-hint">点击节点继续下钻 · 拖拽节点可调整布局 · 悬停顶点/边查看 Schema</div>
+  </div>
+  <div id="graphSchema"></div>`;
+
+function drawContextGraph() {
+  const c = state.context;
+  const root = {id:c.asset_id, kind:c.kind, label:c.label, name:c.display_name || c.name,
+    status:c.status, data:c};
+  const nodes = [root], seen = new Set([root.id]), edges = [];
+  (c.neighbors || []).forEach(n => {
+    const v = n.vertex;
+    if (!v) return;
+    if (!seen.has(v.id)) {
+      seen.add(v.id);
+      nodes.push({id:v.id, kind:v.kind, label:v.label,
+        name:v.display_name || v.name, status:v.status, data:v});
+    }
+    const out = n.direction === 'OUT';
+    edges.push({source: out ? root.id : v.id, target: out ? v.id : root.id,
+      relation:n.relation, active:n.active, properties:n.properties || {}});
+  });
+  drawGraph($('#graph'), root, nodes, edges, null);
+  renderLegend(nodes, '#legend');
+  renderGraphSchema(nodes, edges, '#graphSchema', '当前关系图');
+}
+
+function renderLegend(nodes, sel) {
+  const kinds = [...new Set(nodes.map(n => n.kind))].filter(Boolean);
+  const el = $(sel);
+  if (el) el.innerHTML = kinds.map(k =>
+    `<span><i style="background:${kindColor(k)}"></i>${esc(kindLabel(k))}</span>`).join('');
+}
+
+function layoutForce(nodes, edges, W, H, rootId) {
+  const cx = W / 2, cy = H / 2;
+  const positions = {};
+  const others = nodes.filter(n => n.id !== rootId);
+  positions[rootId] = {x: cx, y: cy, r: 0};
+  const baseR = Math.min(W, H) * 0.32;
+  others.forEach((n, i) => {
+    const a = (2 * Math.PI * i) / Math.max(others.length, 1) - Math.PI / 2;
+    positions[n.id] = {x: cx + baseR * Math.cos(a), y: cy + baseR * Math.sin(a), r: 0};
+  });
+  const ids = nodes.map(n => n.id);
+  for (let it = 0; it < 300; it++) {
+    const cool = 1 - it / 300;
+    const disp = {};
+    ids.forEach(id => { disp[id] = {x: 0, y: 0}; });
+    for (let i = 0; i < ids.length; i++) {
+      for (let j = i + 1; j < ids.length; j++) {
+        const a = positions[ids[i]], b = positions[ids[j]];
+        const dx = a.x - b.x, dy = a.y - b.y;
+        const d = Math.hypot(dx, dy) || 0.01;
+        const min = (ids[i] === rootId || ids[j] === rootId) ? 150 : 118;
+        const rep = d < min ? (min - d) * 2.4 : 3600 / (d * d);
+        const ux = dx / d, uy = dy / d;
+        disp[ids[i]].x += ux * rep; disp[ids[i]].y += uy * rep;
+        disp[ids[j]].x -= ux * rep; disp[ids[j]].y -= uy * rep;
+      }
+    }
+    edges.forEach(e => {
+      const a = positions[e.source], b = positions[e.target];
+      if (!a || !b) return;
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const d = Math.hypot(dx, dy) || 0.01;
+      const f = (d - 165) * 0.025;
+      const ux = dx / d, uy = dy / d;
+      disp[e.source].x += ux * f; disp[e.source].y += uy * f;
+      disp[e.target].x -= ux * f; disp[e.target].y -= uy * f;
+    });
+    ids.forEach(id => {
+      if (id === rootId) return;
+      disp[id].x += (cx - positions[id].x) * 0.005;
+      disp[id].y += (cy - positions[id].y) * 0.005;
+      const p = positions[id], d = disp[id];
+      const len = Math.hypot(d.x, d.y) || 1;
+      const step = Math.min(len, 12) * (0.5 + 0.5 * cool);
+      p.x = Math.max(78, Math.min(W - 78, p.x + d.x / len * step));
+      p.y = Math.max(72, Math.min(H - 92, p.y + d.y / len * step));
+    });
+  }
+  for (let k = 0; k < 300; k++) {
+    const push = {};
+    ids.forEach(id => { push[id] = {x: 0, y: 0}; });
+    let overlap = false;
+    for (let i = 0; i < ids.length; i++) {
+      for (let j = i + 1; j < ids.length; j++) {
+        const a = positions[ids[i]], b = positions[ids[j]];
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const d = Math.hypot(dx, dy) || 0.01;
+        const min = (ids[i] === rootId || ids[j] === rootId) ? 150 : 118;
+        if (d >= min) continue;
+        overlap = true;
+        const half = (min - d) / 2;
+        const ux = dx / d, uy = dy / d;
+        if (ids[i] === rootId) {
+          push[ids[j]].x += ux * half * 2; push[ids[j]].y += uy * half * 2;
+        } else if (ids[j] === rootId) {
+          push[ids[i]].x -= ux * half * 2; push[ids[i]].y -= uy * half * 2;
+        } else {
+          push[ids[i]].x -= ux * half; push[ids[i]].y -= uy * half;
+          push[ids[j]].x += ux * half; push[ids[j]].y += uy * half;
+        }
+      }
+    }
+    if (!overlap) break;
+    ids.forEach(id => {
+      if (id === rootId) return;
+      const p = positions[id];
+      p.x = Math.max(78, Math.min(W - 78, p.x + push[id].x));
+      p.y = Math.max(72, Math.min(H - 92, p.y + push[id].y));
+    });
+  }
+  return positions;
+}
+
+function drawGraph(svg, root, nodes, edges, distanceMap, navigable = true) {
+  if (!svg) return;
+  const box = svg.parentElement.getBoundingClientRect();
+  const W = Math.max(680, Math.round(box.width));
+  const H = Math.max(440, Math.round(box.height));
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  const cx = W / 2, cy = H / 2;
+  const force = !!distanceMap;
+  let positions;
+  if (force) {
+    positions = layoutForce(nodes, edges, W, H, root.id);
+  } else {
+    const dist = {[root.id]: 0};
+    nodes.forEach(n => { if (dist[n.id] === undefined) dist[n.id] = 1; });
+    const rings = {};
+    nodes.forEach(n => {
+      const d = dist[n.id] || 0;
+      if (d > 0) (rings[d] = rings[d] || []).push(n);
+    });
+    const maxR = Math.min(W, H) / 2 - 74;
+    positions = {[root.id]: {x: cx, y: cy, r: 0}};
+    Object.keys(rings).map(Number).forEach(d => {
+      const arr = rings[d];
+      arr.forEach((n, i) => {
+        const angle = -Math.PI / 2 + (2 * Math.PI * i) / arr.length;
+        positions[n.id] = {
+          x: cx + maxR * Math.cos(angle), y: cy + maxR * Math.sin(angle), r: maxR
+        };
+      });
+    });
+  }
+
+  let html = `<defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="24" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10z" fill="#94a3b8"/></marker>
+    <marker id="arrowOff" viewBox="0 0 10 10" refX="24" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10z" fill="#cbd5e1"/></marker>
+    <filter id="shadow" x="-50%" y="-50%" width="200%" height="200%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#0f172a" flood-opacity="0.18"/></filter>
+  </defs>`;
+
+  if (!force) {
+    html += `<circle cx="${cx}" cy="${cy}" r="${Math.min(W, H) / 2 - 74}"
+      fill="none" stroke="#e2e8f0" stroke-dasharray="4 6"/>`;
+  }
+
+  edges.forEach(e => {
+    const a = positions[e.source], b = positions[e.target];
+    if (!a || !b) return;
+    const active = e.active !== false;
+    const r = schemaRelation(e);
+    const schemaLine = r
+      ? `关系 ${r.label} (${r.id}) · ${(r.domains || []).join('/')} → ${r.range}${r.temporal ? ' · 时态边' : ''} · 关系属性 ${(r.properties || []).join(', ') || '无'}`
+      : `关系 ${e.relation} · 本体中未找到定义`;
+    const actualLine = Object.entries(e.properties || {}).map(([k, v]) => `${k}=${v}`).join(' · ') || '无实例属性';
+    const edgeTitle = [REL_LABEL[e.relation] || e.relation, `${e.source} → ${e.target}`,
+      schemaLine, `实例数据 ${actualLine}`].map(esc).join('&#10;');
+    const line = `<line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}"
+      stroke="${active ? '#b6c2d2' : '#e2e8f0'}" stroke-width="${active ? 1.4 : 1.1}"
+      stroke-dasharray="${active ? '0' : '5 5'}"
+      marker-end="url(#${active ? 'arrow' : 'arrowOff'})"/>`;
+    html += `<g class="gedge" data-s="${esc(e.source)}" data-t="${esc(e.target)}">
+      <title>${edgeTitle}</title>${line}`;
+    if (!force) {
+      html += `<text x="${(a.x + b.x) / 2}" y="${(a.y + b.y) / 2 - 4}" text-anchor="middle"
+        font-size="10" fill="#64748b" style="paint-order:stroke;stroke:#fff;stroke-width:3px">
+        ${esc(REL_LABEL[e.relation] || e.relation)}</text>`;
+    }
+    html += `</g>`;
+  });
+
+  nodes.forEach((n, idx) => {
+    const p = positions[n.id];
+    if (!p) return;
+    const isRoot = n.id === root.id;
+    const rad = isRoot ? 33 : 23;
+    const name = trunc(n.name || n.id || '', isRoot ? 12 : 7);
+    const above = force && !isRoot && idx % 2 === 1;
+    const labelY = isRoot ? -rad - 14 : (above ? -rad - 12 : rad + 14);
+    const cls = schemaClass(n);
+    const data = n.data || {};
+    const actual = ['status', 'owner', 'source_system', 'updated_at', 'description']
+      .filter(k => data[k] !== undefined && data[k] !== null && data[k] !== '')
+      .map(k => `${propName(k)}=${data[k]}`);
+    const nodeTitle = [n.id, `${kindLabel(n.kind)} · ${n.status || '-'}`,
+      cls ? `类 Schema ${cls.label} (${cls.id}) · ${(cls.properties || []).length} 个属性` : '本体中未找到该类',
+      cls ? `必填 ${(cls.required || []).map(propName).join(', ') || '无'}` : '',
+      cls ? `全部属性 ${(cls.properties || []).map(propName).join(', ')}` : '',
+      `实例数据 ${actual.join(' · ') || '无'}`
+    ].filter(Boolean).map(esc).join('&#10;');
+    const caption = cls ? `${cls.id} · ${(cls.properties || []).length} 属性` : '';
+    html += `<g class="gnode" data-id="${esc(n.id)}" transform="translate(${p.x},${p.y})"
+      style="cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none">
+      <title>${nodeTitle}</title>
+      <circle cx="0" cy="0" r="${rad}" fill="${kindColor(n.kind)}" stroke="#fff"
+        stroke-width="2.5" ${isRoot ? 'filter="url(#shadow)"' : ''}/>
+      <text x="0" y="4" text-anchor="middle" font-size="${isRoot ? 13 : 10}"
+        font-weight="700" fill="#fff">${esc(kindLabel(n.kind))}</text>
+      ${isRoot ? '' : `<text x="0" y="${labelY}" text-anchor="middle" font-size="11" fill="#334155"
+        style="paint-order:stroke;stroke:#fff;stroke-width:3px">${esc(name)}</text>`}
+      ${caption ? `<text x="0" y="${labelY + 12}" text-anchor="middle" font-size="9" fill="#94a3b8"
+        style="paint-order:stroke;stroke:#fff;stroke-width:3px">${esc(caption)}</text>` : ''}
+    </g>`;
+  });
+  html += `<text x="14" y="20" font-size="11" fill="#64748b">中心资产：${esc(trunc(root.name || root.id, 30))}</text>`;
+  svg.innerHTML = html;
+
+  const toSvg = ev => {
+    const pt = svg.createSVGPoint();
+    pt.x = ev.clientX; pt.y = ev.clientY;
+    return pt.matrixTransform(svg.getScreenCTM().inverse());
+  };
+  const moveEdges = id => {
+    svg.querySelectorAll('.gedge').forEach(eg => {
+      if (eg.dataset.s !== id && eg.dataset.t !== id) return;
+      const a = positions[eg.dataset.s], b = positions[eg.dataset.t];
+      const line = eg.querySelector('line');
+      if (!a || !b || !line) return;
+      line.setAttribute('x1', a.x); line.setAttribute('y1', a.y);
+      line.setAttribute('x2', b.x); line.setAttribute('y2', b.y);
+      const label = eg.querySelector('text');
+      if (label) {
+        label.setAttribute('x', (a.x + b.x) / 2);
+        label.setAttribute('y', (a.y + b.y) / 2 - 4);
+      }
+    });
+  };
+
+  svg.querySelectorAll('.gnode').forEach(g => {
+    let drag = null;
+    g.addEventListener('pointerdown', ev => {
+      ev.stopPropagation();
+      const p = positions[g.dataset.id];
+      if (!p) return;
+      const pt = toSvg(ev);
+      drag = {x:pt.x, y:pt.y, ox:p.x, oy:p.y, moved:false};
+      g.style.cursor = 'grabbing';
+      try { g.setPointerCapture(ev.pointerId); } catch (e) { /* synthetic event */ }
+    });
+    g.addEventListener('pointermove', ev => {
+      if (!drag) return;
+      const pt = toSvg(ev);
+      const dx = pt.x - drag.x, dy = pt.y - drag.y;
+      if (Math.abs(dx) + Math.abs(dy) > 2) drag.moved = true;
+      if (!drag.moved) return;
+      const p = positions[g.dataset.id];
+      p.x = Math.max(40, Math.min(W - 40, drag.ox + dx));
+      p.y = Math.max(40, Math.min(H - 40, drag.oy + dy));
+      g.setAttribute('transform', `translate(${p.x},${p.y})`);
+      moveEdges(g.dataset.id);
+    });
+    const endDrag = ev => {
+      if (!drag) return;
+      const moved = drag.moved;
+      drag = null;
+      g.style.cursor = 'grab';
+      if (moved) {
+        g.dataset.dragged = '1';
+        setTimeout(() => { delete g.dataset.dragged; }, 250);
+      }
+      try {
+        if (ev && ev.pointerId !== undefined && g.hasPointerCapture(ev.pointerId)) {
+          g.releasePointerCapture(ev.pointerId);
+        }
+      } catch (e) { /* synthetic event */ }
+    };
+    g.addEventListener('pointerup', endDrag);
+    g.addEventListener('pointercancel', endDrag);
+    g.addEventListener('click', ev => {
+      ev.stopPropagation();
+      if (g.dataset.dragged === '1') { delete g.dataset.dragged; return; }
+      if (navigable && g.dataset.id && g.dataset.id !== state.asset) selectAsset(g.dataset.id);
+    });
+  });
+}
+
+/* -------------------------------------------------------------- 影响面 */
+function renderImpact() {
+  const d = state.impact;
+  const counts = d.summary.by_kind || {};
+  const kindChips = Object.entries(counts).map(([k, v]) =>
+    `<span class="chip"><span class="dot" style="background:${kindColor(k)}"></span>
+      ${esc(kindLabel(k))} <b>${v}</b></span>`).join('');
+  $('#pane').innerHTML = `
+    <div class="impact-head">
+      <div class="risk ${d.risk}">${esc(d.risk)} RISK</div>
+      <div class="chips">
+        ${atLabel()}
+        <span class="chip">受影响资产 <b>${d.summary.affected_total}</b></span>
+        <span class="chip">关系数 <b>${d.summary.edge_count}</b></span>
+        <span class="chip">深度 <b>${d.depth}</b></span>
+        <span class="chip">口径 <b>${esc(d.definition || '-')}</b></span>
+        ${kindChips}
+      </div>
+    </div>
+    <div class="legend-inline" id="impactLegend"></div>
+    <div class="graph-wrap" style="height:520px">
+      <svg class="graph" id="impactGraph"></svg>
+      <div class="graph-hint">点击节点继续下钻 · 拖拽节点可调整布局 · 布局按关系自动扩散</div>
+    </div>
+    <div class="subhead">受影响资产</div>
+    <table class="table">
+      <thead><tr><th>资产</th><th>类型</th><th>状态</th><th>距离</th></tr></thead>
+      <tbody>${(d.affected || []).map(a => `
+        <tr data-id="${esc(a.id)}" style="cursor:pointer">
+          <td class="mono">${esc(a.id)}</td>
+          <td>${esc(kindLabel(a.kind))}</td>
+          <td>${statusBadge(a.status)}</td>
+          <td>${a.distance}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+    ${Object.keys(d.summary.skipped_neighbor_relations || {}).length
+      ? `<div class="cm" style="margin-top:8px;color:#64748b">已排除的邻域关系（不算影响面）：
+          ${Object.entries(d.summary.skipped_neighbor_relations).map(([k, v]) =>
+            `${esc(REL_LABEL[k] || k)} ${v} 条`).join(' · ')}</div>` : ''}`;
+  const root = {id:d.root.id, kind:d.root.kind, name:d.root.name, status:d.root.status};
+  const nodes = [root, ...(d.affected || []).map(a =>
+    ({id:a.id, kind:a.kind, name:a.name, status:a.status}))];
+  const edges = (d.edges || []).map(e => ({
+    source:e.source_id, target:e.target_id, relation:e.relation, active:e.active
+  }));
+  const dist = {[root.id]: 0};
+  (d.affected || []).forEach(a => { dist[a.id] = a.distance; });
+  drawGraph($('#impactGraph'), root, nodes, edges, dist);
+  renderLegend(nodes, '#impactLegend');
+  $('#pane').querySelectorAll('tr[data-id]').forEach(tr =>
+    tr.addEventListener('click', () => selectAsset(tr.dataset.id)));
+}
+
+/* -------------------------------------------------------------- 派生血缘 */
+function renderLineageSection(title, side, rootId) {
+  const nodes = side.nodes || [], edges = side.edges || [], paths = side.paths || [];
+  if (!nodes.length) {
+    return `<div class="subhead">${esc(title)}</div>
+      <div class="empty">沿 crowd_derived_from 没有${esc(title)}节点</div>`;
+  }
+  const byId = {[rootId]: {id: rootId, name: '当前资产'}};
+  nodes.forEach(n => { byId[n.id] = n; });
+  const nodeName = id => {
+    const n = byId[id] || {};
+    return n.display_name || n.name || n.id || id;
+  };
+  const rows = nodes.map(n => `
+    <tr data-id="${esc(n.id)}" style="cursor:pointer">
+      <td>${n.depth}</td>
+      <td class="mono">${esc(n.id)}</td>
+      <td>${esc(nodeName(n.id))}</td>
+      <td>${esc(kindLabel(n.kind))}</td>
+      <td>${statusBadge(n.status)}</td>
+    </tr>`).join('');
+  const edgeRows = edges.map(e => `
+    <li><span class="mono">${esc(nodeName(e.source_id))}</span>
+      <span style="color:#64748b"> —派生自→ </span>
+      <span class="mono">${esc(nodeName(e.target_id))}</span>
+      ${e.properties && e.properties.valid_from
+        ? `<span class="chip">valid_from <b>${esc(e.properties.valid_from)}</b></span>` : ''}
+      ${e.properties && e.properties.expression
+        ? `<div class="cm" style="color:#64748b">${esc(e.properties.expression)}</div>` : ''}
+    </li>`).join('');
+  return `
+    <div class="subhead">${esc(title)} <span class="tag">${nodes.length} 个节点 · ${edges.length} 条边</span></div>
+    <table class="table">
+      <thead><tr><th>深度</th><th>资产</th><th>名称</th><th>类型</th><th>状态</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div class="subhead">派生路径</div>
+    <ul class="clist">${paths.map(p => `
+      <li>${(p.path || []).map(id => esc(nodeName(id))).join(' → ')}
+        <span class="chip">深度 <b>${p.depth}</b></span></li>`).join('') || '<li>无</li>'}</ul>
+    <div class="subhead">血缘边</div>
+    <ul class="clist">${edgeRows || '<li>无</li>'}</ul>`;
+}
+
+function renderLineage() {
+  const d = state.lineage;
+  const s = d.summary || {};
+  const relation = d.relation || 'crowd_derived_from';
+  $('#pane').innerHTML = `
+    <div class="chips" style="margin-top:0">
+      ${atLabel()}
+      <span class="chip">血缘关系 <b>${esc(REL_LABEL[relation] || relation)}</b></span>
+      <span class="chip">上游来源 <b>${s.ancestors ?? 0}</b></span>
+      <span class="chip">下游派生 <b>${s.descendants ?? 0}</b></span>
+      <span class="chip">最大上游深度 <b>${s.max_upstream_depth ?? 0}</b></span>
+      <span class="chip">最大下游深度 <b>${s.max_downstream_depth ?? 0}</b></span>
+    </div>
+    ${renderLineageSection('上游来源', d.upstream || {}, d.root.id)}
+    ${renderLineageSection('下游派生', d.downstream || {}, d.root.id)}`;
+  $('#pane').querySelectorAll('tr[data-id]').forEach(tr =>
+    tr.addEventListener('click', () => selectAsset(tr.dataset.id)));
+}
+
+/* -------------------------------------------------------------- 人群纠错 */
+const ISSUE_LABEL = {VEHICLE_CONFLICT:'车型冲突', STICKER_CONFLICT:'车贴状态冲突',
+  TAG_INTENT_CONFLICT:'引用标签冲突', CITY_COVERAGE_MISMATCH:'托管城市漏配',
+  CONCEPT_NOT_COVERED:'业务概念未覆盖', RULE_UNPARSEABLE:'规则不可解析',
+  DIAGNOSE_ERROR:'诊断失败'};
+
+/* 主案例：车型/标签/城市三路交叉；最小样例：单一口径冲突。 */
+const MAIN_CASE = 'crowd:crm:large_driver_sticker_36';
+const SAMPLE_CASE = 'crowd:crm:sticker_none_recruit';
+
+function caseRole(id) {
+  if (id === MAIN_CASE) return '主案例';
+  if (id === SAMPLE_CASE) return '最小样例';
+  return '';
+}
+
+function defaultCrowdId(items) {
+  const main = items.find(i => i.crowd_id === MAIN_CASE);
+  return (main || items.find(i => i.risk_level === 'HIGH') || items[0] || {}).crowd_id || null;
+}
+
+function renderCorrection() {
+  const d = state.corrections;
+  if (!d) { $('#pane').innerHTML = '<div class="empty">暂无纠错数据</div>'; return; }
+  const k = d.kpi || {}, items = d.items || [];
+  const issueChips = Object.entries(k.issue_by_code || {}).map(([code, n]) =>
+    `<span class="chip">${esc(ISSUE_LABEL[code] || code)} <b>${n}</b></span>`).join('');
+  const rows = items.map(it => {
+    const first = (it.issues || [])[0];
+    const role = caseRole(it.crowd_id);
+    return `<tr class="corr-row ${it.crowd_id === state.selectedCrowd ? 'active' : ''}"
+        data-crowd="${esc(it.crowd_id)}">
+      <td><b>${esc(it.name || it.crowd_id)}</b>
+        ${role ? `<span class="chip" style="margin-left:4px;border-color:#bfdbfe;background:#eff6ff;color:#1d4ed8">${role}</span>` : ''}
+        <div class="mono" style="color:#94a3b8;font-size:10px">${esc(it.crowd_id)}</div></td>
+      <td>${riskBadge(it.risk_level)}<div style="color:#64748b;font-size:10px">${esc(it.verdict || '')}</div></td>
+      <td>${(it.issues || []).length}
+        <div style="color:#64748b;font-size:10px">${esc(first ? (ISSUE_LABEL[first.code] || first.code) : '无冲突')}</div></td>
+      <td>${money((it.kpi || {}).avoided_loss)}</td>
+    </tr>`;
+  }).join('');
+  const item = items.find(i => i.crowd_id === state.selectedCrowd);
+  $('#pane').innerHTML = `
+    <div class="kpi-grid">
+      <div class="kpi"><span>扫描人群</span><b>${k.crowds_scanned ?? 0}</b></div>
+      <div class="kpi hot"><span>高危人群</span><b>${k.high_risk ?? 0}</b></div>
+      <div class="kpi hot"><span>已阻断</span><b>${k.blocked ?? 0}</b></div>
+      <div class="kpi"><span>预计避免资损</span><b>${money(k.avoided_loss)}</b></div>
+      <div class="kpi"><span>中 / 低危</span><b>${k.medium_risk ?? 0} / ${k.low_risk ?? 0}</b></div>
+    </div>
+    <div class="chips" style="margin-top:0">${issueChips || '<span class="chip">暂无冲突</span>'}</div>
+    <div class="onto-note" style="margin:6px 0 0">
+      <b style="color:#1d4ed8">主案例</b>：大车司机 36 城车贴激励，同时命中车型、引用标签、托管城市三路冲突；
+      <b style="color:#64748b">最小样例</b>：车贴未贴司机招募，只命中单一口径冲突。
+    </div>
+    <div style="margin-top:12px">
+      <div class="subhead" style="margin-top:0">高危清单 · 按风险与资损排序</div>
+      <table class="table">
+        <thead><tr><th>人群</th><th>风险</th><th>冲突</th><th>避免资损</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="4" class="empty">暂无人群</td></tr>'}</tbody>
+      </table>
+    </div>
+    <div id="corrDetail" style="margin-top:14px">${item ? correctionDetail(item) : '<div class="empty">选择左侧人群查看明细</div>'}</div>`;
+  $('#pane').querySelectorAll('tr[data-crowd]').forEach(tr =>
+    tr.addEventListener('click', () => {
+      if (state.selectedCrowd !== tr.dataset.crowd) state.caseContext = null;
+      state.selectedCrowd = tr.dataset.crowd;
+      renderCorrection();
+    }));
+  bindCorrectionActions();
+  if (item) {
+    loadCaseGraph(item.crowd_id);
+    loadCaseImpact(item.crowd_id);
+  }
+}
+
+async function loadForensics() {
+  const pane = $('#pane');
+  if (!state.corrections) {
+    pane.innerHTML = '<div class="empty">加载纠错案例…</div>';
+    state.corrections = await api('/corrections?limit=200');
+  }
+  const items = state.corrections.items || [];
+  if (!state.selectedCrowd || !items.some(i => i.crowd_id === state.selectedCrowd)) {
+    state.selectedCrowd = defaultCrowdId(items);
+    state.caseContext = null;
+  }
+  renderForensics();
+}
+
+function renderForensics() {
+  const items = (state.corrections && state.corrections.items) || [];
+  const item = items.find(i => i.crowd_id === state.selectedCrowd);
+  const options = items.map(i => {
+    const role = caseRole(i.crowd_id);
+    return `<option value="${esc(i.crowd_id)}" ${i.crowd_id === state.selectedCrowd ? 'selected' : ''}>
+      ${esc(i.name || i.crowd_id)}${role ? ' · ' + role : ''} · ${esc(i.risk_level || '-')} · 避免资损 ${money((i.kpi || {}).avoided_loss)}
+    </option>`;
+  }).join('');
+  $('#pane').innerHTML = `
+    <div class="subhead" style="margin-top:0">图谱查询取证 · 每个纠错案例查了哪些顶点、哪些边</div>
+    <div class="card" style="margin-bottom:10px">
+      <div class="ct">选择要取证的纠错案例</div>
+      <div class="cm">选择案例后，下方直接展示该案例从 HugeGraph 实际查出的 1 跳子图、时态边和实例数据。</div>
+      <div style="margin-top:8px">
+        <select id="casePicker" style="max-width:560px">${options || '<option>暂无可取证案例</option>'}</select>
+      </div>
+      ${item ? `<div class="chips" style="margin-top:8px">
+        <span class="chip">案例 <b>${esc(item.name || item.crowd_id)}</b></span>
+        <span class="chip">风险 <b>${esc(item.risk_level || '-')}</b></span>
+        <span class="chip">结论 <b>${esc(item.verdict || '-')}</b></span>
+      </div>` : ''}
+    </div>
+    <div id="caseGraph">${item ? '<div class="empty">加载该案例的图谱查询结果…</div>'
+      : '<div class="empty">暂无可取证案例</div>'}</div>`;
+  const picker = $('#casePicker');
+  if (picker) picker.addEventListener('change', () => {
+    if (state.selectedCrowd !== picker.value) state.caseContext = null;
+    state.selectedCrowd = picker.value;
+    renderForensics();
+  });
+  if (item) loadCaseGraph(item.crowd_id);
+}
+
+async function loadCaseGraph(crowdId) {
+  const box = $('#caseGraph');
+  if (!box) return;
+  if (state.caseContext && state.caseContext.id === crowdId) {
+    renderCaseGraph(state.caseContext);
+    return;
+  }
+  box.innerHTML = '<div class="empty">加载该案例的图谱查询结果…</div>';
+  try {
+    await ensureDictionary();
+    const ctx = await api(`/assets/${encodeURIComponent(crowdId)}/context?level=NETWORK`);
+    if (state.selectedCrowd !== crowdId || !$('#caseGraph')) return;
+    state.caseContext = ctx;
+    renderCaseGraph(ctx);
+  } catch (e) {
+    if ($('#caseGraph')) $('#caseGraph').innerHTML = `<div class="err">${esc(e.message)}</div>`;
+    document.querySelectorAll('[data-step-query]').forEach(el => {
+      el.innerHTML = '<div class="sq-empty">图谱查询失败，该步无法取证。</div>';
+    });
+  }
+}
+
+function renderCaseGraph(c) {
+  const box = $('#caseGraph');
+  if (!box) return;
+  const root = {id:c.id, kind:c.kind, label:c.label, name:c.display_name || c.name,
+    status:c.status, data:c};
+  const nodes = [root], seen = new Set([root.id]), edges = [];
+  (c.neighbors || []).forEach(n => {
+    const v = n.vertex;
+    if (!v) return;
+    if (!seen.has(v.id)) {
+      seen.add(v.id);
+      nodes.push({id:v.id, kind:v.kind, label:v.label,
+        name:v.display_name || v.name, status:v.status, data:v});
+    }
+    const out = n.direction === 'OUT';
+    edges.push({source: out ? root.id : v.id, target: out ? v.id : root.id,
+      relation:n.relation, active:n.active, properties:n.properties || {}});
+  });
+  box.innerHTML = `<div class="onto-note" style="margin:0 0 6px">
+      查询 <code>GET /profile/assets/${esc(c.id)}/context?level=NETWORK</code>
+      · 返回 ${nodes.length} 个顶点 / ${edges.length} 条边 · 悬停顶点或边查看 Schema
+    </div>
+    <div class="graph-wrap" style="height:470px">
+      <svg class="graph" id="caseGraphSvg"></svg>
+      <div class="legend" id="caseLegend"></div>
+      <div class="graph-hint">HugeGraph 实际查询结果 · 1 跳子图 · 悬停顶点/边查看 Schema</div>
+    </div>
+    <div id="caseSchema"></div>`;
+  const dist = {[root.id]: 0};
+  nodes.forEach(n => { if (dist[n.id] === undefined) dist[n.id] = 1; });
+  drawGraph($('#caseGraphSvg'), root, nodes, edges, dist, false);
+  renderLegend(nodes, '#caseLegend');
+  renderGraphSchema(nodes, edges, '#caseSchema', `案例图谱 · ${trunc(root.name || root.id, 20)}`);
+  const item = (((state.corrections || {}).items) || []).find(i => i.crowd_id === c.id);
+  renderStepQueries(c, item);
+}
+
+function correctionTrace(it) {
+  const k = it.kpi || {}, intent = it.intent || {}, rule = it.rule || {}, issues = it.issues || [];
+  const cityIssue = issues.find(x => x.code === 'CITY_COVERAGE_MISMATCH');
+  const tagIssue = issues.find(x => x.code === 'TAG_INTENT_CONFLICT' || x.code === 'TAG_RULE_CONFLICT');
+  const vehicleIssue = issues.find(x => x.code === 'VEHICLE_CONFLICT');
+  const stickerIssue = issues.find(x => x.code === 'STICKER_CONFLICT');
+  const cond = field => (rule.conditions || []).find(c => c.field === field);
+  const ruleVehicle = (cond('vehicle_type') || {}).value;
+  const ruleSticker = (cond('sticker_status') || {}).value;
+  const high = issues.filter(x => x.severity === 'HIGH').length;
+  const missing = cityIssue ? (cityIssue.missing_cities || []) : [];
+  const tags = (rule.tag_semantics || []).map(t =>
+    `${t.name}${t.vehicle_type ? ' · 车型 ' + t.vehicle_type : ''}${t.sticker_status ? ' · 车贴 ' + t.sticker_status : ''}`);
+  const steps = [];
+  const push = (title, src, query, data, conclusion, tone = '') =>
+    steps.push({n: steps.length + 1, title, src, query, data, conclusion, tone});
+  const ONTO = {
+    '取人群资产': '<b>Crowd 类</b> + C1 资产 ID 规范 + C2 必填属性（name/status/owner/estimated_size）',
+    '抽业务意图': '应用层意图抽取，<b>不是本体</b>；它读取 Crowd 的 name/description 与 expected_city_count 做候选判断',
+    '解析圈选规则': '<b>Crowd.rule_expression</b> + C13 规则必须可解析',
+    '对齐引用标签': '<b>crowd_has_tag 关系</b> + C7 人群必须挂标签 + Tag.expression 标签表达式',
+    '对齐托管城市': '<b>City 类</b> + managed 属性 + C15 托管城市覆盖完整性',
+    '冲突判定': 'C13 规则可解析 + C14 名称/描述与规则一致 + C15 城市覆盖 + 冲突码定义',
+    '风险与资损': '应用层风险规则，<b>不属于本体</b>；本体提供 estimated_size 与冲突字段作为输入',
+    '生成修复建议': '<b>suggestions 契约</b> + write_gate.allowed_actions 动作白名单',
+    '写操作门禁': '<b>write_gate 契约</b> + 状态机 + 审计留痕',
+    '修复后复检': 'C13-C15 重新执行 + 时态边 + 版本可追溯'
+  };
+
+  push('取人群资产', '人群资产 · Crowd 节点', `get_vertex("${it.crowd_id}")`,
+    [`status=${it.status || '-'}`, `owner=${it.owner || '-'}`, `规模=${k.estimated_size ?? '-'}`, `声明城市=${intent.expected_city_count ?? '-'}`],
+    `拿到 <b>${esc(it.name || it.crowd_id)}</b>，当前 ${esc(it.status || '-')}，规模 ${Number(k.estimated_size || 0).toLocaleString('zh-CN')}。`);
+
+  const intentBits = [
+    intent.vehicle_type ? `车型=${intent.vehicle_type}` : '车型=未声明',
+    intent.sticker_status ? `车贴=${intent.sticker_status}` : '车贴=未声明',
+    intent.expected_city_count ? `城市=${intent.expected_city_count}` : '城市=未声明'
+  ];
+  push('抽业务意图', '名称 + 描述 + 属性兜底', 'extract_intent(name, description, props)',
+    [...intentBits, ...(intent.concepts || []).map(c => `概念=${c}`)],
+    `业务意图：<b>${esc(intent.vehicle_type || '未声明车型')} + ${esc(intent.sticker_status || '未声明车贴')} + ${intent.expected_city_count ? esc(intent.expected_city_count) + ' 城' : '未声明城市数'}</b>。`,
+    (vehicleIssue || stickerIssue) ? 'bad' : '');
+
+  const ruleBits = [
+    `车型=${ruleVehicle || '未声明'}`,
+    `车贴=${ruleSticker || '未声明'}`,
+    `城市=${rule.city_count ?? 0}`,
+    `来源=${rule.source || 'none'}`
+  ];
+  const ruleConflicts = [];
+  if (vehicleIssue) ruleConflicts.push(vehicleIssue.message);
+  if (stickerIssue) ruleConflicts.push(stickerIssue.message);
+  push('解析圈选规则', 'rule_expression', 'parse_rule(rule_expression)',
+    [...ruleBits, rule.parse_errors && rule.parse_errors.length ? `解析错误=${rule.parse_errors.length}` : '解析错误=0'],
+    ruleConflicts.length ? ruleConflicts.map(esc).join('；') : '规则可解析，与业务意图字段未发现直接冲突。',
+    ruleConflicts.length ? 'bad' : 'ok');
+
+  push('对齐引用标签', 'crowd_has_tag → Tag', 'list_edges(crowd) → get_vertex(tag)',
+    tags.length ? tags : ['未挂标签'],
+    tagIssue ? esc(tagIssue.message) : (tags.length ? '标签表达式与业务意图一致，未发现标签冲突。' : '人群未挂标签，C7 要求补标签。'),
+    tagIssue ? 'bad' : (tags.length ? 'ok' : ''));
+
+  const expectedCity = intent.expected_city_count;
+  push('对齐托管城市', 'City(managed=true)', 'list_vertices(label="City") → 集合差',
+    [`规则城市=${rule.city_count ?? 0}`, `声明城市=${expectedCity ?? '未声明'}`, `漏配=${cityIssue ? cityIssue.missing_count : 0}`],
+    cityIssue
+      ? `${esc(cityIssue.message)}<br><b>漏配：${esc(missing.join('、') || '-')}</b>`
+      : (expectedCity ? `声明 ${expectedCity} 城，规则覆盖 ${rule.city_count ?? 0} 城，差集为空。` : '未声明城市数，跳过城市覆盖校验。'),
+    cityIssue ? 'bad' : (expectedCity ? 'ok' : ''));
+
+  const issueChips = issues.map(x =>
+    `<span>${esc(ISSUE_LABEL[x.code] || x.code)} · ${esc(x.severity)}</span>`).join('');
+  push('冲突判定', 'C13-C15 · diagnose_payload', 'issues = detect(intent, rule, tags, cities)',
+    issueChips ? [issueChips] : ['无冲突'],
+    issues.length ? `共 <b>${issues.length}</b> 条冲突，其中 <b>${high}</b> 条 HIGH。` : '未发现冲突，进入正常校验。',
+    high ? 'bad' : (issues.length ? '' : 'ok'));
+
+  push('风险与资损', '确定性规则引擎', 'risk = HIGH if highs else MEDIUM if mediums else LOW',
+    [`verdict=${it.verdict || '-'}`, `risk=${it.risk_level || '-'}`, `avoided_loss=${money(k.avoided_loss)}`],
+    it.verdict === 'BLOCK'
+      ? `命中 HIGH，结论 <b>BLOCK</b>，预计避免资损 <b>${money(k.avoided_loss)}</b>。`
+      : `结论 <b>${esc(it.verdict || '-')}</b>，风险 ${esc(it.risk_level || '-')}。`,
+    it.verdict === 'BLOCK' ? 'bad' : (it.verdict === 'REVIEW' ? '' : 'ok'));
+
+  push('生成修复建议', 'suggestions → propose_change', 'generate_suggestions(issues, intent)',
+    (it.suggestions || []).map((s, i) => `建议${i + 1}：${s.label}`),
+    (it.suggestions || []).length
+      ? `输出 <b>${it.suggestions.length}</b> 条建议，每条都带可提交门禁的 <b>propose_change</b>。`
+      : '无需自动修复。',
+    'ok');
+
+  push('写操作门禁', 'propose_change → confirm_change', 'POST /proposals → POST /confirm',
+    ['提议=PENDING', '确认后=EXECUTED', '驳回=REJECTED', '审计=全量留痕'],
+    'Agent 只能提议，必须人工确认才落图；驳回同样留痕。');
+
+  push('修复后复检', 'diagnose(crowd_id)', 'GET /assets/{id}/diagnose',
+    ['修复前=BLOCK', '修复后=PASS', '全程=可追溯'],
+    '重新诊断同一人群，确认冲突消失后闭环完成。');
+
+  return `<div class="trace" data-trace>
+    <div class="trace-nav">
+      <span class="tp" data-trace-title>步骤 1 / ${steps.length}</span>
+      <div class="tbar"><i data-trace-bar style="width:${100 / steps.length}%"></i></div>
+      <span class="tsp" data-trace-sub>${esc(steps[0].title)}</span>
+      <span style="flex:1"></span>
+      <button data-trace-prev disabled>← 上一步</button>
+      <button class="primary" data-trace-next>下一步 →</button>
+      <button data-trace-all>展开全部</button>
+    </div>
+    ${steps.map(s => `
+    <div class="trace-step ${s.tone}" data-trace-step="${s.n}" data-title="${esc(s.title)}"
+        ${s.n === 1 ? '' : 'hidden'}>
+      <div class="num">${s.n}</div>
+      <div>
+        <div class="tt">${esc(s.title)}<span class="tsrc">${esc(s.src)}</span></div>
+        <div class="tq">${esc(s.query)}</div>
+        <div class="td">${s.data.map(d => { const x = String(d); return x.startsWith('<') ? x : `<span>${esc(x)}</span>`; }).join('')}</div>
+        <div class="tc">${s.conclusion}</div>
+        <div class="step-query" data-step-query="${s.n}" id="stepQuery${s.n}">
+          <div class="empty">加载该步图谱查询结果…</div>
+        </div>
+        ${ONTO[s.title] ? `<div class="to">本体依据：${ONTO[s.title]}</div>` : ''}
+      </div>
+    </div>`).join('')}</div>`;
+}
+
+/* 诊断推理链：默认只看第 1 步，按“下一步”逐条展开该步查询与判定。 */
+function bindTraceSteps(pane) {
+  const trace = pane.querySelector('[data-trace]');
+  if (!trace) return;
+  const steps = [...trace.querySelectorAll('[data-trace-step]')];
+  const total = steps.length;
+  if (!total) return;
+  const prev = trace.querySelector('[data-trace-prev]');
+  const next = trace.querySelector('[data-trace-next]');
+  const all = trace.querySelector('[data-trace-all]');
+  const title = trace.querySelector('[data-trace-title]');
+  const sub = trace.querySelector('[data-trace-sub]');
+  const bar = trace.querySelector('[data-trace-bar]');
+  let cur = 1, expanded = false;
+  const paint = () => {
+    steps.forEach(el => {
+      el.hidden = expanded ? false : Number(el.dataset.traceStep) !== cur;
+    });
+    title.textContent = expanded ? `全部 ${total} 步` : `步骤 ${cur} / ${total}`;
+    sub.textContent = expanded ? '点击“逐步查看”回到单步模式' : (steps[cur - 1].dataset.title || '');
+    bar.style.width = `${(expanded ? 1 : cur / total) * 100}%`;
+    prev.disabled = expanded || cur <= 1;
+    next.disabled = expanded || cur >= total;
+    all.textContent = expanded ? '逐步查看' : '展开全部';
+  };
+  prev.addEventListener('click', () => { if (cur > 1) { cur -= 1; paint(); } });
+  next.addEventListener('click', () => { if (cur < total) { cur += 1; paint(); } });
+  all.addEventListener('click', () => { expanded = !expanded; paint(); });
+  paint();
+}
+
+/* ------------------------------------------------ 每一步的图谱查询取证 */
+function caseStepFacts(c, it) {
+  const k = (it && it.kpi) || {}, intent = (it && it.intent) || {};
+  const issues = (it && it.issues) || [];
+  const cityIssue = issues.find(x => x.code === 'CITY_COVERAGE_MISMATCH');
+  const root = {id:c.id, kind:c.kind, label:c.label, name:c.display_name || c.name,
+    status:c.status, data:{...c, rule_expression:(it && it.rule && it.rule.raw) || c.rule_expression,
+      estimated_size:k.estimated_size, expected_city_count:intent.expected_city_count}};
+  const neighbors = c.neighbors || [];
+  const tagRows = neighbors.filter(n => n.relation === 'crowd_has_tag' && n.vertex);
+  const cityRows = neighbors.filter(n => n.relation === 'crowd_scope_city' && n.vertex);
+  const toNode = n => ({id:n.vertex.id, kind:n.vertex.kind, label:n.vertex.label,
+    name:n.vertex.display_name || n.vertex.name, status:n.vertex.status, data:n.vertex});
+  const toEdge = n => ({source:n.source_id || (n.direction === 'OUT' ? c.id : n.vertex.id),
+    target:n.target_id || (n.direction === 'OUT' ? n.vertex.id : c.id),
+    relation:n.relation, active:n.active, properties:n.properties || {}});
+  const tagNodes = tagRows.map(toNode), cityNodes = cityRows.map(toNode);
+  const tagEdges = tagRows.map(toEdge), cityEdges = cityRows.map(toEdge);
+
+  const linked = new Set(cityNodes.map(n => String(n.name || n.id)));
+  const missing = (cityIssue ? (cityIssue.missing_cities || []) : [])
+    .filter(name => !linked.has(String(name)));
+  const missingNodes = missing.map((name, i) => ({
+    id:`missing-city-${i}`, kind:'city', label:'City', name, status:'MISSING',
+    __missing:true, data:{city_name:name, managed:true, status:'MISSING'}
+  }));
+  const missingEdges = missingNodes.map(n => ({
+    source:c.id, target:n.id, relation:'crowd_scope_city', active:false,
+    missing:true, properties:{'判定':'City 托管全集差集', '状态':'应连未连'}
+  }));
+  const issueText = issues.map(x => `${ISSUE_LABEL[x.code] || x.code}·${x.severity}`).join('；');
+
+  return [
+    {n:1, mode:'graph', nodes:[root], edges:[],
+     source:'Crowd 顶点属性（name/status/owner/estimated_size）',
+     note:'get_vertex 返回 1 个 Crowd 顶点；读取 name/status/owner/estimated_size/expected_city_count。'},
+    {n:2, mode:'app', nodes:[root], edges:[],
+     source:'应用层意图抽取（非本体）',
+     note:'不新增图谱查询；输入是第 1 步返回的 Crowd 顶点字段，输出业务意图。'},
+    {n:3, mode:'app', nodes:[root], edges:[],
+     source:'Crowd.rule_expression',
+     note:'不新增图谱查询；输入是 Crowd.rule_expression 原始值，输出可解析条件。'},
+    {n:4, mode:'graph', nodes:[root, ...tagNodes], edges:tagEdges,
+     source:'crowd_has_tag → Tag.expression',
+     note:`实际查询 crowd_has_tag 出边并回查 Tag 顶点；返回 ${tagNodes.length} 个 Tag / ${tagEdges.length} 条时态边。`},
+    {n:5, mode:'graph', nodes:[root, ...cityNodes, ...missingNodes],
+     edges:[...cityEdges, ...missingEdges],
+     source:'crowd_scope_city + City.managed 全集差集',
+     note:`实际查询 crowd_scope_city 出边 + City 托管全集；已连 ${cityNodes.length} 城，差集漏配 ${missingNodes.length} 城（红色虚线为应连未连）。`},
+    {n:6, mode:'app', nodes:[root, ...tagNodes, ...cityNodes, ...missingNodes],
+     edges:[...tagEdges, ...cityEdges, ...missingEdges],
+     source:'C1/C13/C14/C15 约束',
+     note:`不新增图谱查询；汇总第 1/4/5 步返回的顶点、边、属性做确定性冲突判定。${issueText ? ' 输出：' + issueText : ''}`},
+    {n:7, mode:'app', nodes:[root], edges:[],
+     source:'Crowd.estimated_size + 冲突结果',
+     note:'不新增图谱查询；风险规则读取 Crowd.estimated_size 与第 6 步冲突结果。'},
+    {n:8, mode:'app', nodes:[], edges:[],
+     source:'suggestions 契约 + write_gate 白名单',
+     note:`不查询图谱；输入是第 6 步的 ${issues.length} 条冲突，输出 propose_change 修复契约。`},
+    {n:9, mode:'app', nodes:[], edges:[],
+     source:'write_gate + 状态机 + 审计',
+     note:'不查询图谱；只处理 propose_change、状态机和审批审计。'},
+    {n:10, mode:'graph', nodes:[root], edges:[],
+     source:'GET /assets/{id}/diagnose 复检',
+     note:'复检会重新执行第 1-7 步图谱查询；当前展示待复检的 Crowd 顶点。'}
+  ];
+}
+
+function miniGraphNodeTitle(n) {
+  const cls = schemaClass(n);
+  const props = ((cls && cls.properties) || []).map(propName).join('、');
+  return [kindLabel(n.kind), n.name || n.id, '类=' + (n.label || '-'),
+    props ? 'Schema 属性=' + props : ''].filter(Boolean).join(' | ');
+}
+
+function miniGraphEdgeTitle(e) {
+  const rel = schemaRelation(e);
+  const props = ((rel && rel.properties) || []).map(propName).join('、');
+  return [(REL_LABEL[e.relation] || e.relation), `${e.source} → ${e.target}`,
+    e.missing ? '应连未连' : (e.active === false ? '已失效' : '有效'),
+    props ? 'Schema 属性=' + props : ''].filter(Boolean).join(' | ');
+}
+
+function renderMiniGraph(nodes, edges, uid) {
+  if (!nodes.length) return '';
+  const root = nodes[0], others = nodes.slice(1);
+  const n = others.length;
+  const cols = Math.max(1, Math.ceil(Math.sqrt(Math.max(n, 1))));
+  const rows = Math.max(1, Math.ceil(n / cols));
+  const nodeW = 150, nodeH = 42, xGap = 24, yGap = 14;
+  const startX = n ? 210 : 150, startY = 22;
+  const W = n ? startX + cols * (nodeW + xGap) + 16 : 320;
+  const H = n ? Math.max(130, startY + rows * (nodeH + yGap) + 18) : 150;
+  const rootX = n ? 84 : W / 2, rootY = n ? H / 2 : 62;
+  const pos = {};
+  others.forEach((node, i) => {
+    const col = Math.floor(i / rows), row = i % rows;
+    pos[node.id] = {x:startX + col * (nodeW + xGap), y:startY + row * (nodeH + yGap)};
+  });
+  const visible = new Set(nodes.map(x => x.id));
+  const edgeSvg = edges.filter(e => visible.has(e.source) && visible.has(e.target)).map(e => {
+    const target = pos[e.target] || pos[e.source] || {x:rootX, y:rootY};
+    const fromRoot = e.source === root.id;
+    const sx = fromRoot ? rootX + 31 : target.x;
+    const sy = fromRoot ? rootY : target.y + nodeH / 2;
+    const tx = fromRoot ? target.x : target.x + nodeW;
+    const ty = target.y + nodeH / 2;
+    const mx = (sx + tx) / 2;
+    const color = e.missing ? '#dc2626' : (e.active === false ? '#94a3b8' : '#94a3b8');
+    const marker = e.missing ? `maMissing${uid}` : `ma${uid}`;
+    const label = edges.length <= 8
+      ? `<text x="${mx}" y="${(sy + ty) / 2 - 4}" text-anchor="middle" font-size="9"
+           fill="${e.missing ? '#dc2626' : '#64748b'}">${esc(REL_LABEL[e.relation] || e.relation)}${e.missing ? ' · 漏配' : ''}</text>`
+      : '';
+    return `<g><title>${esc(miniGraphEdgeTitle(e))}</title>
+      <path d="M ${sx} ${sy} C ${mx} ${sy}, ${mx} ${ty}, ${tx} ${ty}" fill="none"
+        stroke="${color}" stroke-width="1.3" ${e.missing ? 'stroke-dasharray="5 4"' : ''}
+        marker-end="url(#${marker})"/>${label}</g>`;
+  }).join('');
+  const nodeSvg = others.map(node => {
+    const p = pos[node.id], color = node.__missing ? '#dc2626' : kindColor(node.kind);
+    const name = trunc(node.name || node.id, 18);
+    const sub = node.__missing ? 'City · 托管全集差集'
+      : `${node.label || kindLabel(node.kind)}${node.status ? ' · ' + node.status : ''}`;
+    return `<g><title>${esc(miniGraphNodeTitle(node))}</title>
+      <rect x="${p.x}" y="${p.y}" width="${nodeW}" height="${nodeH}" rx="8"
+        fill="${node.__missing ? '#fef2f2' : '#fff'}" stroke="${color}" stroke-width="1.4"
+        ${node.__missing ? 'stroke-dasharray="5 3"' : ''}/>
+      <text x="${p.x + 9}" y="${p.y + 17}" font-size="11" fill="#0f172a">${esc(name)}</text>
+      <text x="${p.x + 9}" y="${p.y + 32}" font-size="9" fill="${node.__missing ? '#dc2626' : '#64748b'}">${esc(trunc(sub, 22))}</text>
+    </g>`;
+  }).join('');
+  const rootName = n ? `<text x="${rootX}" y="${rootY + 51}" text-anchor="middle"
+      font-size="11" fill="#0f172a">${esc(trunc(root.name || root.id, 22))}</text>` : '';
+  return `<svg class="mini-graph" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">
+    <defs>
+      <marker id="ma${uid}" markerWidth="8" markerHeight="8" refX="7" refY="3"
+        orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="#94a3b8"/></marker>
+      <marker id="maMissing${uid}" markerWidth="8" markerHeight="8" refX="7" refY="3"
+        orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="#dc2626"/></marker>
+    </defs>
+    ${edgeSvg}
+    <g><title>${esc(miniGraphNodeTitle(root))}</title>
+      <circle cx="${rootX}" cy="${rootY}" r="30" fill="${kindColor(root.kind)}" stroke="#fff" stroke-width="2"/>
+      <text x="${rootX}" y="${rootY + 4}" text-anchor="middle" font-size="10" fill="#fff">${esc(kindLabel(root.kind))}</text>
+    </g>${rootName}
+    ${nodeSvg}
+  </svg>`;
+}
+
+function stepQueryHtml(spec) {
+  const edgeCount = (spec.edges || []).length;
+  const nodeCount = (spec.nodes || []).length;
+  const mode = spec.mode === 'graph'
+    ? '<span class="mode">图谱查询</span>'
+    : '<span class="mode app">非图谱步骤</span>';
+  const graph = nodeCount
+    ? renderMiniGraph(spec.nodes, spec.edges || [], spec.n)
+    : `<div class="sq-empty">该步不查询图谱，输入来自前序步骤的查询结果。</div>`;
+  const nodeChips = (spec.nodes || []).map(n => {
+    const bits = [];
+    if (n.status) bits.push(n.status);
+    if (n.__missing) bits.push('漏配');
+    if (n.data && n.data.estimated_size != null) bits.push('规模=' + n.data.estimated_size);
+    if (n.data && n.data.expected_city_count != null) bits.push('声明城市=' + n.data.expected_city_count);
+    return `<span class="prop" title="${esc(miniGraphNodeTitle(n))}">${esc(kindLabel(n.kind))} · ${esc(trunc(n.name || n.id, 34))}${bits.length ? ' · ' + esc(bits.join(' · ')) : ''}</span>`;
+  }).join('');
+  const edgeChips = (spec.edges || []).map(e =>
+    `<span class="prop" title="${esc(miniGraphEdgeTitle(e))}">${esc(REL_LABEL[e.relation] || e.relation)} → ${esc(trunc(e.target, 30))}${e.missing ? ' · 漏配' : (e.active === false ? ' · 已失效' : '')}</span>`).join('');
+  const detail = nodeCount || edgeCount
+    ? `<details style="margin-top:5px"><summary class="schema-sum">查看该步返回的顶点/边明细（${nodeCount} 顶点 / ${edgeCount} 边）</summary>
+        ${nodeChips ? `<div class="sq-list">${nodeChips}</div>` : ''}
+        ${edgeChips ? `<div class="sq-list">${edgeChips}</div>` : ''}
+      </details>` : '';
+  const title = spec.mode === 'graph' ? `第 ${spec.n} 步图谱查询结果` : `第 ${spec.n} 步数据来源`;
+  const count = spec.mode === 'graph'
+    ? `${nodeCount} 顶点 / ${edgeCount} 边${edgeCount ? ' · 虚线/红框=漏配' : ''}`
+    : `汇总 ${nodeCount} 顶点 / ${edgeCount} 边（前序查询）`;
+  return `<div class="sqh">${mode}<span>${title}</span>
+      <span class="tag">${count}</span>
+    </div>${graph}${detail}
+    ${spec.source ? `<div class="sq-src"><b>结论来源</b>${esc(spec.source)}</div>` : ''}
+    <div class="sq-note">${esc(spec.note)}</div>`;
+}
+
+function renderStepQueries(c, it) {
+  const specs = caseStepFacts(c, it);
+  document.querySelectorAll('[data-step-query]').forEach(el => {
+    const spec = specs.find(x => x.n === Number(el.dataset.stepQuery));
+    if (spec) el.innerHTML = stepQueryHtml(spec);
+  });
+}
+
+/* 同一份输入：只看 rule_expression vs 本体增强。 */
+function caseContrast(it) {
+  const issues = it.issues || [], k = it.kpi || {}, rule = it.rule || {};
+  const ruleOnly = issues.filter(x => x.source === 'rule_expression');
+  const ontoOnly = issues.filter(x => !ruleOnly.includes(x));
+  const cityIssue = issues.find(x => x.code === 'CITY_COVERAGE_MISMATCH');
+  const missing = cityIssue ? (cityIssue.missing_cities || []) : [];
+  const tags = rule.tag_semantics || [];
+  const impact = state.caseImpact[it.crowd_id] || it.impact || null;
+  const impactSummary = impact ? (impact.summary || impact) : null;
+  const impactText = impactSummary
+    ? `<b>${impactSummary.affected_total ?? '-'}</b> 个受影响资产 / <b>${impactSummary.edge_count ?? '-'}</b> 条边`
+    : `<span data-case-impact="${esc(it.crowd_id)}">影响面加载中…</span>`;
+  const ruleItems = ruleOnly.map(x =>
+    `<li>${esc(ISSUE_LABEL[x.code] || x.code)}：${esc(x.message)}</li>`).join('');
+  const ruleMiss = [
+    tags.length ? `<li class="miss">不知道引用的 ${tags.length} 个标签真实表达式</li>` : '',
+    cityIssue ? `<li class="miss">只知道城市数差 ${cityIssue.expected_count} vs ${cityIssue.actual_count}，不知道漏了哪 ${missing.length} 城</li>` : '',
+    '<li class="miss">看不到下游影响面，也无法把修复安全落图</li>'
+  ].filter(Boolean).join('');
+  const ontoItems = issues.map(x =>
+    `<li>${esc(ISSUE_LABEL[x.code] || x.code)}：${esc(x.message)}</li>`).join('');
+  const ontoFacts = [
+    tags.length ? `<li>标签事实：${esc(tags.map(t =>
+      `${t.name}${t.vehicle_type ? ' · 车型 ' + t.vehicle_type : ''}${t.sticker_status ? ' · 车贴 ' + t.sticker_status : ''}`).join('、'))}</li>` : '',
+    cityIssue ? `<li>城市事实：托管全集 ${cityIssue.expected_count} 城，规则 ${cityIssue.actual_count} 城，漏配 <b>${esc(missing.join('、') || '-')}</b></li>` : '',
+    `<li>影响事实：${impactText}</li>`,
+    `<li>资损事实：预计避免资损 <b>${money(k.avoided_loss)}</b></li>`,
+    '<li>治理事实：propose_change → 人工确认 → 落图 → 审计</li>'
+  ].filter(Boolean).join('');
+  const conclusion = it.crowd_id === MAIN_CASE
+    ? `规则文本只能发现 ${ruleOnly.length} 条；本体沿标签边补齐 ${tags.length} 个标签事实、从 ${cityIssue ? cityIssue.expected_count : '-'} 城托管全集锁定 ${missing.length} 个漏配城市，再算出下游影响面。这就是纯文本/裸大模型拿不到的增量。`
+    : `单看“未贴 vs 已贴”确实只是口径冲突；本体还能证明引用标签“${tags[0] ? tags[0].name : '-'}”的真实表达式与业务意图相反，并把结论落到具体顶点/边和影响面上。`;
+  return `
+    <div class="llm-grid">
+      <div class="llm-card bad">
+        <div class="lt">只看规则文本 / 裸大模型</div>
+        <div class="cmp-big">${ruleOnly.length} 条</div>
+        <div class="cmp-sub">纯文本/规则对比能直接发现的冲突</div>
+        <ul class="cmp-list">${ruleItems || '<li class="miss">没有可判定的字段冲突</li>'}${ruleMiss}</ul>
+      </div>
+      <div class="llm-card ok">
+        <div class="lt">本体增强</div>
+        <div class="cmp-big">${issues.length} 条</div>
+        <div class="cmp-sub">规则 + 引用标签 + 托管城市全集 + 影响面</div>
+        <ul class="cmp-list">${ontoItems}${ontoFacts}</ul>
+      </div>
+    </div>
+    <div class="llm-note"><b>结论：</b>${esc(conclusion)} <span style="color:#94a3b8">本体额外发现 ${ontoOnly.length} 条。</span></div>`;
+}
+
+async function loadCaseImpact(crowdId) {
+  if (!crowdId) return;
+  if (state.caseImpact[crowdId]) { paintCaseImpact(crowdId); return; }
+  try {
+    const d = await api(`/assets/${encodeURIComponent(crowdId)}/impact?depth=3${atQuery()}`);
+    state.caseImpact[crowdId] = d;
+    if (state.selectedCrowd === crowdId) paintCaseImpact(crowdId);
+  } catch (e) {
+    document.querySelectorAll('[data-case-impact]').forEach(el => {
+      if (el.dataset.caseImpact === crowdId) el.textContent = '影响面加载失败';
+    });
+  }
+}
+
+function paintCaseImpact(crowdId) {
+  const d = state.caseImpact[crowdId];
+  if (!d) return;
+  const s = d.summary || {};
+  document.querySelectorAll('[data-case-impact]').forEach(el => {
+    if (el.dataset.caseImpact !== crowdId) return;
+    el.innerHTML = `<b>${s.affected_total ?? '-'}</b> 个受影响资产 / <b>${s.edge_count ?? '-'}</b> 条边`;
+  });
+}
+
+function correctionDetail(it) {
+  const k = it.kpi || {}, intent = it.intent || {}, rule = it.rule || {};
+  const intentChips = [
+    intent.vehicle_type ? `<span class="chip">车型 <b>${esc(intent.vehicle_type)}</b></span>` : '',
+    intent.sticker_status ? `<span class="chip">车贴 <b>${esc(intent.sticker_status)}</b></span>` : '',
+    intent.expected_city_count ? `<span class="chip">声明城市 <b>${intent.expected_city_count}</b></span>` : '',
+    ...(intent.concepts || []).map(c => `<span class="chip">概念 <b>${esc(c)}</b></span>`)
+  ].filter(Boolean).join('');
+  const issues = (it.issues || []).map(x => `
+    <div class="issue ${esc(x.severity || 'MEDIUM')}">
+      <div class="it">${riskBadge(x.severity || 'MEDIUM')}
+        <b>${esc(ISSUE_LABEL[x.code] || x.code)}</b>
+        <span class="mono">${esc(x.field || x.tag_id || '')}</span></div>
+      <div>${esc(x.message)}</div>
+      ${x.expected !== undefined || x.actual !== undefined
+        ? `<div class="mono" style="margin-top:4px">期望 ${esc(x.expected ?? '-')} · 实际 ${esc(x.actual ?? '-')}</div>` : ''}
+    </div>`).join('') || '<div class="empty">没有冲突项</div>';
+  const suggestions = (it.suggestions || []).map((s, i) => `
+    <div class="suggestion">
+      <div class="st">${i + 1}. ${esc(s.label)}</div>
+      <div style="color:#475569">${esc(s.reason || '')}</div>
+      ${s.before ? `<div class="mono" style="margin-top:5px">修正前 <code>${esc(trunc(s.before, 150))}</code></div>` : ''}
+      ${s.after ? `<div class="mono">修正后 <code>${esc(trunc(s.after, 150))}</code></div>` : ''}
+      ${s.proposal_id
+        ? `<div class="chips" style="margin-top:7px"><span class="chip">已生成提议 <b>${esc(s.proposal_id)}</b></span>
+             <button class="btn-sm ok" data-gogate="1">去门禁审批 →</button></div>`
+        : `<div style="margin-top:7px"><button class="btn-sm" data-propose="${i}" data-crowd="${esc(it.crowd_id)}">
+             生成修复提议</button></div>`}
+    </div>`).join('') || '<div class="empty">无需自动修复</div>';
+  return `
+    <div class="subhead" style="margin-top:0">诊断详情</div>
+    <div class="card" style="margin-bottom:8px">
+      <div class="ct">${esc(it.name || it.crowd_id)} ${riskBadge(it.risk_level)}</div>
+      <div class="cm">${esc(it.crowd_id)} · Owner ${esc(it.owner || '-')} · ${esc(it.generated_at || '')}</div>
+      <div class="chips">
+        <span class="chip">结论 <b>${esc(it.verdict || '-')}</b></span>
+        <span class="chip">预计规模 <b>${k.estimated_size ?? '-'}</b></span>
+        <span class="chip">避免资损 <b>${money(k.avoided_loss)}</b></span>
+        ${k.missing_city_count ? `<span class="chip">漏配城市 <b>${k.missing_city_count}</b></span>` : ''}
+      </div>
+      <div class="chips">${intentChips || '<span class="chip">未抽取到业务意图</span>'}</div>
+      <div style="margin-top:8px">
+        <button class="btn-sm" data-openasset="${esc(it.crowd_id)}">定位到资产</button>
+        <button class="btn-sm" data-impact="${esc(it.crowd_id)}">查看影响面</button>
+        <button class="btn-sm ok" data-forensic="${esc(it.crowd_id)}">查看图谱查询取证 →</button>
+      </div>
+    </div>
+    <div class="subhead">诊断推理链 · 每一步查了什么、得出什么</div>
+    ${correctionTrace(it)}
+    <div class="subhead">本体到底多做了什么 · 同一份输入的两种看法</div>
+    ${caseContrast(it)}
+    <div class="subhead">图谱查询取证 · 这个诊断实际从 HugeGraph 查到的顶点与时态边</div>
+    <div id="caseGraph" style="margin-bottom:4px">
+      <div class="empty">加载该案例的图谱查询结果…</div>
+    </div>
+    <div class="subhead">圈选规则（${esc(rule.source || 'none')} · 覆盖 ${rule.city_count ?? 0} 城）</div>
+    <div class="rulebox">${esc(rule.effective_expression || rule.expression || '未声明 rule_expression')}</div>
+    <div class="subhead">冲突明细</div>${issues}
+    <div class="subhead">修复建议 · 建议全部经写操作门禁确认</div>${suggestions}`;
+}
+
+function bindCorrectionActions() {
+  const pane = $('#pane');
+  pane.querySelectorAll('button[data-propose]').forEach(btn =>
+    btn.addEventListener('click', () => proposeCorrection(btn.dataset.crowd, Number(btn.dataset.propose))));
+  pane.querySelectorAll('button[data-gogate]').forEach(btn =>
+    btn.addEventListener('click', () => {
+      state.activeTab = 'gate';
+      renderTabs();
+      loadTab('gate');
+    }));
+  pane.querySelectorAll('button[data-openasset]').forEach(btn =>
+    btn.addEventListener('click', () => selectAsset(btn.dataset.openasset)));
+  pane.querySelectorAll('button[data-forensic]').forEach(btn =>
+    btn.addEventListener('click', () => {
+      if (state.selectedCrowd !== btn.dataset.forensic) state.caseContext = null;
+      state.selectedCrowd = btn.dataset.forensic;
+      state.activeTab = 'forensic';
+      renderTabs();
+      loadTab('forensic');
+    }));
+  pane.querySelectorAll('button[data-impact]').forEach(btn =>
+    btn.addEventListener('click', async () => {
+      state.activeTab = 'impact';
+      await selectAsset(btn.dataset.impact);
+    }));
+  bindTraceSteps(pane);
+}
+
+async function proposeCorrection(crowdId, index) {
+  const item = (state.corrections.items || []).find(i => i.crowd_id === crowdId);
+  const sug = item && (item.suggestions || [])[index];
+  if (!sug || !sug.propose_change) { toast('该建议不可直接提议', true); return; }
+  try {
+    const p = await api('/proposals', {method:'POST', body:JSON.stringify(sug.propose_change)});
+    sug.proposal_id = p.id;
+    renderCorrection();
+    toast(`已生成修复提议 ${p.id}，等待人工确认`);
+  } catch (e) {
+    toast('生成提议失败：' + e.message, true);
+  }
+}
+
+/* -------------------------------------------------------------- 校验 */
+function renderValidation() {
+  const d = state.validation, ok = !!d.ok;
+  const checks = (d.checks || []).map(c =>
+    `<div class="check ${c.ok ? 'ok' : 'bad'}"><span class="mark">${c.ok ? '✓' : '✗'}</span>${esc(c.name)}</div>`
+  ).join('');
+  const counts = Object.entries(d.counts || {}).map(([k, v]) =>
+    `<span class="chip">${esc(REL_LABEL[k] || k)} <b>${v}</b></span>`).join('');
+  const violations = [...(d.violations || []), ...(d.warnings || [])];
+  const list = violations.length ? violations.map(v => `
+    <li><span class="cid">${esc(v.code)}</span>
+      <span>${esc(v.message)}${v.field ? ` <code>${esc(v.field)}</code>` : ''}</span></li>`).join('')
+    : '<li><span class="cid">-</span><span>没有违规项</span></li>';
+  $('#pane').innerHTML = `
+    <div class="check ${ok ? 'ok' : 'bad'}" style="font-size:14px;font-weight:700;margin-bottom:12px">
+      <span class="mark">${ok ? '✓' : '✗'}</span>${ok ? '语义校验通过' : '语义校验未通过'}
+    </div>
+    <div class="checks">${checks}</div>
+    <div class="chips">${counts}</div>
+    <div class="subhead">违规与告警</div>
+    <ul class="clist">${list}</ul>`;
+}
+
+/* -------------------------------------------------------------- 证据链 */
+function renderEvidence() {
+  const d = state.evidence;
+  const timeline = (d.timeline || []).map(t => `
+    <li>
+      <span class="time">${esc(t.at || '-')}</span>
+      <span><span class="badge ${t.type === 'evidence' ? 'event' : 'version'}">${esc(t.type)}</span></span>
+      <span><b>${esc(t.title || t.id)}</b><br><span class="mono">${esc(t.id)}</span>
+        ${t.content || t.change_summary ? `<br><span style="color:#475569">${esc(t.content || t.change_summary)}</span>` : ''}
+        ${t.operators && t.operators.length
+          ? `<br><span style="color:#64748b">操作人：${t.operators.map(o => esc(o.name || o.id)).join(' / ')}</span>` : ''}
+      </span>
+    </li>`).join('') || '<li><span class="time">-</span><span></span><span>暂无证据或版本</span></li>';
+  const ev = (d.evidence || []).map(e => {
+    const p = e.vertex.properties || {};
+    return `<div class="card">
+      <div class="ct">${esc(p.name || e.vertex.id)}</div>
+      <div class="cm">${esc(e.vertex.id)}</div>
+      <div class="cm" style="margin-top:6px">${esc(p.content || '')}</div>
+      <div class="chips">
+        <span class="chip">来源 <b>${esc(p.source_system || '-')}</b></span>
+        <span class="chip">类型 <b>${esc(p.evidence_type || '-')}</b></span>
+        <span class="chip">置信度 <b>${esc(e.edge.confidence ?? p.confidence ?? '-')}</b></span>
+        <span class="chip">观测 <b>${esc(p.observed_at || '-')}</b></span>
+      </div>
+    </div>`;
+  }).join('');
+  $('#pane').innerHTML = `
+    <div class="chips" style="margin-top:0">
+      ${atLabel()}
+      <span class="chip">证据 <b>${d.evidence_count}</b></span>
+      <span class="chip">版本 <b>${d.version_count}</b></span>
+      <span class="chip">来源 <b>${esc((d.coverage.source_systems || []).join(' / ') || '-')}</b></span>
+    </div>
+    <div class="subhead">版本与证据时间线</div>
+    <ul class="timeline">${timeline}</ul>
+    <div class="subhead">证据卡片</div>
+    <div class="evidence-grid">${ev || '<div class="empty">暂无证据</div>'}</div>`;
+}
+
+/* ---------------------------------------------------------------- 指标 */
+function renderMetrics() {
+  const d = state.metrics;
+  const cards = (d.items || []).map(it => {
+    const v = it.vertex || {};
+    return `<div class="card">
+      <div class="ct">${esc(v.display_name || v.name || v.id)}</div>
+      <div class="cm">${esc(v.id)}</div>
+      <div class="cv">${esc(v.value ?? '-')}
+        <span style="font-size:12px;color:#64748b">${esc(v.unit || '')}</span></div>
+      <div class="chips">
+        <span class="chip">周期 <b>${esc(v.period || '-')}</b></span>
+        <span class="chip">状态 <b>${esc(v.status || '-')}</b></span>
+        <span class="chip">来源 <b>${esc(v.source_system || '-')}</b></span>
+        ${it.edge && it.edge.weight !== undefined
+          ? `<span class="chip">权重 <b>${esc(it.edge.weight)}</b></span>` : ''}
+      </div>
+      ${v.definition ? `<div class="cm" style="margin-top:7px">${esc(v.definition)}</div>` : ''}
+    </div>`;
+  }).join('');
+  $('#pane').innerHTML = `
+    <div class="chips" style="margin-top:0">
+      <span class="chip">指标数 <b>${d.summary.count}</b></span>
+      <span class="chip">有值 <b>${d.summary.valued_count}</b></span>
+      <span class="chip">均值 <b>${d.summary.average ?? '-'}</b></span>
+      <span class="chip">单位 <b>${esc((d.summary.units || []).join(' / ') || '-')}</b></span>
+    </div>
+    <div class="metric-grid" style="margin-top:12px">
+      ${cards || '<div class="empty">该资产暂无关联指标</div>'}
+    </div>`;
+}
+
+/* ------------------------------------------------------------ 写操作门禁 */
+async function loadGate() {
+  const payloads = {
+    update_status: {status:'PAUSED', status_reason:'P0 纠错：暂停待人工复核'},
+    attach_tag: {tag_id:'tag:crm:high_value', weight:0.55},
+    attach_evidence: {confidence:0.9},
+    publish_strategy: {},
+    update_properties: {description:'语义层更新说明'}
+  };
+  $('#pane').innerHTML = `
+    <div class="gate">
+      <div class="form">
+        <div class="subhead" style="margin:0">发起写操作提议</div>
+        <label>动作</label>
+        <select id="pAction">
+          <option value="update_status">update_status · 状态迁移</option>
+          <option value="attach_tag">attach_tag · 关联标签</option>
+          <option value="attach_evidence">attach_evidence · 关联证据</option>
+          <option value="publish_strategy">publish_strategy · 发布策略</option>
+          <option value="update_properties">update_properties · 更新属性</option>
+        </select>
+        <label>目标资产 ID</label>
+        <input id="pAsset" value="${esc(state.asset)}">
+        <label>Payload（JSON）</label>
+        <textarea id="pPayload">${esc(JSON.stringify(payloads.update_status, null, 2))}</textarea>
+        <label>原因</label>
+        <input id="pReason" value="P0 人群纠错演练">
+        <label>提议人</label>
+        <input id="pActor" value="agent_profile_ai">
+        <button id="pSubmit">提交提议</button>
+        <div id="pResult"></div>
+      </div>
+      <div>
+        <div class="subhead" style="margin-top:0">提议与审批</div>
+        <div id="proposalBox"><div class="empty">加载中…</div></div>
+        <div class="subhead">审计日志</div>
+        <div id="auditBox" style="max-height:300px;overflow:auto"></div>
+      </div>
+    </div>`;
+  $('#pAction').addEventListener('change', e => {
+    $('#pPayload').value = JSON.stringify(payloads[e.target.value] || {}, null, 2);
+  });
+  $('#pSubmit').addEventListener('click', submitProposal);
+  await refreshGate();
+}
+
+async function refreshGate() {
+  try {
+    const [p, a] = await Promise.all([api('/proposals?limit=50'), api('/audit?limit=50')]);
+    state.proposals = p.items || [];
+    state.audit = a.items || [];
+    renderProposals();
+    renderAudit();
+  } catch (e) {
+    if ($('#proposalBox')) $('#proposalBox').innerHTML = `<div class="err">${esc(e.message)}</div>`;
+  }
+}
+
+function renderProposals() {
+  const box = $('#proposalBox');
+  if (!box) return;
+  if (!state.proposals.length) { box.innerHTML = '<div class="empty">暂无提议</div>'; return; }
+  box.innerHTML = `<table class="table">
+    <thead><tr><th>提议</th><th>动作</th><th>目标资产</th><th>状态</th><th>操作</th></tr></thead>
+    <tbody>${state.proposals.map(p => `
+      <tr>
+        <td class="mono">${esc(p.id)}<br><span style="color:#94a3b8">${esc(p.actor)} · ${esc(p.created_at)}</span></td>
+        <td>${esc(p.action)}</td>
+        <td class="mono">${esc(p.asset_id)}</td>
+        <td>${statusBadge(p.status)}${p.confirmed_by ? `<br><span style="color:#94a3b8">${esc(p.confirmed_by)}</span>` : ''}</td>
+        <td>${p.status === 'PENDING'
+          ? `<button class="btn-sm ok" data-act="confirm" data-id="${esc(p.id)}">确认</button>
+             <button class="btn-sm bad" data-act="reject" data-id="${esc(p.id)}">驳回</button>`
+          : '<span style="color:#94a3b8">-</span>'}</td>
+      </tr>`).join('')}
+    </tbody>
+  </table>`;
+  box.querySelectorAll('button[data-act]').forEach(b =>
+    b.addEventListener('click', () => decideProposal(b.dataset.id, b.dataset.act === 'confirm')));
+}
+
+function renderAudit() {
+  const box = $('#auditBox');
+  if (!box) return;
+  box.innerHTML = `<table class="table">
+    <thead><tr><th>时间</th><th>动作</th><th>资产</th><th>操作人</th></tr></thead>
+    <tbody>${state.audit.map(a => `
+      <tr>
+        <td class="mono">${esc(a.created_at)}</td>
+        <td>${esc(a.action)}${a.proposal_id
+          ? `<br><span class="mono" style="color:#94a3b8">${esc(a.proposal_id)}</span>` : ''}</td>
+        <td class="mono">${esc(a.asset_id || '-')}</td>
+        <td>${esc(a.actor)}</td>
+      </tr>`).join('')}
+    </tbody>
+  </table>`;
+}
+
+async function submitProposal() {
+  let payload;
+  try { payload = JSON.parse($('#pPayload').value || '{}'); }
+  catch (e) { toast('Payload 不是合法 JSON', true); return; }
+  const body = {
+    action: $('#pAction').value,
+    asset_id: $('#pAsset').value.trim(),
+    payload,
+    reason: $('#pReason').value.trim(),
+    actor: $('#pActor').value.trim()
+  };
+  $('#pResult').innerHTML = '';
+  try {
+    const p = await api('/proposals', {method:'POST', body:JSON.stringify(body)});
+    $('#pResult').innerHTML = `<div class="check ok" style="margin-top:8px">
+      <span class="mark">✓</span>提议已创建：<span class="mono">${esc(p.id)}</span>（${esc(p.status)}）</div>`;
+    toast('提议已创建，等待人工确认');
+    await refreshGate();
+  } catch (e) {
+    $('#pResult').innerHTML = `<div class="err" style="margin-top:8px">${esc(e.message)}</div>`;
+    toast(e.message, true);
+  }
+}
+
+async function decideProposal(id, approve) {
+  const approver = prompt(approve ? '请输入确认人' : '请输入驳回人', 'alice');
+  if (!approver) return;
+  try {
+    const r = await api(`/proposals/${encodeURIComponent(id)}/confirm`, {
+      method:'POST', body:JSON.stringify({approver, approve})
+    });
+    toast(approve ? `已确认并执行：${id}` : `已驳回：${id}`);
+    await refreshGate();
+    if (state.asset) {
+      state.context = await api(`/assets/${encodeURIComponent(state.asset)}/context?level=NETWORK`);
+      renderHead();
+      if (state.activeTab === 'gate') renderProposals();
+    }
+  } catch (e) {
+    toast('操作失败：' + e.message, true);
+  }
+}
+
+/* ---------------------------------------------------------------- 事件 */
+let searchTimer = null;
+$('#q').addEventListener('input', () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(searchAssets, 260);
+});
+$('#kind').addEventListener('change', searchAssets);
+$('#status').addEventListener('change', searchAssets);
+
+function applyAsOf(value) {
+  state.asOf = value ? new Date(value).toISOString() : '';
+  state.caseImpact = {};
+  state.caseContext = null;
+  if (state.asset) selectAsset(state.asset);
+}
+$('#asOf').addEventListener('change', e => applyAsOf(e.target.value));
+$('#asOfClear').addEventListener('click', () => {
+  $('#asOf').value = '';
+  applyAsOf('');
+});
+
+let resizeTimer = null;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    if (state.activeTab === 'graph' && $('#graph')) drawContextGraph();
+    if (state.activeTab === 'impact' && $('#impactGraph')) renderImpact();
+  }, 220);
+});
+
+window.addEventListener('hashchange', () => {
+  const h = location.hash.slice(1);
+  if (TABS.some(([k]) => k === h) && h !== state.activeTab) {
+    state.activeTab = h;
+    renderTabs();
+    loadTab(h);
+  }
+});
+
+(async function init() {
+  await loadHealth();
+  const h = location.hash.slice(1);
+  if (TABS.some(([k]) => k === h)) state.activeTab = h;
+  renderTabs();
+  const preferred = MAIN_CASE;
+  state.asset = preferred;
+  await searchAssets();
+  const target = state.assets.some(a => a.id === preferred)
+    ? preferred : (state.assets[0] && state.assets[0].id);
+  if (target) selectAsset(target);
+})();
+</script>
+</body>
+</html>

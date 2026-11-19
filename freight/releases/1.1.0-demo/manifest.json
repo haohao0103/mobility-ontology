@@ -1,0 +1,45 @@
+{
+  "version": "1.1.0-demo",
+  "label": "演示：免费等候 30→20 分钟",
+  "based_on": "1.0.0",
+  "created_at": "2026-11-18T09:41:19+08:00",
+  "checksum": "d2b1bc6431f4edefbee367ec33f22a5a002a88ab3d5de5a7534e4f8c0cf79124",
+  "source": "freight/releases/1.1.0-demo/semantic_layer.json",
+  "change_count": 5,
+  "changes": [
+    {
+      "path": "meta.based_on",
+      "from": null,
+      "to": "1.0.0",
+      "kind": "added"
+    },
+    {
+      "path": "meta.released_at",
+      "from": null,
+      "to": "2026-11-18T09:41:19+08:00",
+      "kind": "added"
+    },
+    {
+      "path": "meta.version",
+      "from": "1.0.0",
+      "to": "1.1.0-demo",
+      "kind": "changed"
+    },
+    {
+      "path": "pricing.waiting.free_minutes",
+      "from": 30,
+      "to": 20,
+      "kind": "changed"
+    },
+    {
+      "path": "rules[R-WAIT-01].judge.explain",
+      "from": "等候费按每 5 分钟 2.4 元计，前 30 分钟免费。",
+      "to": "等候费按每 5 分钟 2.4 元计，前 20 分钟免费。",
+      "kind": "changed"
+    }
+  ],
+  "validation": {
+    "ok": true,
+    "checks": 7
+  }
+}

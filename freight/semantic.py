@@ -2010,4 +2010,25 @@ def validate_ontology_substance(raw: dict) -> list[dict]:
                 f"{len(templated)}/{len(relations)} 条关系是 xxx_belongs_to_yyy 形式，"
                 f"疑似模板批量生成")
 
+    # 接口（Palantir Interface，structural match）必须真的被类实现
+    by_id = {c.get("id"): c for c in classes}
+    for iface in (raw.get("interfaces") or []):
+        if not isinstance(iface, dict):
+            continue
+        iid = iface.get("id")
+        req = iface.get("required_properties") or []
+        any_of = iface.get("required_any_of") or []
+        impls = []
+        for cls in classes:
+            props = set(cls.get("properties") or [])
+            if not set(req) <= props:
+                continue
+            if any_of and not (set(any_of) & props):
+                continue
+            impls.append(cls.get("id"))
+        if not impls:
+            add("IFACE_UNIMPLEMENTED", f"interfaces[{iid}]",
+                f"接口 {iid} 的 required_properties={req} / required_any_of={any_of} "
+                f"没有任何类满足——空壳声明，structural match 落不了地")
+
     return issues

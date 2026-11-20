@@ -321,7 +321,17 @@ def check_substance(path: str, label: str) -> dict:
     target = f"{label}#substance"
     with open(path, encoding="utf-8") as f:
         raw = json.load(f)
-    issues = validate_ontology_substance(raw)
+    # 接口声明在扩展层（enhancements/ontology_extension.json），合并后一起校验
+    ext_path = os.path.join(os.path.dirname(path), "..", "enhancements",
+                            "ontology_extension.json")
+    if os.path.exists(ext_path):
+        with open(ext_path, encoding="utf-8") as f:
+            ext = json.load(f)
+        merged = dict(raw)
+        merged["interfaces"] = ext.get("interfaces", [])
+        issues = validate_ontology_substance(merged)
+    else:
+        issues = validate_ontology_substance(raw)
     return {"target": target, "ok": not issues, "issues": issues}
 
 

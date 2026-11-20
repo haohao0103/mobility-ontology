@@ -24720,6 +24720,19 @@
         "type"
       ],
       "returns": "AggregateRow[]"
+    },
+    {
+      "name": "ontology.sql",
+      "system": "本体 SQL 查询",
+      "description": "Ontology SQL（对标 Palantir Ontology SQL 2026-11 GA）：SELECT/FROM/WHERE/GROUP BY/ORDER BY/LIMIT 子集，FROM 支持对象类型、派生类型与链接路径 (a:Type)-[:link]->(b:Type)；参数 :name。SQL 编译到查询树 IR 后走同一执行引擎，TBox 校验/行级列级安全/聚合全部复用——SQL 不是后门。",
+      "arguments": {
+        "sql": "string",
+        "params": "object|null"
+      },
+      "required": [
+        "sql"
+      ],
+      "returns": "Object[]|Groups[]"
     }
   ],
   "functions": [

@@ -342,3 +342,51 @@ def object_set_query(body: ObjectSetQueryIn,
         raise HTTPException(400, f"ONTOLOGY_VIOLATION: {exc}") from exc
     except AccessDenied as exc:
         raise HTTPException(403, f"{exc.code}: {exc}") from exc
+
+
+# -------------------------------------------------- Ontology SQL 入口
+# 对标 Palantir Ontology SQL（2026-11-12 GA）：SQL 只是前端方言，
+# 编译到同一查询树 IR 后走同一执行引擎——TBox 校验/安全/聚合全部复用。
+
+class ObjectSetSqlIn(BaseModel):
+    sql: str
+    params: Optional[dict] = None
+
+
+@router.post("/object-set/sql")
+def object_set_sql(body: ObjectSetSqlIn,
+                   user: str = Query("anonymous"), roles: str = Query("")):
+    from enhancements.security import SecurityContext, AccessDenied
+    from freight.object_query import QueryError
+    from freight.semantic import OntologyViolation
+    from freight.sql_frontend import SqlCompileError, compile_sql, project
+
+    try:
+        compiled = compile_sql(body.sql, body.params)
+    except SqlCompileError as exc:
+        raise HTTPException(400, f"{exc.code}: {exc}") from exc
+    projection = compiled.pop("_projection", [{"kind": "star"}])
+
+    engine, enh = _object_query_engine()
+    role_set = {r.strip() for r in roles.split(",") if r.strip()}
+    token = enh.ext.scope_tokens.get("default_token")
+    ctx = SecurityContext(
+        user=user, roles=role_set, markings=role_set,
+        scope_token=token if user.startswith("agent-") else None,
+    )
+    try:
+        if ctx.scope_token:
+            main_type = engine.validate_set(compiled["set"])
+            if main_type == "*":
+                raise AccessDenied(
+                    "scope token 不允许代数组合查询（无法静态判定类型）",
+                    code="TOOL_NOT_IN_SCOPE")
+            engine.security.check_scope(ctx, "class", main_type)
+        return project(engine.execute(compiled, get_system().facts.store, ctx),
+                       projection)
+    except QueryError as exc:
+        raise HTTPException(400, f"{exc.code}: {exc}") from exc
+    except OntologyViolation as exc:
+        raise HTTPException(400, f"ONTOLOGY_VIOLATION: {exc}") from exc
+    except AccessDenied as exc:
+        raise HTTPException(403, f"{exc.code}: {exc}") from exc

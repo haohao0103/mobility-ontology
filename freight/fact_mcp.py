@@ -696,6 +696,23 @@ class FactMCP:
         engine = ObjectQueryEngine(self.sem, ext)
         return engine.execute(dict(query_tree), self.store)
 
+    def sql(self, sql: str, params: dict | None = None) -> dict:
+        """Ontology SQL（对标 Palantir Ontology SQL）：SQL 编译到查询树 IR，
+        与 ontology.query 走同一执行引擎（TBox/安全/聚合全部复用）。"""
+        from freight.sql_frontend import compile_sql, project
+
+        def load():
+            compiled = compile_sql(sql, params)
+            projection = compiled.pop("_projection", [{"kind": "star"}])
+            return project(self._query_tree(compiled), projection)
+
+        return self._record(
+            "ontology.sql",
+            {"sql": sql, "params": params},
+            "本体 SQL 查询",
+            load,
+        )
+
     def _traverse(self, object_ids: list[str],
                   predicates: list[str] | None,
                   direction: str, depth: int,
@@ -1345,6 +1362,8 @@ class FactMCP:
             "ontology.path": lambda: self.paths(
                 args["from_type"], args["to_type"],
                 args.get("max_depth", 4), args.get("limit", 10)),
+            "ontology.sql": lambda: self.sql(
+                args.get("sql", ""), args.get("params")),
             "ontology.query": lambda: self.query_objects(
                 args["type"], args.get("where"), args.get("select"),
                 args.get("order_by"), args.get("limit", 100),

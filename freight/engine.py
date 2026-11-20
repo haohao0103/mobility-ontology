@@ -37,6 +37,15 @@ def now_iso() -> str:
     return datetime.now().astimezone().isoformat(timespec="seconds")
 
 
+def _parse_timestamp(value) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
 class FreightSystem:
     def __init__(self, db_path: str, fresh: bool = False, seed: bool = True):
         parent = os.path.dirname(os.path.abspath(db_path))
@@ -739,6 +748,242 @@ class FreightSystem:
                 "nodes": list(nodes.values()), "edges": edges}
 
     # ------------------------------------------------------------------ 费用诊断
+    # -------------------------------------------------- 多源费用与报价明细
+    _SOURCE_ALIASES = {"BILLING": "计费中心", "PRICING": "计价中心"}
+
+    @classmethod
+    def _source_alias(cls, system: str) -> str:
+        return cls._SOURCE_ALIASES.get(str(system or "").upper(), str(system or ""))
+
+    def _quote_detail_for_waybill(self, waybill_id: str, wprops: dict) -> dict:
+        """从计价中心逐项读取报价明细，作为报价口径的唯一真源。
+
+        旧实现把 Waybill.estimated_fee 当成报价总额：那是运单上的标量快照，
+        与报价单明细是两套事实源，报价改版后快照不会自动跟。这里沿
+        order_has_quote -> quote_contains_item 独立取数，并校验明细合计、
+        报价单声明总额和运单快照三者是否一致。
+        """
+        order_id = f"order:{wprops.get('order_id')}"
+        quote = self.facts.get_quote_for_order(order_id)
+        quote_id = (quote or {}).get("object_id")
+        items = self.facts.list_quote_items(quote_id) if quote_id else []
+        by_fee_type: dict[str, dict] = {}
+        by_item_id: dict[str, dict] = {}
+        item_rows = []
+        for item in items:
+            p = item["properties"]
+            fee_type = str(p.get("fee_type") or "")
+            amount = round(float(p.get("amount") or 0), 2)
+            row = {
+                "quote_item_id": item["object_id"],
+                "fee_type": fee_type,
+                "fee_label": p.get("fee_label") or fee_type,
+                "amount": amount,
+                "quantity": p.get("quantity"),
+                "unit": p.get("unit"),
+                "pricing_rule_version": p.get("pricing_rule_version"),
+            }
+            item_rows.append(row)
+            by_item_id[item["object_id"]] = row
+            entry = by_fee_type.setdefault(fee_type, {
+                "fee_label": row["fee_label"], "amount": 0.0, "ids": [],
+            })
+            entry["amount"] = round(entry["amount"] + amount, 2)
+            entry["ids"].append(item["object_id"])
+        quoted_total = round(sum(row["amount"] for row in item_rows), 2)
+        declared_total = round(
+            float((quote or {}).get("properties", {}).get("total_amount") or 0), 2)
+        snapshot = round(float(wprops.get("estimated_fee") or 0), 2)
+        findings = []
+        if not quote:
+            findings.append({
+                "code": "QUOTE_NOT_FOUND", "severity": "HIGH",
+                "title": "订单没有生效报价单",
+                "message": f"订单 {order_id} 没有 order_has_quote 活跃关系，报价口径不可核。",
+                "quoted": 0.0, "actual": snapshot, "delta": -snapshot,
+            })
+        elif not item_rows:
+            findings.append({
+                "code": "QUOTE_ITEMS_MISSING", "severity": "HIGH",
+                "title": f"报价单 {quote_id} 没有逐项明细",
+                "message": "报价单只有总额、没有 quote_contains_item 明细，无法逐项对账。",
+                "quoted": 0.0, "actual": declared_total, "delta": -declared_total,
+            })
+        elif abs(quoted_total - declared_total) > 0.01:
+            findings.append({
+                "code": "QUOTE_TOTAL_MISMATCH", "severity": "HIGH",
+                "title": "报价明细合计与报价单总额不一致",
+                "message": (
+                    f"明细合计 {quoted_total:.2f}，报价单声明 {declared_total:.2f}，"
+                    f"差异 {quoted_total - declared_total:+.2f}。"
+                ),
+                "quoted": quoted_total, "actual": declared_total,
+                "delta": round(quoted_total - declared_total, 2),
+            })
+        if quote and item_rows and abs(quoted_total - snapshot) > 0.01:
+            findings.append({
+                "code": "QUOTE_SNAPSHOT_DRIFT", "severity": "MEDIUM",
+                "title": "运单报价快照与报价单明细不一致",
+                "message": (
+                    f"运单 estimated_fee={snapshot:.2f}，报价单明细合计 "
+                    f"{quoted_total:.2f}；本次以明细为准。"
+                ),
+                "quoted": quoted_total, "actual": snapshot,
+                "delta": round(quoted_total - snapshot, 2),
+            })
+        trace = [
+            {"step": "报价单", "tool": "pricing.get_quote", "value": quote_id},
+            {"step": "报价明细", "tool": "pricing.list_quote_items",
+             "value": f"{len(item_rows)} 项"},
+        ]
+        return {
+            "order_id": order_id,
+            "quote_id": quote_id,
+            "quote_version": (quote or {}).get("properties", {}).get("version"),
+            "quoted_total": quoted_total,
+            "declared_total": declared_total,
+            "waybill_snapshot": snapshot,
+            "source": "pricing.list_quote_items",
+            "by_fee_type": by_fee_type,
+            "by_item_id": by_item_id,
+            "items": item_rows,
+            "trace": trace,
+            "findings": findings,
+        }
+
+    def _quoted_for_fee(self, fee_id: str, quote_detail: dict) -> dict | None:
+        """单条费用对应的报价明细：优先查 fee_derived_from_quote_item 关系。"""
+        rel = self.facts.one(
+            "SELECT object_id FROM relations WHERE predicate='fee_derived_from_quote_item' "
+            "AND subject_id=? AND valid_to IS NULL "
+            "ORDER BY valid_from DESC LIMIT 1",
+            (fee_id,),
+        )
+        if rel:
+            row = quote_detail["by_item_id"].get(rel["object_id"])
+            if row:
+                return {**row, "link": "fee_derived_from_quote_item"}
+        return None
+
+    def _fee_source_coverage(self, waybill_id: str, wprops: dict) -> dict:
+        """按 data_sources 声明的连接器逐源取费用明细，并检查证据与新鲜度。
+
+        费用明细不在单表里：计费中心只给费用索引，TMS/ETC 各自提供自己的
+        费用行。这里的取数轨迹不是装饰，而是把「哪些费用真的从源系统取到了」
+        固化成可审计结果；取不到的费用会显式缺口，不会被静默算成 0。
+        """
+        collected = self.facts.collect_fee_sources(waybill_id)
+        contracts = {
+            str(item.get("system") or ""): item
+            for item in self.facts.fee_source_contracts()
+        }
+        reference = (
+            _parse_timestamp(wprops.get("delivered_at"))
+            or _parse_timestamp(wprops.get("loading_confirmed_at"))
+        )
+        findings = []
+        fee_sources = []
+        for fee in collected["fees"]:
+            p = fee["props"]
+            system = str(p.get("source_system") or "")
+            contract = contracts.get(system) or {}
+            evidence = [dict(row) for row in self.facts.all(
+                "SELECT * FROM evidence WHERE object_id=? ORDER BY occurred_at",
+                (fee["object_id"],))]
+            allowed_evidence = {
+                self._source_alias(item)
+                for item in contract.get("evidence_sources") or []
+            }
+            evidence_systems = {
+                self._source_alias(ev.get("source_system")) for ev in evidence
+            }
+            record = {
+                "fee_id": fee["object_id"].split(":", 1)[-1],
+                "fee_type": p.get("fee_type"),
+                "source_system": system,
+                "connector": contract.get("tool"),
+                "resolved": bool(fee["source_resolved"]),
+                "evidence_count": len(evidence),
+                "quote_item_id": None,
+            }
+            if not fee["source_resolved"]:
+                findings.append({
+                    "code": "FEE_SOURCE_UNRESOLVED", "severity": "HIGH",
+                    "fee_id": record["fee_id"],
+                    "title": f"{p.get('fee_label') or p.get('fee_type')}没有可用的源系统连接器",
+                    "message": (
+                        f"费用记录来源 {system or '未标注'}，但 data_sources 中没有"
+                        "声明负责该来源/费用类型的连接器，明细无法取数。"
+                    ),
+                })
+            declared_types = list(contract.get("fee_types") or [])
+            if declared_types and str(p.get("fee_type") or "") not in declared_types:
+                findings.append({
+                    "code": "FEE_SOURCE_TYPE_UNDECLARED", "severity": "HIGH",
+                    "fee_id": record["fee_id"],
+                    "title": f"{system} 连接器不负责该费用类型",
+                    "message": (
+                        f"费用类型 {p.get('fee_type')} 不在 {system} 声明的 "
+                        f"{declared_types} 范围内，明细口径不可信。"
+                    ),
+                })
+            freshness_hours = contract.get("freshness_hours")
+            latest = max(
+                [ts for ts in (
+                    [_parse_timestamp(ev.get("occurred_at")) for ev in evidence]
+                    + [_parse_timestamp(p.get("occurred_at"))]
+                ) if ts is not None],
+                default=None,
+            )
+            if (reference and latest and isinstance(freshness_hours, (int, float))):
+                age_hours = round(
+                    (reference.timestamp() - latest.timestamp()) / 3600.0, 1)
+                record["age_hours"] = age_hours
+                if age_hours > float(freshness_hours):
+                    findings.append({
+                        "code": "FEE_SOURCE_STALE", "severity": "MEDIUM",
+                        "fee_id": record["fee_id"],
+                        "title": f"{p.get('fee_label') or p.get('fee_type')}源数据超过新鲜度窗口",
+                        "message": (
+                            f"{system} 明细最新时间 {latest.isoformat()}，"
+                            f"距结算基准 {age_hours:.1f} 小时，超过 "
+                            f"{float(freshness_hours):g} 小时窗口。"
+                        ),
+                    })
+            require = set(contract.get("require_evidence") or [])
+            if str(p.get("fee_type") or "") in require and not (allowed_evidence & evidence_systems):
+                findings.append({
+                    "code": "FEE_EVIDENCE_MISSING", "severity": "HIGH",
+                    "fee_id": record["fee_id"],
+                    "title": f"{p.get('fee_label') or p.get('fee_type')}缺少源系统证据",
+                    "message": (
+                        f"要求 {sorted(allowed_evidence)} 证据，实际来源 "
+                        f"{sorted(evidence_systems) or '无'}。"
+                    ),
+                })
+            fee_sources.append(record)
+        unresolved = len(collected["unresolved_ids"])
+        coverage = {
+            "contracts": len(contracts),
+            "fee_count": len(collected["fees"]),
+            "resolved": len(collected["fees"]) - unresolved,
+            "unresolved": unresolved,
+            "sources": collected["sources"],
+            "reference_at": reference.isoformat() if reference else None,
+        }
+        return {
+            "fee_sources": fee_sources,
+            "source_coverage": coverage,
+            "findings": findings,
+            "trace": [{
+                "id": f"source:{row['system']}",
+                "label": f"{row['system']} 费用明细",
+                "tool": row["tool"],
+                "value": f"{row['fee_count']} 项 / {row['amount']:.2f} 元",
+                "source": row["tool"],
+            } for row in collected["sources"]],
+        }
+
     def _pricing_rule_for_fee(self, fee_id: str) -> dict | None:
         """沿 fee_priced_by_rule 关系解析费用项实际绑定的定价规则实例。"""
         rel = self.facts.one(
@@ -920,8 +1165,11 @@ class FreightSystem:
         effective_total = round(sum(
             (f["props"].get("actual_amount", 0) or 0) - (f["props"].get("waived_amount", 0) or 0)
             for f in fees), 2)
-        quoted_total = float(wprops.get("estimated_fee") or sum(
-            f["props"].get("quoted_amount", 0) or 0 for f in fees))
+        # 报价侧独立回溯计价中心明细；运单 estimated_fee 只作为快照对照，
+        # 不再充当报价总额（快照会漂移，报价明细才是源事实）。
+        quote_detail = self._quote_detail_for_waybill(waybill_id, wprops)
+        quoted_total = quote_detail["quoted_total"]
+        source_check = self._fee_source_coverage(waybill_id, wprops)
         variance = round(actual_total - quoted_total, 2)
 
         waiting_config = semantic.pricing.get("waiting") or {}
@@ -956,11 +1204,35 @@ class FreightSystem:
         highway_actual = 0.0
         for fee in fees:
             p = fee["props"]
-            quoted = round(float(p.get("quoted_amount", 0) or 0), 2)
+            quoted_snapshot = round(float(p.get("quoted_amount", 0) or 0), 2)
+            quote_item = self._quoted_for_fee(fee["object_id"], quote_detail)
+            if quote_item:
+                quoted = round(float(quote_item["amount"]), 2)
+                quote_item_id = quote_item["quote_item_id"]
+                quoted_source = "pricing.list_quote_items"
+            else:
+                type_entry = quote_detail["by_fee_type"].get(p["fee_type"])
+                quoted = round(float(type_entry["amount"]), 2) if type_entry else 0.0
+                quote_item_id = None
+                quoted_source = (
+                    "pricing.list_quote_items(fee_type)" if type_entry else "UNRESOLVED"
+                )
             expected = round(float(p.get("expected_amount", 0) or 0), 2)
             actual = round(float(p.get("actual_amount", 0) or 0), 2)
             waived = round(float(p.get("waived_amount", 0) or 0), 2)
             quote_delta = round(actual - quoted, 2)
+            if quote_item and abs(quoted - quoted_snapshot) > 0.01:
+                findings.append({
+                    "code": "QUOTE_SNAPSHOT_DRIFT", "severity": "MEDIUM",
+                    "fee_id": p["fee_id"],
+                    "title": f"{p['fee_label']}运单报价快照与报价明细不一致",
+                    "message": (
+                        f"运单快照 {quoted_snapshot:.2f}，报价明细 "
+                        f"{quote_item['quote_item_id']} = {quoted:.2f}；以明细为准。"
+                    ),
+                    "quoted": quoted, "actual": quoted_snapshot,
+                    "delta": round(quoted - quoted_snapshot, 2),
+                })
 
             pricing_rule = self._pricing_rule_for_fee(fee["object_id"])
             rule_props = (pricing_rule or {}).get("props") or {}
@@ -1062,7 +1334,9 @@ class FreightSystem:
 
             breakdown.append({
                 "fee_id": p["fee_id"], "fee_type": p["fee_type"], "label": p["fee_label"],
-                "quoted_amount": quoted, "expected_amount": expected,
+                "quoted_amount": quoted, "quoted_snapshot": quoted_snapshot,
+                "quote_item_id": quote_item_id, "quoted_amount_source": quoted_source,
+                "expected_amount": expected,
                 "rule_expected": rule_expected,
                 "rule_meta": rule_meta,
                 "actual_amount": actual, "waived_amount": waived,
@@ -1100,6 +1374,15 @@ class FreightSystem:
                     "message": f"规则应计 {rule_expected:.2f}，实际 {actual:.2f}，差异 {rule_delta:.2f}。",
                     "expected": rule_expected, "actual": actual, "delta": rule_delta,
                 })
+
+        findings.extend(quote_detail["findings"])
+        findings.extend(source_check["findings"])
+        quote_item_by_fee = {
+            item["fee_id"]: item["quote_item_id"] for item in breakdown
+            if item.get("quote_item_id")
+        }
+        for fee_source in source_check["fee_sources"]:
+            fee_source["quote_item_id"] = quote_item_by_fee.get(fee_source["fee_id"])
 
         evidence = []
         for target_id in [waybill_id] + fee_ids:
@@ -1227,6 +1510,8 @@ class FreightSystem:
             waiting_rule_effective_to=waiting_rule_effective_to,
             evidence=evidence,
             conclusion=conclusion,
+            quote=quote_detail,
+            source_coverage=source_check,
         )
 
         return {
@@ -1235,6 +1520,12 @@ class FreightSystem:
             "status": waybill["status"],
             "ontology_version": version,
             "quoted_total": round(quoted_total, 2),
+            "quoted_total_source": quote_detail["source"],
+            "quote": quote_detail,
+            "source_coverage": {
+                **source_check["source_coverage"],
+                "fee_sources": source_check["fee_sources"],
+            },
             "actual_total": actual_total,
             "effective_total": effective_total,
             "variance": variance,
@@ -1500,7 +1791,9 @@ class FreightSystem:
                       waiting_rule_effective_from: str,
                       waiting_rule_effective_to: str,
                       vehicle_type: str,
-                      evidence: list[dict], conclusion: str) -> dict:
+                      evidence: list[dict], conclusion: str,
+                      quote: dict | None = None,
+                      source_coverage: dict | None = None) -> dict:
         """把结论拆成可逐层点击的追溯链，最后落到本体版本与证据 checksum。"""
         version = str(semantic.raw.get("meta", {}).get("version") or "")
         evidence_items = []
@@ -1523,6 +1816,35 @@ class FreightSystem:
         }
         for item in evidence_items:
             item["supports"] = support.get(item["evidence_type"], "业务事实佐证")
+        quote = quote or {}
+        source_coverage = source_coverage or {}
+        coverage = source_coverage.get("source_coverage") or {}
+        source_steps = [{
+            "id": "quote",
+            "label": "报价明细",
+            "value": quote.get("quote_id") or "未找到报价单",
+            "detail": (
+                f"报价单版本 {quote.get('quote_version') or '未知'}；"
+                f"逐项明细 {len(quote.get('items') or [])} 条，"
+                f"合计 {float(quote.get('quoted_total') or 0):.2f} 元"
+            ),
+            "source": quote.get("source") or "pricing.list_quote_items",
+        }]
+        source_steps.extend(source_coverage.get("trace") or [])
+        source_steps.append({
+            "id": "source_coverage",
+            "label": "费用源覆盖",
+            "value": (
+                f"{coverage.get('resolved', 0)}/{coverage.get('fee_count', 0)} 项已解析"
+            ),
+            "detail": (
+                "；".join(
+                    f"{row['system']} {row['fee_count']} 项"
+                    for row in coverage.get("sources") or []
+                ) or "没有生效的费用源连接器"
+            ),
+            "source": "semantic.data_sources",
+        })
         return {
             "version": version,
             "version_source": os.path.relpath(semantic.path, os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
@@ -1530,6 +1852,7 @@ class FreightSystem:
             "steps": [
                 {"id": "conclusion", "label": "结论", "value": conclusion,
                  "source": "fee_analysis"},
+                *source_steps,
                 {"id": "fee", "label": "费用项", "value": waiting_fee_id or "无等候费",
                  "detail": f"实际金额 {waiting_actual:.2f} 元", "source": "billing.list_fee_items"},
                 {"id": "rule", "label": "规则", "value": waiting_rule_id,

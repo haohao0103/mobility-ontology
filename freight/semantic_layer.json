@@ -269,7 +269,7 @@
    "label": "费用拆解",
    "target": "Waybill",
    "implementation": "fee_analysis",
-   "description": "确定性拆解运单的报价、规则应计、实收、减免和差异，并给出等候费规则公式与证据。",
+   "description": "确定性拆解运单的报价、规则应计、实收、减免和差异，并给出等候费规则公式与证据。报价侧逐项回溯报价单明细（QuoteItem），费用侧按 data_sources 声明的多源连接器取数并校验完整性、证据与新鲜度。",
    "params": [
     {
      "name": "waybill_id",
@@ -376,7 +376,47 @@
    "system": "计费中心",
    "tool": "billing.list_fee_items",
    "key": "fee_id",
-   "description": "按运单读取费用项、金额口径与规则依据。"
+   "description": "按运单读取费用项索引、金额口径与规则依据。"
+  },
+  {
+   "class": "FeeItem",
+   "system": "TMS",
+   "tool": "tms.list_charge_lines",
+   "key": "fee_id",
+   "fee_types": [
+    "base",
+    "mileage",
+    "waiting",
+    "loading",
+    "insurance",
+    "other"
+   ],
+   "freshness_hours": 24,
+   "evidence_sources": [
+    "TMS",
+    "BILLING"
+   ],
+   "require_evidence": [
+    "waiting"
+   ],
+   "description": "TMS 运输费用行（基础/里程/等候/装卸/保险/其他）；等待费必须有规则或装货证据。"
+  },
+  {
+   "class": "FeeItem",
+   "system": "ETC",
+   "tool": "etc.list_toll_transactions",
+   "key": "fee_id",
+   "fee_types": [
+    "highway"
+   ],
+   "freshness_hours": 72,
+   "evidence_sources": [
+    "ETC"
+   ],
+   "require_evidence": [
+    "highway"
+   ],
+   "description": "ETC 通行交易明细；高速费必须能回溯到 ETC 扣费证据。"
   },
   {
    "class": "Settlement",

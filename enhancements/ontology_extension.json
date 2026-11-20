@@ -642,6 +642,18 @@
      "type": "decimal"
     },
     {
+     "name": "quoted_total_source",
+     "type": "string"
+    },
+    {
+     "name": "quote",
+     "type": "json"
+    },
+    {
+     "name": "source_coverage",
+     "type": "json"
+    },
+    {
      "name": "actual_total",
      "type": "decimal"
     },

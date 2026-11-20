@@ -1131,6 +1131,129 @@ class FactMCP:
     def get_fee_item(self, fee_id: str) -> dict:
         return self._typed(fee_id, "FeeItem", "billing.get_fee_item", "计费中心")
 
+    def fee_source_contracts(self) -> list[dict]:
+        """data_sources 中声明了 fee_types 的费用源连接器。
+
+        计费中心只提供费用索引；真正的费用明细按来源系统（TMS/ETC/...）
+        分别拉取。没有 fee_types 的映射是类级主数据源，不参与费用分流。
+        """
+        return [
+            item for item in self.sem.data_sources
+            if item.get("class") == "FeeItem" and item.get("fee_types")
+        ]
+
+    def list_fee_lines(self, waybill_id: str, system: str,
+                       fee_types: list[str], tool: str | None = None) -> list[dict]:
+        """按来源系统拉取自己负责的费用明细行。
+
+        计费中心返回的是费用索引；真正的明细由各来源系统连接器负责。
+        连接器不能越界返回别的系统的费用类型，否则口径归属会串。
+        """
+        allowed = set(fee_types)
+
+        def load():
+            rows = []
+            for node in self.list_fee_items(waybill_id):
+                props = node["properties"]
+                if str(props.get("source_system") or "") != system:
+                    continue
+                if allowed and str(props.get("fee_type") or "") not in allowed:
+                    continue
+                rows.append(node)
+            return rows
+
+        return self._record(
+            tool or f"{system.lower()}.list_fee_lines",
+            {"waybill_id": waybill_id, "fee_types": fee_types},
+            system or "EXTERNAL", load,
+        )
+
+    def collect_fee_sources(self, waybill_id: str) -> dict:
+        """费用索引 + 多源明细连接器：返回逐源取数结果与未解析缺口。
+
+        每个连接器只能返回自己声明负责的费用类型；返回不了的费用项不会被
+        静默丢弃，而是进入 unresolved_ids，由引擎转成数据缺口 finding。
+        """
+        index_nodes = self.list_fee_items(waybill_id)
+        index = [{
+            "object_id": node["object_id"],
+            "type": node["type"],
+            "name": node["name"],
+            "status": node["status"],
+            "props": dict(node["properties"]),
+        } for node in index_nodes]
+        claimed: dict[str, str] = {}
+        sources: list[dict] = []
+        for contract in self.fee_source_contracts():
+            system = str(contract.get("system") or "")
+            tool = str(contract.get("tool") or f"{system.lower()}.list_fee_lines")
+            fee_types = [str(item) for item in contract.get("fee_types") or []]
+            rows = self.list_fee_lines(waybill_id, system, fee_types, tool)
+            ids = [row["object_id"] for row in rows]
+            for oid in ids:
+                claimed[oid] = system
+            sources.append({
+                "system": system,
+                "tool": tool,
+                "fee_types": fee_types,
+                "fee_ids": ids,
+                "fee_count": len(ids),
+                "amount": round(sum(
+                    float(row["properties"].get("actual_amount") or 0) for row in rows
+                ), 2),
+            })
+        for fee in index:
+            fee["source_resolved"] = fee["object_id"] in claimed
+            fee["source_contract"] = claimed.get(fee["object_id"])
+        return {
+            "fees": index,
+            "fee_ids": [fee["object_id"] for fee in index],
+            "sources": sources,
+            "unresolved_ids": [
+                fee["object_id"] for fee in index if not fee["source_resolved"]
+            ],
+        }
+
+    def get_quote(self, quote_id: str) -> dict:
+        return self._typed(quote_id, "Quote", "pricing.get_quote", "计价中心")
+
+    def get_quote_for_order(self, order_id: str) -> dict | None:
+        """按订单读取当前生效报价单（有 valid_until 时仍以最新版本为准）。"""
+        def load():
+            rel = self.store.one(
+                "SELECT object_id FROM relations WHERE predicate='order_has_quote' "
+                "AND subject_id=? AND valid_to IS NULL "
+                "ORDER BY valid_from DESC LIMIT 1",
+                (order_id,),
+            )
+            if not rel:
+                return None
+            row = self._row(rel["object_id"])
+            if not row or row["type"] != "Quote":
+                return None
+            return self._node(row)
+
+        return self._record("pricing.get_quote", {"order_id": order_id},
+                            "计价中心", load)
+
+    def list_quote_items(self, quote_id: str) -> list[dict]:
+        """按报价单读取逐项明细；报价总额不再充当明细的替代品。"""
+        def load():
+            rows = self.store.all(
+                "SELECT object_id FROM relations WHERE predicate='quote_contains_item' "
+                "AND subject_id=? AND valid_to IS NULL ORDER BY object_id",
+                (quote_id,),
+            )
+            items = []
+            for rel in rows:
+                row = self._row(rel["object_id"])
+                if row and row["type"] == "QuoteItem":
+                    items.append(self._node(row))
+            return items
+
+        return self._record("pricing.list_quote_items", {"quote_id": quote_id},
+                            "计价中心", load)
+
     def _relation_rows(self, object_id: str, direction: str = "both",
                        predicate: str | list[str] | None = None) -> list[dict]:
         clauses = []
@@ -1473,6 +1596,19 @@ class FactMCP:
             "crm.get_shipper": lambda: self.get_shipper(args["shipper_id"]),
             "billing.list_fee_items": lambda: self.list_fee_items(args["waybill_id"]),
             "billing.get_fee_item": lambda: self.get_fee_item(args["fee_id"]),
+            "tms.list_charge_lines": lambda: self.list_fee_lines(
+                args["waybill_id"], "TMS",
+                args.get("fee_types") or [
+                    "base", "mileage", "waiting", "loading", "insurance", "other"],
+                "tms.list_charge_lines"),
+            "etc.list_toll_transactions": lambda: self.list_fee_lines(
+                args["waybill_id"], "ETC", ["highway"],
+                "etc.list_toll_transactions"),
+            "pricing.get_quote": lambda: self.get_quote(args["quote_id"]),
+            "pricing.get_quote_for_order": lambda: self.get_quote_for_order(
+                args["order_id"]),
+            "pricing.list_quote_items": lambda: self.list_quote_items(
+                args["quote_id"]),
             "graph.list_relations": lambda: self.list_relations(
                 args["object_id"], args.get("direction", "both"), args.get("predicate")),
             "evidence.list": lambda: self.list_evidence(args.get("object_ids", [])),

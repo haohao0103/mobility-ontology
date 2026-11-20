@@ -85,7 +85,7 @@ OPS = {
 }
 COMBO_KEYS = {"$and", "$or", "$not"}
 MAX_DEPTH = 32
-NUMERIC_TYPES = {"integer", "number"}
+NUMERIC_TYPES = {"integer", "number", "decimal"}
 
 
 class QueryError(BusinessReject):

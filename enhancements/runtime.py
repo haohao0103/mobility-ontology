@@ -24,7 +24,8 @@ from enhancements.search import search_objects
 class EnhancedSystem:
     def __init__(self, system: FreightSystem):
         self.system = system
-        self.ext = ExtensionRegistry(base_classes=system.sem.classes)
+        self.ext = ExtensionRegistry(base_classes=system.sem.classes,
+                                  base_property_types=system.sem.raw.get("property_types"))
         self.properties = PropertyRegistry(self.ext)
         self.interfaces = InterfaceRegistry(self.ext)
         self.security = SecurityEngine(self.ext)

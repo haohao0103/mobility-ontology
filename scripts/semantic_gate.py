@@ -14,7 +14,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
 from freight.release import file_checksum, list_manifests, semantic_path  # noqa: E402
-from freight.semantic import SemanticLayer, validate_semantic  # noqa: E402
+from freight.semantic import (SemanticLayer, validate_ontology_substance,  # noqa: E402
+                             validate_semantic)
 
 CURRENT = os.path.join(ROOT, "freight", "semantic_layer.json")
 ROOT_LAYER = os.path.join(ROOT, "semantic_layer.json")
@@ -309,6 +310,18 @@ def check_validate(path: str, label: str) -> dict:
                 "message": f"负例未触发 {code}",
             })
 
+    return {"target": target, "ok": not issues, "issues": issues}
+
+
+def check_substance(path: str, label: str) -> dict:
+    """反虚胖：属性注册表完备、描述非模板、状态机不雷同、无脚本批量生成类。
+
+    只对工作副本执行；历史发布快照允许保留旧形态。
+    """
+    target = f"{label}#substance"
+    with open(path, encoding="utf-8") as f:
+        raw = json.load(f)
+    issues = validate_ontology_substance(raw)
     return {"target": target, "ok": not issues, "issues": issues}
 
 
@@ -631,6 +644,7 @@ def main() -> int:
     results.append(check_rule_ast(CURRENT, "freight/semantic_layer.json"))
     results.append(check_rule_cases(CURRENT, "freight/semantic_layer.json"))
     results.append(check_validate(CURRENT, "freight/semantic_layer.json"))
+    results.append(check_substance(CURRENT, "freight/semantic_layer.json"))
     results.append(check_file(CURRENT, "freight/semantic_layer.json"))
     results.append(check_shacl(CURRENT, "freight/semantic_layer.json", FREIGHT_BASE))
     results.append(check_shacl(ROOT_LAYER, "semantic_layer.json", MOBILITY_BASE))

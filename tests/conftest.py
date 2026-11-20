@@ -41,7 +41,38 @@ def make_ext(sem):
         )
         json.dump(raw, tmp, ensure_ascii=False)
         tmp.close()
-        return ExtensionRegistry(path=tmp.name, base_classes=sem.classes)
+        return ExtensionRegistry(
+            path=tmp.name, base_classes=sem.classes,
+            base_property_types=sem.raw.get("property_types"))
+
+    return _make
+
+
+@pytest.fixture()
+def make_ext_without(sem):
+    """工厂：从「基础本体属性注册表」中剔除指定属性后构造扩展注册表。
+
+    schema v3 之后基础本体是全量权威注册表，所有属性都已注册。要验证「未注册
+    属性 -> legacy / strict 拒绝 / 类型校验跳过」这类承重语义，必须显式把属性
+    从基础注册表里摘掉，等价于「该属性从未登记」。
+    """
+
+    def _make(drop, mutator=None):
+        drop = set(drop)
+        with open(EXT_PATH, encoding="utf-8") as f:
+            raw = json.load(f)
+        if mutator is not None:
+            raw = mutator(json.loads(json.dumps(raw)))
+        tmp = tempfile.NamedTemporaryFile(
+            "w", suffix=".json", delete=False, encoding="utf-8"
+        )
+        json.dump(raw, tmp, ensure_ascii=False)
+        tmp.close()
+        base_pt = [p for p in sem.raw.get("property_types", [])
+                   if p["name"] not in drop]
+        return ExtensionRegistry(
+            path=tmp.name, base_classes=sem.classes,
+            base_property_types=base_pt)
 
     return _make
 

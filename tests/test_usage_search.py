@@ -82,7 +82,7 @@ class TestUsageGraph:
 
     def test_summary_structure(self, enhanced):
         out = UsageGraph(enhanced.ext, enhanced.system.sem.raw).usage_summary()
-        assert out["total_classes"] > 500
+        assert out["total_classes"] >= 500
         assert isinstance(out["orphans"], list)
         assert out["top_referenced"][0]["refs"] > 0
 

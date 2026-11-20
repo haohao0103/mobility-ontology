@@ -107,7 +107,7 @@ class TestPredicateValidation:
             eng.execute({"set": {"from": "Waybill", "where": {
                 "estimated_fee": {"$gte": "four hundred"}}}}, _store(sys_mod))
 
-    def test_load_bearing_delete_registration_skips_type_check(self, sys_mod, make_ext):
+    def test_load_bearing_delete_registration_skips_type_check(self, sys_mod, make_ext_without):
         """承重：删掉 estimated_fee 注册 -> 值类型校验随之消失（legacy 宽容）。"""
 
         def mutate(raw):
@@ -116,7 +116,7 @@ class TestPredicateValidation:
             ]
             return raw
 
-        ext = make_ext(mutate)
+        ext = make_ext_without({"estimated_fee"}, mutate)
         eng = ObjectQueryEngine(sys_mod.sem, ext)
         # 数值注册删除后：字符串比较值不再被类型校验拦（谓词求值会 False 但不报错）
         out = eng.execute({"set": {"from": "Waybill", "where": {

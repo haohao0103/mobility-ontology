@@ -28,14 +28,15 @@ class TestRegisteredResolution:
         p = reg.resolve("Waybill", "waybill_id")
         assert p.primary_key is True
 
-    def test_legacy_property_unregistered(self, make_ext):
-        reg = PropertyRegistry(make_ext())
+    def test_legacy_property_unregistered(self, make_ext_without):
+        # schema v3 后基础本体全量注册；要测 legacy 语义必须显式摘掉该属性
+        reg = PropertyRegistry(make_ext_without({"order_id"}))
         p = reg.resolve("Waybill", "order_id")  # 未注册的存量属性
         assert p.registered is False and p.origin == "legacy"
 
 
 class TestLoadBearing:
-    def test_delete_registration_removes_marking(self, make_ext):
+    def test_delete_registration_removes_marking(self, make_ext_without):
         """承重：删掉 shipper_name 注册 -> 属性降级 legacy，PII 标记消失（脱敏失效）。"""
 
         def mutate(raw):
@@ -44,7 +45,7 @@ class TestLoadBearing:
             ]
             return raw
 
-        reg = PropertyRegistry(make_ext(mutate))
+        reg = PropertyRegistry(make_ext_without({"shipper_name"}, mutate))
         p = reg.resolve("Shipper", "shipper_name")
         assert p.registered is False
         assert p.marking is None
@@ -74,12 +75,12 @@ class TestLoadBearing:
         assert p.status == "deprecated"
         assert any("废弃" in i for i in p.issues)
 
-    def test_strict_mode_rejects_unregistered(self, make_ext):
+    def test_strict_mode_rejects_unregistered(self, make_ext_without):
         def mutate(raw):
             raw["property_registry_policy"]["enforcement"] = "strict"
             return raw
 
-        reg = PropertyRegistry(make_ext(mutate))
+        reg = PropertyRegistry(make_ext_without({"order_id"}, mutate))
         with pytest.raises(RegistryViolation, match="未注册"):
             reg.resolve("Waybill", "order_id")
 

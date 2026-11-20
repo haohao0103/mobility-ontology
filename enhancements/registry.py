@@ -18,12 +18,19 @@ DEFAULT_PATH = os.path.join(
 
 
 class ExtensionRegistry:
-    def __init__(self, path: str = DEFAULT_PATH, base_classes: dict[str, dict] | None = None):
+    def __init__(self, path: str = DEFAULT_PATH, base_classes: dict[str, dict] | None = None,
+                 base_property_types: list[dict] | None = None):
         with open(path, encoding="utf-8") as f:
             self.raw = json.load(f)
         self.path = path
         self.meta = self.raw.get("meta", {})
-        self.property_types = {p["name"]: p for p in self.raw.get("property_types", [])}
+        # schema v3：属性注册表以基础本体（freight/semantic_layer.json 顶层 property_types）
+        # 为权威来源，扩展层只补基础本体未覆盖的属性（Palantir Property Type 一等公民）。
+        self.property_types = {p["name"]: p for p in (base_property_types or [])}
+        for p in self.raw.get("property_types", []):
+            # 扩展层（含 proposal 分支）覆盖基础本体同名声明的定义：
+            # 基础本体是属性注册表的全量权威，扩展层是它的可覆盖视图。
+            self.property_types[p["name"]] = p
         self.property_list = list(self.property_types.values())
         self.policy = self.raw.get("property_registry_policy", {"enforcement": "incremental"})
         self.interfaces = {i["id"]: i for i in self.raw.get("interfaces", [])}

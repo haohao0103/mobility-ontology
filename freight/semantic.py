@@ -1916,3 +1916,98 @@ def validate_semantic(raw: dict) -> list[dict]:
             add("DATA_SOURCE_TOOL_MISSING", f"{path}.tool", "数据源映射缺少 tool")
 
     return issues
+
+
+# ─────────────────────────── 本体实质校验（反虚胖） ───────────────────────────
+# 背景：曾经用 tools/expand_ontology.py 把同一模板复制 540 次，把规模顶到
+# 「500 类 / 500 关系」。规模数字达标，但 540 个类属性全部是
+# xxx_id + name + status + created_at + updated_at、描述套模板、状态机一律
+# ACTIVE/INACTIVE，且 ABox 从未承载过一个实例。
+# 下面几条断言专门堵住这条路：规模可以大，但每个类都必须是有实质定义的。
+
+TEMPLATE_DESC_MARKERS = (
+    "域的，按", "按 {}_id 检索", "待补充", "TODO", "占位",
+)
+GENERIC_STATUS_SETS = (
+    ("ACTIVE", "INACTIVE"),
+    ("ACTIVE", "DISABLED"),
+    ("NORMAL", "ABNORMAL"),
+    ("ENABLED", "DISABLED"),
+)
+MAX_UNIFORM_STATUS_SHARE = 0.05
+
+
+def validate_ontology_substance(raw: dict) -> list[dict]:
+    """校验本体是否有实质内容（反批量模板凑数）。仅对工作副本执行。"""
+    issues: list[dict] = []
+
+    def add(code: str, path: str, message: str) -> None:
+        issues.append({
+            "code": code,
+            "category": "substance",
+            "path": path,
+            "message": message,
+        })
+
+    classes = [c for c in (raw.get("classes") or []) if isinstance(c, dict)]
+    relations = [r for r in (raw.get("relations") or []) if isinstance(r, dict)]
+    registry = {p.get("name"): p for p in (raw.get("property_types") or [])
+                if isinstance(p, dict)}
+
+    if not registry:
+        add("PROPERTY_REGISTRY_MISSING", "property_types",
+            "本体未声明属性注册表：每个属性必须有独立定义"
+            "（value_type/base_type/unit/marking/used_by）")
+
+    for cls in classes:
+        cid = cls.get("id")
+        for prop in cls.get("properties") or []:
+            if registry and prop not in registry:
+                add("PROP_UNREGISTERED", f"classes[{cid}].properties",
+                    f"属性 {cid}.{prop} 未在 property_types 注册")
+
+    # 描述不得是模板句
+    for cls in classes:
+        desc = str(cls.get("description") or "").strip()
+        cid = cls.get("id")
+        if not desc:
+            add("CLASS_DESCRIPTION_MISSING", f"classes[{cid}].description",
+                f"类 {cid} 缺少业务描述（必须说清它在链路里的角色）")
+            continue
+        for marker in TEMPLATE_DESC_MARKERS:
+            if marker in desc:
+                add("CLASS_DESCRIPTION_TEMPLATED", f"classes[{cid}].description",
+                    f"类 {cid} 的描述看起来是模板句: {desc[:40]!r}")
+                break
+
+    # 禁止脚本批量生成的类
+    generated = [c.get("id") for c in classes
+                 if str(c.get("source") or "").startswith("generated:")]
+    if generated:
+        add("CLASS_AUTO_GENERATED", "classes",
+            f"{len(generated)} 个类由脚本批量生成（source=generated:*），"
+            f"例如 {generated[:5]}；规模必须来自人工建模，不能来自模板复制")
+
+    # 状态机不得千篇一律
+    if len(classes) >= 20:
+        counter: dict[tuple, int] = {}
+        for cls in classes:
+            key = tuple(cls.get("statuses") or [])
+            counter[key] = counter.get(key, 0) + 1
+        for key, count in counter.items():
+            share = count / len(classes)
+            if key and key in GENERIC_STATUS_SETS and share > MAX_UNIFORM_STATUS_SHARE:
+                add("CLASS_STATUS_UNIFORM", "classes[*].statuses",
+                    f"{count}/{len(classes)} 个类共用同一组通用状态 {list(key)}"
+                    f"（{share:.0%}）；每个实体应有自己的状态机")
+
+    # 关系不得是模板化的 xxx_belongs_to_yyy
+    if len(relations) >= 50:
+        templated = [r.get("id") for r in relations
+                     if str(r.get("id") or "").endswith("_belongs_to")]
+        if len(templated) / len(relations) > 0.2:
+            add("RELATION_TEMPLATED", "relations",
+                f"{len(templated)}/{len(relations)} 条关系是 xxx_belongs_to_yyy 形式，"
+                f"疑似模板批量生成")
+
+    return issues

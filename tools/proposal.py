@@ -100,14 +100,25 @@ def cmd_review(args) -> int:
     issues = _validate_branch(branch)
     main_json = _load_main()
     changed = _checksum(branch) != _checksum(main_json)
-    verdict = "PASS" if not issues else "FAIL"
+    # 破坏性变更审查：change_gate 只比对本体的 classes/relations/property_types。
+    # 分支文件是扩展层，不含这些段时比对退化为「无变更」，不会误报。
+    from freight.change_gate import review as review_changes
+    change_result = review_changes(main_json, branch, branch, ROOT)
+    breaking = change_result["breaking"]
+    unapproved = change_result["unapproved"]
+    verdict = "PASS" if not issues and not unapproved else "FAIL"
     review = {
         "proposal": args.proposal_id,
         "reviewed_at": _now(),
         "verdict": verdict,
         "changed_vs_main": changed,
+        "breaking": breaking,
+        "breaking_count": change_result["breaking_count"],
+        "unapproved_breaking": [c["path"] for c in unapproved],
+        "breaking_changes": change_result["changes"],
+        "impact": change_result["impacts"],
         "issues": issues,
-        "checker": "ExtensionRegistry.validate (semantic-gate kernel)",
+        "checker": "ExtensionRegistry.validate + freight.change_gate.review",
     }
     with open(os.path.join(pdir, "review.json"), "w", encoding="utf-8") as f:
         json.dump(review, f, ensure_ascii=False, indent=1)
@@ -117,11 +128,14 @@ def cmd_review(args) -> int:
         meta = json.load(f)
     meta["status"] = "REVIEWED"
     meta["review"] = verdict
+    meta["breaking"] = breaking
     with open(meta_path, "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, indent=1)
-    print(f"评审结论: {verdict}  (相对 main 有变更: {changed})")
+    print(f"评审结论: {verdict}  (相对 main 有变更: {changed} / 破坏性: {breaking})")
     for i in issues:
         print(f"  - [{i['code']}] {i['message']}")
+    for change in unapproved:
+        print(f"  - [BREAKING_UNAPPROVED] {change['code']}: {change['path']}")
     print(f"评审记录: {os.path.join(pdir, 'review.json')}")
     return 0 if verdict == "PASS" else 2
 

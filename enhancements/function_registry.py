@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import importlib
+import re
 
 
 class FunctionRegistryError(Exception):
@@ -85,18 +86,116 @@ class FunctionRegistry:
         fn["_needs_instance"] = needs_instance
         return fn, callable_obj
 
+    # 标量参数类型 -> 校验器。与 freight.semantic.SemanticLayer._type_ok 同一口径：
+    # 类型判定分散成两套，迟早出现「属性入库拦得住、函数入参拦不住」的错位。
+    DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+    DATETIME_RE = re.compile(r"^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}")
+
+    @classmethod
+    def _scalar_ok(cls, ptype: str, value) -> bool:
+        if value is None:
+            return True
+        if ptype in ("string", "text", "enum"):
+            return isinstance(value, str)
+        if ptype == "integer":
+            return isinstance(value, int) and not isinstance(value, bool)
+        if ptype in ("number", "decimal"):
+            return isinstance(value, (int, float)) and not isinstance(value, bool)
+        if ptype == "boolean":
+            return isinstance(value, bool)
+        if ptype == "date":
+            return isinstance(value, str) and bool(cls.DATE_RE.match(value))
+        if ptype == "timestamp":
+            return isinstance(value, str) and bool(cls.DATETIME_RE.match(value))
+        if ptype == "json":
+            return isinstance(value, (dict, list))
+        # object_set / object_ref 由步骤 4 / object_ref 分支单独判定
+        return True
+
     def validate_signature(self, function_id: str, args: dict) -> list[str]:
         fn = self.ext.function_registry.get(function_id)
         if fn is None:
             return [f"函数 {function_id} 未注册"]
         problems = []
-        for p in fn.get("signature", {}).get("params", []):
+        params = fn.get("signature", {}).get("params", [])
+        for p in params:
             if p.get("required") and p["name"] not in args:
                 problems.append(f"缺少必填参数: {p['name']}")
-        unknown = set(args) - {p["name"] for p in fn.get("signature", {}).get("params", [])}
+        unknown = set(args) - {p["name"] for p in params}
         if unknown:
             problems.append(f"未知参数: {', '.join(sorted(unknown))}")
+        # 标量类型校验：只查「必填/未知」等于只校验了参数个数，类型错一个字节照样进函数。
+        for p in params:
+            name = p["name"]
+            if name not in args:
+                continue
+            ptype = p.get("type")
+            value = args[name]
+            if ptype in ("object_set", "object_ref", None):
+                continue
+            if not self._scalar_ok(ptype, value):
+                problems.append(
+                    f"参数 {name} 类型不符：声明 {ptype}，"
+                    f"实际 {type(value).__name__}（{value!r:.40}）")
         return problems
+
+    # -------------------------------------------------- 返回值类型（Result Type）
+    def return_type(self, function_id: str) -> dict | None:
+        fn = self.ext.function_registry.get(function_id) or {}
+        name = (fn.get("signature") or {}).get("returns")
+        if not name:
+            return None
+        rt = self.ext.result_types.get(name)
+        if rt is not None:
+            return rt
+        return None
+
+    def check_return(self, function_id: str, result) -> None:
+        """校验实际返回值与声明的 Result Type 一致。
+
+        没有这一步，returns 就只是个注释：代码里的返回结构改了，注册表不知道，
+        下游按旧结构解析，字段静默变 None。
+        """
+        fn = self.ext.function_registry.get(function_id) or {}
+        declared = (fn.get("signature") or {}).get("returns")
+        if not declared:
+            return
+        rt = self.ext.result_types.get(declared)
+        if rt is None:
+            # 标量返回（number/string/...）或对象类型 id
+            if self._scalar_ok(declared, result) or declared in self.ext.base_classes:
+                if declared in self.ext.base_classes and not isinstance(result, dict):
+                    raise FunctionRegistryError(
+                        f"函数 {function_id} 声明返回 {declared}（对象类型），"
+                        f"实际返回 {type(result).__name__}", code="RETURN_TYPE_MISMATCH")
+                return
+            raise FunctionRegistryError(
+                f"函数 {function_id} 的 returns={declared!r} 未在 result_types 注册，"
+                f"也不是标量类型或对象类型", code="RETURN_TYPE_UNKNOWN")
+        if not isinstance(result, dict):
+            raise FunctionRegistryError(
+                f"函数 {function_id} 声明返回 {declared}（结构化），"
+                f"实际返回 {type(result).__name__}", code="RETURN_TYPE_MISMATCH")
+        declared_fields = {f["name"]: f for f in rt["fields"]}
+        missing = sorted(set(declared_fields) - set(result))
+        if missing:
+            raise FunctionRegistryError(
+                f"函数 {function_id} 返回值缺少 {declared} 声明字段: {missing}",
+                code="RETURN_FIELD_MISSING")
+        extra = sorted(set(result) - set(declared_fields))
+        if extra:
+            raise FunctionRegistryError(
+                f"函数 {function_id} 返回值含 {declared} 未声明字段: {extra}",
+                code="RETURN_FIELD_UNDECLARED")
+        for name, f in declared_fields.items():
+            value = result[name]
+            if value is None and f.get("nullable", True):
+                continue
+            if not self._scalar_ok(f["type"], value):
+                raise FunctionRegistryError(
+                    f"函数 {function_id} 返回字段 {name} 类型不符："
+                    f"声明 {f['type']}，实际 {type(value).__name__}",
+                    code="RETURN_FIELD_TYPE_MISMATCH")
 
     def call(self, function_id: str, args: dict, runtime=None, ctx=None) -> dict:
         # 1. scope token 越权检查（agent 调用先于一切）
@@ -175,6 +274,8 @@ class FunctionRegistry:
             raise FunctionRegistryError(
                 f"函数 {function_id} 参数不匹配: {e}", code="ARGS_MISMATCH"
             ) from e
+        # 7. 返回值按 Result Type 校验（returns 不是注释，是契约）
+        self.check_return(function_id, result)
         return {
             "function": function_id,
             "version": fn.get("version"),

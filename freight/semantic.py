@@ -51,11 +51,42 @@ class SemanticLayer:
         self.object_type_group_map = {
             group["id"]: group for group in self.object_type_groups
         }
+        # 属性类型注册表（Palantir Property Type）：类只引用属性名，类型在注册表里。
+        # 这里只建索引；权威定义仍在 JSON，禁止在代码里写属性类型。
+        self.property_types = {
+            p["name"]: p for p in (self.raw.get("property_types") or [])
+            if p.get("name")
+        }
 
     def class_of(self, type_id: str) -> dict:
         if type_id not in self.classes:
             raise OntologyViolation(f"未定义的对象类型: {type_id}")
         return self.classes[type_id]
+
+    # 属性值类型 -> 校验器。宽松不得：类型校验一旦允许「数字字符串」自动通过，
+    # 脏数据就会以合法身份入库，等到对账时才炸，且再也分不清是入库错还是计算错。
+    DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+    DATETIME_RE = re.compile(r"^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}")
+
+    @classmethod
+    def _type_ok(cls, value_type: str, value) -> bool:
+        if value is None:
+            return True
+        if value_type in ("string", "text", "enum"):
+            return isinstance(value, str)
+        if value_type == "integer":
+            return isinstance(value, int) and not isinstance(value, bool)
+        if value_type in ("number", "decimal"):
+            return isinstance(value, (int, float)) and not isinstance(value, bool)
+        if value_type == "boolean":
+            return isinstance(value, bool)
+        if value_type == "date":
+            return isinstance(value, str) and bool(cls.DATE_RE.match(value))
+        if value_type == "datetime":
+            return isinstance(value, str) and bool(cls.DATETIME_RE.match(value))
+        if value_type == "json":
+            return isinstance(value, (dict, list))
+        return True  # 未知 value_type 交给门禁拦，运行时不假装通过也不误杀
 
     def validate_object(self, type_id: str, props: dict) -> None:
         cls = self.class_of(type_id)
@@ -66,6 +97,30 @@ class SemanticLayer:
         status = props.get("status")
         if status and status not in cls["statuses"]:
             raise OntologyViolation(f"{type_id} 非法状态: {status}")
+        self._check_value_types(type_id, props)
+
+    def _check_value_types(self, type_id: str, props: dict) -> None:
+        """按属性注册表执行值类型校验（Palantir Property Type 的执行侧）。
+
+        注册表只做「登记」不做事，等于只有登记册没有海关：属性名对得上、类型
+        全错也能入库。这里让登记册真正生效。
+        """
+        for name, value in props.items():
+            pt = self.property_types.get(name)
+            if pt is None:
+                # strict 模式下未注册属性由 PropertyRegistry 拦；这里不重复判定，
+                # 但要确保不是「静默放过」——交给调用方的 strict 检查。
+                continue
+            value_type = pt.get("value_type", "string")
+            if value is None:
+                if pt.get("nullable") is False:
+                    raise OntologyViolation(
+                        f"{type_id}.{name} 不可为空（注册表 nullable=false）")
+                continue
+            if not self._type_ok(value_type, value):
+                raise OntologyViolation(
+                    f"{type_id}.{name} 类型不符：注册表声明 {value_type}，"
+                    f"实际 {type(value).__name__}（{value!r:.40}）")
 
     CARDINALITIES = ("one_to_one", "one_to_many", "many_to_one", "many_to_many")
 

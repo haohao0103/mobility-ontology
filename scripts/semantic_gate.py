@@ -374,6 +374,301 @@ def check_model_tools(path: str, label: str) -> dict:
     return {"target": target, "ok": not issues, "issues": issues}
 
 
+def check_breaking_changes(root: str) -> dict:
+    """P2-3：破坏性变更必须逐条签字。
+
+    比对「最新发布快照 -> 当前工作副本」。任何 CLASS_REMOVED / PROPERTY_REMOVED /
+    类型变更 / 基数收紧，都必须在 freight/breaking_approvals.json 里有**路径完全一致**
+    的签字，否则失败。没这一关，改一个属性类型就能悄悄打爆所有 OSDK 客户端。
+    """
+    from freight.change_gate import review
+    from freight.release import semantic_path
+
+    target = "freight/semantic_layer.json#breaking"
+    item: dict = {"target": target, "ok": True, "issues": []}
+    with open(CURRENT, encoding="utf-8") as f:
+        current = json.load(f)
+    manifests = [m for m in list_manifests() if m.get("version")]
+    if not manifests:
+        return item  # 还没有任何发布快照，无从比对
+    latest = sorted(manifests, key=lambda m: m["version"])[-1]["version"]
+    with open(semantic_path(latest), encoding="utf-8") as f:
+        previous = json.load(f)
+    ext_path = os.path.join(root, "enhancements", "ontology_extension.json")
+    ext = {}
+    if os.path.exists(ext_path):
+        with open(ext_path, encoding="utf-8") as f:
+            ext = json.load(f)
+    result = review(previous, current, ext, root)
+    item["version"] = latest
+    item["breaking_count"] = result["breaking_count"]
+    if result["unapproved_count"]:
+        item["ok"] = False
+        for change in result["unapproved"]:
+            item["issues"].append({
+                "code": "BREAKING_CHANGE_UNAPPROVED",
+                "path": change["path"],
+                "message": f"{change['code']}: {change['detail']}（未签字）",
+            })
+    return item
+
+
+def check_extension_schema(root: str) -> dict:
+    """P0-1：扩展层必须有 schema 契约，且负向用例必须被拦。
+
+    扩展层（enhancements/ontology_extension.json）是追齐层的第二份本体：
+    属性注册表 / 接口 / 标记 / 安全策略 / 函数注册表全在这里。它没有 schema
+    就等于没有契约——垃圾键会被静默接受，本函数用四条负向用例证明拦截生效。
+    """
+    import jsonschema
+
+    target = "enhancements/ontology_extension.json#schema"
+    item: dict = {"target": target, "ok": True, "issues": []}
+    schema_path = os.path.join(root, "schema", "ontology_extension.schema.json")
+    ext_path = os.path.join(root, "enhancements", "ontology_extension.json")
+    if not os.path.exists(schema_path):
+        item["ok"] = False
+        item["issues"].append({"code": "EXT_SCHEMA_MISSING", "path": schema_path,
+                               "message": "扩展层 Schema 不存在"})
+        return item
+    with open(schema_path, encoding="utf-8") as f:
+        schema = json.load(f)
+    with open(ext_path, encoding="utf-8") as f:
+        ext = json.load(f)
+    try:
+        jsonschema.Draft202012Validator.check_schema(schema)
+    except jsonschema.SchemaError as exc:
+        item["ok"] = False
+        item["issues"].append({"code": "EXT_SCHEMA_INVALID", "path": schema_path,
+                               "message": f"Schema 自身不合法: {exc.message}"})
+        return item
+
+    validator = jsonschema.Draft202012Validator(schema)
+    for error in sorted(validator.iter_errors(ext), key=lambda e: list(e.path)):
+        item["ok"] = False
+        item["issues"].append({
+            "code": "EXT_SCHEMA_INVALID",
+            "path": ".".join(str(p) for p in error.path) or "$",
+            "message": error.message,
+        })
+
+    # 基础 schema 与扩展 schema 的 propertyType 定义不得漂移（两处枚举必须一致）
+    base_schema_path = os.path.join(root, "schema", "semantic_layer.schema.json")
+    with open(base_schema_path, encoding="utf-8") as f:
+        base_schema = json.load(f)
+    b_pt = base_schema["$defs"]["propertyType"]["properties"]
+    e_pt = schema["$defs"]["propertyType"]["properties"]
+
+    def enum_of(node: dict, defs: dict):
+        """取枚举值；$ref 指向本地 $defs 时解析过去。
+
+        不解析 $ref 会得到 None != [...]，看着像漂移其实是没读到——
+        这种「假失败」比漏检更烦人，也更容易被当成噪音忽略。
+        """
+        if "enum" in node:
+            return node["enum"]
+        ref = node.get("$ref")
+        if isinstance(ref, str) and ref.startswith("#/$defs/"):
+            target = defs.get(ref.split("/")[-1], {})
+            return target.get("enum")
+        return None
+
+    for field in ("value_type", "base_type"):
+        b_enum = enum_of(b_pt[field], base_schema["$defs"])
+        e_enum = enum_of(e_pt[field], schema["$defs"])
+        if b_enum != e_enum:
+            item["ok"] = False
+            item["issues"].append({
+                "code": "EXT_SCHEMA_DRIFT",
+                "path": f"$defs.propertyType.{field}",
+                "message": f"扩展层 {field} 枚举与基础 schema 不一致: "
+                           f"{e_enum} != {b_enum}",
+            })
+    b_keys = set(b_pt) - {"status"}
+    e_keys = set(e_pt)
+    if not b_keys <= e_keys:
+        item["ok"] = False
+        item["issues"].append({
+            "code": "EXT_SCHEMA_DRIFT",
+            "path": "$defs.propertyType.properties",
+            "message": f"扩展层 propertyType 缺少基础 schema 的字段: "
+                       f"{sorted(b_keys - e_keys)}",
+        })
+
+    # 二源真相：同一个属性在两份注册表里的定义不得分叉。
+    # 扩展层是「可覆盖视图」——覆盖本身合法（比如提高标记级别），但**静默降级**
+    # 不合法：基础层标了 PII、扩展层写 null，运行时取扩展层那份，脱敏就没了，
+    # 而两边都"合法"、schema 也都过。承重实验 L12b 就是从这里漏的。
+    layer_path = os.path.join(root, "freight", "semantic_layer.json")
+    with open(layer_path, encoding="utf-8") as f:
+        layer = json.load(f)
+    base_pts = {p["name"]: p for p in layer.get("property_types") or []}
+    for p in ext.get("property_types") or []:
+        b = base_pts.get(p.get("name"))
+        if b is None:
+            continue
+        for field in ("value_type", "base_type"):
+            if b.get(field) != p.get(field):
+                item["ok"] = False
+                item["issues"].append({
+                    "code": "PROP_TYPE_DIVERGED",
+                    "path": f"property_types[{p['name']}].{field}",
+                    "message": f"{p['name']}.{field} 两份注册表不一致: "
+                               f"基础 {b.get(field)!r} / 扩展 {p.get(field)!r}",
+                })
+        if (b.get("marking") or None) != (p.get("marking") or None):
+            item["ok"] = False
+            item["issues"].append({
+                "code": "PROP_MARKING_DIVERGED",
+                "path": f"property_types[{p['name']}].marking",
+                "message": f"{p['name']}.marking 两份注册表不一致: "
+                           f"基础 {b.get('marking')!r} / 扩展 {p.get('marking')!r}"
+                           f"（扩展层优先，等于运行时按后者执行）",
+            })
+
+    # 负向用例：以下四类污染必须被拦，漏一个就说明 schema 是装饰
+    negatives = [
+        ("垃圾顶层键", lambda d: d.__setitem__("totally_bogus_top_key", {"x": 1})),
+        ("垃圾属性字段",
+         lambda d: d["property_types"][0].__setitem__("bogus_field_xyz", 123)),
+        ("非法 value_type",
+         lambda d: d["property_types"][0].__setitem__("value_type", "not_a_real_type")),
+        ("object_set 缺 of",
+         lambda d: d["function_registry"][0]["signature"]["params"].append(
+             {"name": "bad_set", "type": "object_set"})),
+    ]
+    for label, mutate in negatives:
+        bad = json.loads(json.dumps(ext))
+        mutate(bad)
+        if not list(validator.iter_errors(bad)):
+            item["ok"] = False
+            item["issues"].append({
+                "code": "EXT_SCHEMA_NEGATIVE_LEAKED",
+                "path": target,
+                "message": f"负向用例未被拦截: {label}",
+            })
+    return item
+
+
+def check_policy_strict(root: str) -> dict:
+    """P0-3：属性注册表策略必须是 strict 且 legacy 通道关闭。
+
+    incremental + legacy_grace=true 等于「登记册有了、海关不开」：未注册属性
+    静默通过。宽松口径必须先能证明零未注册属性，才允许存在的理由。
+    """
+    target = "enhancements/ontology_extension.json#policy"
+    item: dict = {"target": target, "ok": True, "issues": []}
+    ext_path = os.path.join(root, "enhancements", "ontology_extension.json")
+    with open(ext_path, encoding="utf-8") as f:
+        ext = json.load(f)
+    pol = ext.get("property_registry_policy") or {}
+    if pol.get("enforcement") != "strict":
+        item["ok"] = False
+        item["issues"].append({
+            "code": "POLICY_NOT_STRICT",
+            "path": "property_registry_policy.enforcement",
+            "message": f"enforcement 必须是 strict，实际 {pol.get('enforcement')!r}",
+        })
+    if pol.get("legacy_grace"):
+        item["ok"] = False
+        item["issues"].append({
+            "code": "POLICY_LEGACY_GRACE_OPEN",
+            "path": "property_registry_policy.legacy_grace",
+            "message": "strict 模式下 legacy_grace 必须为 false",
+        })
+    # strict 的前提：当前本体里零个未注册属性
+    layer_path = os.path.join(root, "freight", "semantic_layer.json")
+    with open(layer_path, encoding="utf-8") as f:
+        layer = json.load(f)
+    registered = {p["name"] for p in layer.get("property_types") or []}
+    uncovered = sorted({
+        f"{c['id']}.{p}" for c in layer.get("classes") or []
+        for p in c.get("properties") or [] if p not in registered
+    })
+    if uncovered:
+        item["ok"] = False
+        item["issues"].append({
+            "code": "POLICY_STRICT_PRECONDITION_FAILED",
+            "path": "classes[*].properties",
+            "message": f"strict 前提不成立，仍有 {len(uncovered)} 个未注册属性: "
+                       f"{uncovered[:10]}",
+        })
+    return item
+
+
+def check_display_metadata(root: str) -> dict:
+    """P1-1：展示层元数据与不可变 rid（对标 Palantir displayMetadata / rid）。
+
+    只对工作副本执行：历史发布快照允许保留旧形态，不要求补展示层字段。
+    rid 必须与 freight/rid_ledger.json 一致——手改 rid 会断链，门禁必须拦。
+    """
+    target = "freight/semantic_layer.json#display"
+    item: dict = {"target": target, "ok": True, "issues": []}
+    layer_path = os.path.join(root, "freight", "semantic_layer.json")
+    with open(layer_path, encoding="utf-8") as f:
+        layer = json.load(f)
+    ledger_path = os.path.join(root, "freight", "rid_ledger.json")
+    ledger: dict = {}
+    if os.path.exists(ledger_path):
+        with open(ledger_path, encoding="utf-8") as f:
+            ledger = json.load(f)
+
+    # 复数目录名 -> 台账单数前缀。**不要用 kind[:-1] 去凑**：classes[:-1] 得到的是
+    # "classe"，台账里写的是 "class:Waybill"——查不到就 `if expected` 短路，于是
+    # 类 rid 被手改也一声不响。承重实验 L8 就是从这里漏过去的。
+    ledger_prefix = {"classes": "class", "relations": "relation"}
+    seen_rid: dict[str, str] = {}
+    for kind in ("classes", "relations"):
+        for obj in layer.get(kind) or []:
+            oid = obj.get("id")
+            where = f"{kind}[{oid}]"
+            dm = obj.get("display_metadata")
+            if not obj.get("rid"):
+                item["ok"] = False
+                item["issues"].append({"code": "RID_MISSING", "path": where,
+                                       "message": f"{oid} 缺少 rid"})
+            elif not dm:
+                item["ok"] = False
+                item["issues"].append({
+                    "code": "DISPLAY_METADATA_MISSING", "path": where,
+                    "message": f"{oid} 缺少 display_metadata"})
+            if obj.get("rid"):
+                if obj["rid"] in seen_rid:
+                    item["ok"] = False
+                    item["issues"].append({
+                        "code": "RID_DUP", "path": where,
+                        "message": f"rid 重复: {obj['rid']}（{seen_rid[obj['rid']]}）"})
+                seen_rid[obj["rid"]] = oid
+                ledger_key = f"{ledger_prefix[kind]}:{oid}"
+                expected = ledger.get(ledger_key)
+                if expected is None:
+                    # 台账缺项不能当"没问题"：没有基线就无从判断 rid 是否被改过。
+                    item["ok"] = False
+                    item["issues"].append({
+                        "code": "RID_LEDGER_MISSING", "path": where,
+                        "message": f"{ledger_key} 不在 rid 台账里，rid 漂移无从校验"})
+                elif expected != obj["rid"]:
+                    item["ok"] = False
+                    item["issues"].append({
+                        "code": "RID_LEDGER_DRIFT", "path": where,
+                        "message": f"{ledger_key} 的 rid 与台账不一致: "
+                                   f"台账 {expected} / 本体 {obj['rid']}"})
+            if dm:
+                missing = [f for f in ("icon", "color", "visibility", "category")
+                           if not dm.get(f)]
+                if missing:
+                    item["ok"] = False
+                    item["issues"].append({
+                        "code": "DISPLAY_METADATA_INCOMPLETE", "path": where,
+                        "message": f"{oid} 的 display_metadata 缺: {missing}"})
+            if kind == "classes" and not obj.get("plural_display_name"):
+                item["ok"] = False
+                item["issues"].append({
+                    "code": "PLURAL_DISPLAY_NAME_MISSING", "path": where,
+                    "message": f"{oid} 缺少 plural_display_name"})
+    return item
+
+
 def check_metadata(path: str, label: str) -> dict:
     """G1-02：当前工作副本的类/关系/规则/动作必须有来源与版本元数据。"""
     target = f"{label}#metadata"
@@ -660,6 +955,10 @@ def main() -> int:
     results.append(check_shacl(ROOT_LAYER, "semantic_layer.json", MOBILITY_BASE))
     results.append(check_shacl_cases(ROOT_LAYER, "semantic_layer.json", MOBILITY_BASE))
     results.append(check_model_tools(CURRENT, "freight/semantic_layer.json"))
+    results.append(check_extension_schema(ROOT))
+    results.append(check_policy_strict(ROOT))
+    results.append(check_display_metadata(ROOT))
+    results.append(check_breaking_changes(ROOT))
     results.append(check_query_schema(ROOT))
     for manifest in list_manifests():
         version = manifest["version"]
@@ -711,6 +1010,10 @@ def main() -> int:
         "shacl_cases": "semantic_layer.json#shacl_cases",
         "model_tools": "freight/semantic_layer.json#tools",
         "query_dsl": "schema/object_query.schema.json#query_dsl",
+        "extension_schema": "enhancements/ontology_extension.json#schema",
+        "property_policy": "enhancements/ontology_extension.json#policy",
+        "display_metadata": "freight/semantic_layer.json#display",
+        "breaking_changes": "freight/semantic_layer.json#breaking",
     }
     coverage = {
         name: {"target": target, "ok": bool(by_target.get(target))}

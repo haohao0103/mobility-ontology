@@ -24,6 +24,68 @@
 """
 from __future__ import annotations
 
+import uuid
+
+# 域 -> (图标, 颜色)。图标/颜色属展示层元数据（对标 Palantir displayMetadata），
+# 与业务语义解耦：同类可换皮，不动物理语义。逐个域人工指定，不按哈希随机分配——
+# 哈希分配会让新加一个域就悄悄改变既有域的配色。
+DOMAIN_PRESENTATION: dict[str, tuple[str, str]] = {
+    "order_transport": ("truck", "#2563EB"),
+    "order_domain": ("clipboard", "#3B82F6"),
+    "waybill_domain": ("file-text", "#0EA5E9"),
+    "cargo_domain": ("package", "#0891B2"),
+    "stop_domain": ("map-pin", "#14B8A6"),
+    "vehicle_domain": ("truck", "#059669"),
+    "driver_domain": ("user", "#10B981"),
+    "carrier_domain": ("building", "#65A30D"),
+    "subcontract_domain": ("git-branch", "#84CC16"),
+    "maintenance_domain": ("wrench", "#CA8A04"),
+    "fuel_domain": ("fuel", "#EAB308"),
+    "quote_domain": ("tag", "#F59E0B"),
+    "pricing_rule_domain": ("calculator", "#F97316"),
+    "fee_domain": ("coins", "#EA580C"),
+    "settlement_domain": ("scale", "#DC2626"),
+    "invoice_domain": ("receipt", "#E11D48"),
+    "evidence_domain": ("camera", "#DB2777"),
+    "exception_domain": ("alert-triangle", "#C026D3"),
+    "insurance_domain": ("shield", "#9333EA"),
+    "customs_domain": ("globe", "#7C3AED"),
+    "compliance_domain": ("shield-check", "#4F46E5"),
+    "warehouse_domain": ("warehouse", "#6366F1"),
+    "route_domain": ("route", "#0D9488"),
+    "geo_domain": ("map", "#0284C7"),
+    "device_domain": ("cpu", "#475569"),
+    "document_domain": ("file", "#64748B"),
+    "track_domain": ("activity", "#16A34A"),
+    "service_domain": ("headset", "#DB2777"),
+    "organization_domain": ("users", "#7C2D12"),
+    "contract_domain": ("file-signature", "#78350F"),
+    "metric_domain": ("bar-chart", "#1E293B"),
+}
+DEFAULT_PRESENTATION = ("box", "#64748B")
+
+# rid 命名空间与形态。rid 是内核身份（Palantir rid），与可读 id 分离：
+# id 给人和 API 看，rid 给引用与血缘看，改名不改 rid。
+RID_NAMESPACE = uuid.UUID("6f1d1f4a-5b2c-5c3e-9f00-1a2b3c4d5e6f")
+RID_KIND_SLUG = {"class": "object-type", "relation": "link-type"}
+
+
+def rid_for(kind: str, ident: str) -> str:
+    """由 (种类, id) 确定性推导 rid。改名后由 freight/rid_ledger.json 接管。"""
+    slug = RID_KIND_SLUG[kind]
+    return f"ri.mobility.main.{slug}.{uuid.uuid5(RID_NAMESPACE, f'{kind}:{ident}').hex}"
+
+
+def display_metadata_of(group: str | None) -> dict:
+    icon, color = DOMAIN_PRESENTATION.get(group or "", DEFAULT_PRESENTATION)
+    return {
+        "icon": icon,
+        "color": color,
+        "visibility": "normal",
+        # category 用域 id 而不是中文 label：机器可用来分组，展示名走 group.label
+        "category": group or "ungrouped",
+    }
+
 TYPE_MAP: dict[str, tuple[str, str]] = {
     "id": ("string", "string"),
     "str": ("string", "string"),
@@ -164,6 +226,9 @@ def C(cid: str, label: str, key: str, desc: str, props: str, statuses: str,
     return {
         "id": cid,
         "label": label,
+        # 中文无语态变化，复数展示名等于 label；英文/i18n 场景由语言层覆盖。
+        # 不硬造 "xxx列表" —— 那是在元数据里堆垃圾。
+        "plural_display_name": label,
         "key": key,
         "description": desc,
         "aliases": [label, *aliases],
@@ -174,7 +239,9 @@ def C(cid: str, label: str, key: str, desc: str, props: str, statuses: str,
         "version": version,
         "iri": f"https://w3id.org/mobility-ontology/freight#{cid}",
         "effective_from": effective_from,
-        # 私有键：渲染时剥离，不写入本体 JSON（schema 只允许 12 个字段）
+        "rid": rid_for("class", cid),
+        "display_metadata": display_metadata_of(group),
+        # 私有键：渲染时剥离，不写入本体 JSON
         "_group": group,
         "_props_spec": spec,
     }
@@ -199,6 +266,8 @@ def L(rid: str, label: str, domain: str, range_: str,
         "version": version,
         "iri": f"https://w3id.org/mobility-ontology/freight#{rid}",
         "effective_from": effective_from,
+        "rid": rid_for("relation", rid),
+        # display_metadata 由渲染阶段按 domain 类的属域补齐（链接自己没有域声明）
     }
 
 
@@ -219,4 +288,5 @@ def I(iid: str, label: str, desc: str, required_properties: tuple[str, ...] = ()
     }
 
 
-__all__ = ["C", "L", "I", "build_property_type", "TYPE_MAP", "marking_of", "unit_of"]
+__all__ = ["C", "L", "I", "build_property_type", "TYPE_MAP", "marking_of", "unit_of",
+           "DOMAIN_PRESENTATION", "display_metadata_of", "rid_for", "RID_NAMESPACE"]

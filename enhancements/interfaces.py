@@ -16,16 +16,42 @@ class InterfaceViolation(Exception):
 
 
 class InterfaceRegistry:
+    """接口注册表：显式声明优先，structural 形状匹配兜底。
+
+    对标 Palantir 的两种接口：
+    - 显式 implements（ImplementsInterfaces2）：接口声明「谁实现我」，带属性映射；
+    - structural（按 shape 自动匹配）：接口只声明必需属性，任何满足的类都算实现。
+
+    两者不能混着当同一件事：structural 会在无关类上误命中（一个恰巧有
+    actual_fee/status 的「报销单」也被判成 Chargeable），显式声明没有这个毛病，
+    但需要人维护。所以显式声明一旦存在就是权威，structural 只在没有显式声明时生效。
+    """
+
     def __init__(self, ext):
         self.ext = ext
+
+    def _declared(self, interface_id: str) -> list[dict]:
+        iface = self.ext.interfaces.get(interface_id) or {}
+        return iface.get("implements") or []
+
+    def property_map(self, interface_id: str, class_id: str) -> dict:
+        """接口属性名 -> 实现类属性名（Palantir interface 属性映射）。缺省同名。"""
+        for item in self._declared(interface_id):
+            if item.get("object_type") == class_id:
+                return item.get("property_map") or {}
+        return {}
 
     def implementations(self, interface_id: str) -> list[str]:
         iface = self.ext.interfaces.get(interface_id)
         if iface is None:
             raise InterfaceViolation(f"未定义的接口: {interface_id}")
+        declared = [i["object_type"] for i in self._declared(interface_id)
+                    if i.get("object_type") in self.ext.base_classes]
+        if declared:
+            return sorted(set(declared))
         if iface.get("match") != "structural":
             raise InterfaceViolation(
-                f"接口 {interface_id} 的匹配模式 {iface.get('match')} 未实现"
+                f"接口 {interface_id} 匹配模式 {iface.get('match')} 且无 implements 声明"
             )
         out = []
         for cid, cls in self.ext.base_classes.items():
@@ -40,6 +66,11 @@ class InterfaceRegistry:
         cls = self.ext.base_classes.get(class_id)
         if cls is None:
             return False
+        declared_ids = {i.get("object_type") for i in self._declared(interface_id)}
+        if class_id in declared_ids:
+            return True  # 显式声明即权威
+        if declared_ids:
+            return False  # 有显式声明时，未声明的类一律不算实现
         return self._matches(cls, iface)
 
     def _matches(self, cls: dict, iface: dict) -> bool:
@@ -57,6 +88,35 @@ class InterfaceRegistry:
             if pt is None or not pt.get("timeseries"):
                 return False
         return True
+
+    def violations(self) -> list[str]:
+        """校验显式 implements 不是空头支票：声明的类必须真的具备接口要求。
+
+        「声明了就算实现」如果没人核对，implements 会变成愿望清单：
+        接口要求 actual_fee，实现类却没有这个属性，多态函数一进来就崩。
+        """
+        problems: list[str] = []
+        for iid, iface in self.ext.interfaces.items():
+            for item in self._declared(iid):
+                cid = item.get("object_type")
+                cls = self.ext.base_classes.get(cid)
+                if cls is None:
+                    problems.append(f"接口 {iid} 声明实现类 {cid} 未定义")
+                    continue
+                pm = item.get("property_map") or {}
+                props = set(cls.get("properties", []))
+                for req in iface.get("required_properties", []):
+                    actual = pm.get(req, req)
+                    if actual not in props:
+                        problems.append(
+                            f"接口 {iid} 声明 {cid} 实现，但 {cid} 缺少必需属性 {actual}")
+                any_of = iface.get("required_any_of") or []
+                if any_of:
+                    mapped = [pm.get(p, p) for p in any_of]
+                    if not any(p in props for p in mapped):
+                        problems.append(
+                            f"接口 {iid} 声明 {cid} 实现，但 {cid} 一个都没有 {any_of}")
+        return problems
 
     # -------------------------------------------------- 多态函数路由
     def check_function_arg(self, fn_id: str, class_id: str) -> None:

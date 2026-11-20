@@ -31,35 +31,37 @@ def proposal_env(tmp_path, monkeypatch):
 
 class TestFullFlow:
     def test_create_review_merge(self, proposal_env):
-        rc = proposal.cmd_create(type("A", (), {"title": "加 remote_area 属性"}))
+        rc = proposal.cmd_create(type("A", (), {"title": "改货主名称文案"}))
         assert rc == 0
         pid = sorted(os.listdir(os.path.join(proposal_env["tmp"], "proposals")))[0]
         pdir = os.path.join(proposal_env["tmp"], "proposals", pid)
 
-        # 修改分支：新增一个属性注册（合法变更）
+        # 修改分支：改一个属性的展示文案（合法变更，且非破坏性）。
+        # 注意不能「凭空注册一个类里不存在的属性」——那是非法变更，交叉引用校验会拦，
+        # 而且扩展层无权给基础本体的类加属性（加属性必须改基础本体）。
         branch_path = os.path.join(pdir, "branch.json")
         with open(branch_path, encoding="utf-8") as f:
             branch = json.load(f)
-        branch["property_types"].append({
-            "name": "contact", "label": "联系方式", "value_type": "string",
-            "unit": None, "marking": None, "timeseries": False,
-            "primary_key": False, "status": "active", "owner": "t",
-            "version": "1.0.0", "used_by": ["Shipper"],
-        })
+        for p in branch["property_types"]:
+            if p["name"] == "shipper_name":
+                p["label"] = "货主名称（校对版）"
         with open(branch_path, "w", encoding="utf-8") as f:
             json.dump(branch, f, ensure_ascii=False, indent=1)
 
         rc = proposal.cmd_review(type("A", (), {"proposal_id": pid}))
         assert rc == 0
         with open(os.path.join(pdir, "review.json"), encoding="utf-8") as f:
-            assert json.load(f)["verdict"] == "PASS"
+            review = json.load(f)
+        assert review["verdict"] == "PASS"
+        assert review["breaking"] is False, "改文案不该被判成破坏性变更"
 
         rc = proposal.cmd_merge(type("A", (), {"proposal_id": pid}))
         assert rc == 0
         # main 已更新 + release 快照生成
         with open(proposal_env["main"], encoding="utf-8") as f:
             merged = json.load(f)
-        assert "contact" in [p["name"] for p in merged["property_types"]]
+        labels = {p["name"]: p.get("label") for p in merged["property_types"]}
+        assert labels["shipper_name"] == "货主名称（校对版）"
         releases = os.listdir(os.path.join(proposal_env["tmp"], "releases"))
         assert len(releases) >= 1
         with open(os.path.join(proposal_env["tmp"], "releases", releases[0]),

@@ -37,9 +37,20 @@ class ExtensionRegistry:
         self.markings = {m["id"]: m for m in self.raw.get("markings", [])}
         self.object_security_policies = self.raw.get("object_security_policies", [])
         self.property_security_policies = self.raw.get("property_security_policies", [])
+        # marking 传播的两条声明式来源（数据源继承 / 类级挂标）
+        self.data_source_markings = self.raw.get("data_source_markings", [])
+        self.class_markings = self.raw.get("class_markings", [])
         self.scope_tokens = self.raw.get("scope_tokens", {})
         self.function_registry = {
             f["id"]: f for f in self.raw.get("function_registry", [])
+        }
+        self.result_types = {
+            r["id"]: r for r in self.raw.get("result_types", [])
+        }
+        # 函数返回值可用的类型全集：标量 valueType + 结果类型 + 对象类型
+        self.scalar_value_types = {
+            "string", "text", "integer", "number", "decimal", "boolean",
+            "timestamp", "date", "json", "enum",
         }
         self.lifecycle_statuses = set(
             self.raw.get("lifecycle_statuses", ["endorsed", "active", "experimental", "deprecated"])
@@ -99,6 +110,41 @@ class ExtensionRegistry:
                         "path": f"interfaces[{iface['id']}].required_properties",
                         "message": f"接口 {iface['id']} 必需属性未定义: {prop}",
                     })
+            # 显式 implements 不得是空头支票
+            for item in iface.get("implements") or []:
+                cid = item.get("object_type")
+                cls = self.base_classes.get(cid)
+                if cls is None:
+                    issues.append({
+                        "code": "IFACE_IMPLEMENTS_UNKNOWN_CLASS",
+                        "category": "interfaces",
+                        "path": f"interfaces[{iface['id']}].implements",
+                        "message": f"接口 {iface['id']} 声明实现类 {cid} 未定义",
+                    })
+                    continue
+                pm = item.get("property_map") or {}
+                props = set(cls.get("properties") or [])
+                for req in iface.get("required_properties", []):
+                    actual = pm.get(req, req)
+                    if actual not in props:
+                        issues.append({
+                            "code": "IFACE_UNIMPLEMENTED",
+                            "category": "interfaces",
+                            "path": f"interfaces[{iface['id']}].implements[{cid}]",
+                            "message": f"接口 {iface['id']} 声明 {cid} 实现，"
+                                       f"但 {cid} 缺少必需属性 {actual}",
+                        })
+                any_of = iface.get("required_any_of") or []
+                if any_of:
+                    mapped = [pm.get(p, p) for p in any_of]
+                    if not any(p in props for p in mapped):
+                        issues.append({
+                            "code": "IFACE_UNIMPLEMENTED",
+                            "category": "interfaces",
+                            "path": f"interfaces[{iface['id']}].implements[{cid}]",
+                            "message": f"接口 {iface['id']} 声明 {cid} 实现，"
+                                       f"但 {cid} 缺少任一必需属性 {mapped}",
+                        })
 
         for pol in self.object_security_policies:
             if pol.get("required_marking") not in self.markings:
@@ -125,6 +171,31 @@ class ExtensionRegistry:
                     "message": f"列级策略引用了未定义的标记: {pol.get('required_marking')}",
                 })
 
+        # marking 传播声明：引用的标记必须已定义，类级挂标必须指向已定义类
+        for rule in self.data_source_markings:
+            if rule.get("marking") not in self.markings:
+                issues.append({
+                    "code": "DSM_MARKING_UNKNOWN",
+                    "category": "data_source_markings",
+                    "path": f"data_source_markings[{rule.get('system')}]",
+                    "message": f"数据源标记引用了未定义的标记: {rule.get('marking')}",
+                })
+        for rule in self.class_markings:
+            if rule.get("marking") not in self.markings:
+                issues.append({
+                    "code": "CM_MARKING_UNKNOWN",
+                    "category": "class_markings",
+                    "path": f"class_markings[{rule.get('object_type')}]",
+                    "message": f"类级标记引用了未定义的标记: {rule.get('marking')}",
+                })
+            if rule.get("object_type") not in self.base_classes:
+                issues.append({
+                    "code": "CM_OBJECT_TYPE_UNKNOWN",
+                    "category": "class_markings",
+                    "path": f"class_markings[{rule.get('object_type')}]",
+                    "message": f"类级标记引用了未定义的类: {rule.get('object_type')}",
+                })
+
         for fn in self.function_registry.values():
             if fn.get("accepts_interface") and fn["accepts_interface"] not in self.interfaces:
                 issues.append({
@@ -133,6 +204,67 @@ class ExtensionRegistry:
                     "path": f"function_registry[{fn['id']}].accepts_interface",
                     "message": f"函数 {fn['id']} 引用了未定义的接口: {fn['accepts_interface']}",
                 })
+            sig = fn.get("signature") or {}
+            # 返回类型必须解析得到：标量 valueType / 已声明 result_type / 已定义对象类型
+            ret = sig.get("returns")
+            if not ret:
+                issues.append({
+                    "code": "FN_RETURNS_MISSING",
+                    "category": "function_registry",
+                    "path": f"function_registry[{fn['id']}].signature.returns",
+                    "message": f"函数 {fn['id']} 未声明返回类型",
+                })
+            elif (ret not in self.scalar_value_types
+                  and ret not in self.result_types
+                  and ret not in self.base_classes):
+                issues.append({
+                    "code": "FN_RETURNS_UNKNOWN",
+                    "category": "function_registry",
+                    "path": f"function_registry[{fn['id']}].signature.returns",
+                    "message": f"函数 {fn['id']} 的返回类型 {ret!r} 既不是标量类型、"
+                               f"也不是已注册 result_type 或对象类型",
+                })
+            for p in sig.get("params", []):
+                ptype = p.get("type")
+                if ptype in ("object_set", "object_ref"):
+                    of = p.get("of")
+                    if not of:
+                        issues.append({
+                            "code": "FN_PARAM_OF_MISSING",
+                            "category": "function_registry",
+                            "path": f"function_registry[{fn['id']}].signature.params",
+                            "message": f"函数 {fn['id']} 参数 {p.get('name')} 类型为 "
+                                       f"{ptype} 但未声明 of",
+                        })
+                    elif of not in self.base_classes:
+                        issues.append({
+                            "code": "FN_PARAM_OF_UNKNOWN",
+                            "category": "function_registry",
+                            "path": f"function_registry[{fn['id']}].signature.params",
+                            "message": f"函数 {fn['id']} 参数 {p.get('name')} 的 of={of} "
+                                       f"不是已定义的对象类型",
+                        })
+                if p.get("interface") and p["interface"] not in self.interfaces:
+                    issues.append({
+                        "code": "FN_PARAM_IFACE_UNKNOWN",
+                        "category": "function_registry",
+                        "path": f"function_registry[{fn['id']}].signature.params",
+                        "message": f"函数 {fn['id']} 参数 {p.get('name')} 引用了未定义接口: "
+                                   f"{p['interface']}",
+                    })
+
+        # 结果类型的字段类型必须是合法 valueType
+        for rt in self.result_types.values():
+            for f in rt.get("fields", []):
+                if f.get("type") not in (self.scalar_value_types
+                                         | {"object_set", "object_ref"}):
+                    issues.append({
+                        "code": "RESULT_FIELD_TYPE_UNKNOWN",
+                        "category": "result_types",
+                        "path": f"result_types[{rt['id']}].fields[{f.get('name')}]",
+                        "message": f"结果类型 {rt['id']} 的字段 {f.get('name')} "
+                                   f"类型非法: {f.get('type')}",
+                    })
 
         return issues
 

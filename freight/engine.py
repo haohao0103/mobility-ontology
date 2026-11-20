@@ -164,7 +164,7 @@ class FreightSystem:
             "unloading_started_at": "2026-11-05T12:00:00+08:00",
             "unloading_ended_at": t_deliver,
             "delivered_at": t_deliver,
-            "actual_distance_km": 40.0, "actual_duration_min": 218.0,
+            "actual_distance_km": 40.0, "actual_duration_min": 218,
             "proof_of_delivery": "POD20261105001",
         }, t_accept)
         self.add_object("Driver", "driver:D001", "张师傅", "IDLE", {
@@ -270,7 +270,7 @@ class FreightSystem:
         self.add_object("Track", "track:TR20261105001", "运单轨迹 TR20261105001", "VALID", {
             "track_id": "TR20261105001", "waybill_id": "WB20261105001",
             "source_system": "GPS", "started_at": t_accept, "ended_at": t_deliver,
-            "distance_km": 40.0, "duration_min": 218.0, "waiting_minutes": 53,
+            "distance_km": 40.0, "duration_min": 218, "waiting_minutes": 53,
             "point_count": 486, "checksum": "9f2c1a7d4b6e8c03",
         }, t_deliver)
         self.add_relation("waybill_has_track", "waybill:WB20261105001",
@@ -289,7 +289,7 @@ class FreightSystem:
             "ticket_id": "EX20261105001", "ticket_type": "FEE_DISPUTE",
             "reason": "等候费 25 元，按规则应为 12 元，差异 13 元",
             "assignee": "财务共享中心", "resolution": "",
-            "opened_at": t_dispute, "closed_at": "",
+            "opened_at": t_dispute, "closed_at": None,
         }, t_dispute)
 
         self.add_relation("shipper_places_order", "shipper:S001",
@@ -2415,7 +2415,7 @@ class FreightSystem:
                 tp["status"] = "OPEN"
                 tp["reason"] = reason or tp.get("reason")
                 tp["opened_at"] = at
-                tp["closed_at"] = ""
+                tp["closed_at"] = None
                 self.facts.update_object(ticket_id, tp, None, "OPEN", at)
             return ticket_id
         ticket_id = "exception:EX" + datetime.now().strftime("%Y%m%d%H%M%S")
@@ -2423,7 +2423,7 @@ class FreightSystem:
         self.add_object("ExceptionTicket", ticket_id, "费用异常工单", "OPEN", {
             "ticket_id": ticket_no, "ticket_type": "FEE_DISPUTE",
             "reason": reason or "费用申诉", "assignee": "财务共享中心",
-            "resolution": "", "opened_at": at, "closed_at": "",
+            "resolution": "", "opened_at": at, "closed_at": None,
         }, at)
         self.add_relation("waybill_has_exception", wb_id, ticket_id, at)
         self.facts.add_event(ticket_id, "OPENED", at, actor, {"fee_id": fee_id})

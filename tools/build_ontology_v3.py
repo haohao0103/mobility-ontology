@@ -23,6 +23,7 @@ sys.path.insert(0, ROOT)
 import ontology  # noqa: E402
 
 ONTOLOGY_JSON = os.path.join(ROOT, "freight", "semantic_layer.json")
+RID_LEDGER = os.path.join(ROOT, "freight", "rid_ledger.json")
 VERSION = "3.0.0"
 EFFECTIVE_FROM = "2026-11-20"
 
@@ -149,6 +150,42 @@ def build_groups(domains: list[dict], classes: list[dict],
     return out
 
 
+def apply_rid_ledger(classes: list[dict], relations: list[dict]) -> dict:
+    """用 rid 台账接管 rid，保证「改名不断链」。
+
+    rid 的默认形态是 uuid5(种类:id) —— 一旦改 id，rid 就变了，所有引用断掉。
+    台账（freight/rid_ledger.json）是人类登记的「这个资源一直是这个 rid」，
+    优先级高于推导值：改名时在台账里把 新键 -> 旧 rid 写一行，身份就续上了。
+
+    台账不回删：已下线资源的 rid 永久保留，避免 rid 被回收后指到别的对象。
+    """
+    ledger: dict = {}
+    if os.path.exists(RID_LEDGER):
+        with open(RID_LEDGER, encoding="utf-8") as f:
+            ledger = json.load(f)
+    reused = 0
+    for kind, items in (("class", classes), ("relation", relations)):
+        for item in items:
+            item.setdefault("rid", ontology.rid_for(kind, item["id"]))
+            key = f"{kind}:{item['id']}"
+            if key in ledger:
+                if item.get("rid") != ledger[key]:
+                    item["rid"] = ledger[key]
+                    reused += 1
+            else:
+                ledger[key] = item["rid"]
+    if reused:
+        print(f"rid 台账接管 {reused} 条（改名续链）")
+    return ledger
+
+
+def attach_link_display(relations: list[dict], classes_with_group: list[dict]) -> None:
+    """链接的展示元数据按 domain 类的属域补齐（链接自身没有域声明）。"""
+    group_of = {c["id"]: c.get("_group") for c in classes_with_group}
+    for rel in relations:
+        rel["display_metadata"] = ontology.display_metadata_of(group_of.get(rel["domain"]))
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--check", action="store_true", help="只校验不写盘")
@@ -211,11 +248,23 @@ def main() -> int:
 
     groups = build_groups(domains, classes_with_spec, old.get("object_type_groups", []))
 
+    attach_link_display(relations, classes_with_spec)
+    ledger = apply_rid_ledger(classes, relations)
+
     meta = dict(old.get("meta", {}))
     meta["version"] = VERSION
     meta.setdefault("name", "freight")
+    # scope/note 由实际统计重写：手写死的「558 类 / 568 关系」是上一轮虚胖数字的
+    # 残留，文档里留着它比没有更糟——它会让下一个读的人以为规模没变。
+    meta["scope"] = (
+        f"覆盖 {len(groups)} 个业务域，共 {len(classes)} 类 / {len(relations)} 条链接 / "
+        f"{len(property_types)} 个已注册属性。"
+    )
     meta["note"] = ("schema v3：Property Type 升为一等公民（对标 Palantir Object Type / "
-                    "Property Type / Link Type 三件套）；类级元模型字段保持固定。")
+                    "Property Type / Link Type 三件套）；类级元模型字段保持固定。"
+                    "类与链接均带不可变 rid + display_metadata；物化走轻量对象投影。")
+    # 已有对象属性投影层 -> storage_policy 不再是 knowledge-only
+    meta["storage_policy"] = "projection"
 
     out = {"meta": meta}
     for key in PRESERVED_KEYS:
@@ -242,7 +291,10 @@ def main() -> int:
 
     with open(ONTOLOGY_JSON, "w", encoding="utf-8") as f:
         json.dump(out, f, ensure_ascii=False, indent=1)
+    with open(RID_LEDGER, "w", encoding="utf-8") as f:
+        json.dump(dict(sorted(ledger.items())), f, ensure_ascii=False, indent=1)
     print(f"已写入 {ONTOLOGY_JSON}")
+    print(f"rid 台账 {len(ledger)} 条 -> {RID_LEDGER}")
     return 0
 
 

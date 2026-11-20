@@ -186,6 +186,18 @@
     "effective_from": {
      "type": "string",
      "minLength": 1
+    },
+    "rid": {
+     "$ref": "#/$defs/rid",
+     "description": "不可变标识（对标 Palantir Object Type rid）。与 id 分离：id 是可读稳定标识，rid 是内核身份，改名不变。"
+    },
+    "plural_display_name": {
+     "type": "string",
+     "minLength": 1,
+     "description": "复数展示名（对标 Palantir pluralDisplayName）。中文无语态变化时等于 label；英文/i18n 场景由语言层覆盖。"
+    },
+    "display_metadata": {
+     "$ref": "#/$defs/displayMetadata"
     }
    }
   },
@@ -242,6 +254,13 @@
       "many_to_many"
      ],
      "description": "链接基数（Palantir Link Type cardinality）：读法 domain->range。缺省 many_to_many（未声明的历史链接不限制）。"
+    },
+    "rid": {
+     "$ref": "#/$defs/rid",
+     "description": "不可变标识（对标 Palantir Link Type rid）。"
+    },
+    "display_metadata": {
+     "$ref": "#/$defs/displayMetadata"
     }
    }
   },
@@ -686,14 +705,98 @@
     "label": {
      "type": "string"
     },
+    "description": {
+     "type": "string"
+    },
     "type": {
-     "type": "string",
-     "minLength": 1
+     "$ref": "#/$defs/valueType",
+     "description": "参数类型（对标 Palantir Function 参数类型系统）。只能是标量类型或 object_set/object_ref/enum，不再接受任意字符串——自由字符串既无法生成强类型 OSDK 客户端，也无法做类型检查。"
     },
     "required": {
      "type": "boolean"
+    },
+    "of": {
+     "$ref": "#/$defs/typeId",
+     "description": "type=object_set / object_ref 时的对象类型（Palantir ObjectSet<T> 的元素类型）。"
+    },
+    "interface": {
+     "type": "string",
+     "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+     "description": "参数按接口接受（Palantir interface-typed argument）：实参类必须 conforms 该接口。"
     }
-   }
+   },
+   "allOf": [
+    {
+     "if": {
+      "properties": {
+       "type": {
+        "enum": [
+         "object_set",
+         "object_ref"
+        ]
+       }
+      },
+      "required": [
+       "type"
+      ]
+     },
+     "then": {
+      "required": [
+       "of"
+      ]
+     }
+    }
+   ]
+  },
+  "valueType": {
+   "type": "string",
+   "enum": [
+    "string",
+    "text",
+    "integer",
+    "number",
+    "decimal",
+    "boolean",
+    "timestamp",
+    "date",
+    "json",
+    "enum",
+    "object_set",
+    "object_ref"
+   ],
+   "description": "函数参数/返回值类型枚举。标量部分与 propertyType.value_type / base_type 对齐，另有 object_set / object_ref 两个对象引用形态（对标 Palantir ObjectSet<T>）。"
+  },
+  "rid": {
+   "type": "string",
+   "pattern": "^ri\\.[a-z]+\\.[a-z0-9-]+\\.[a-z-]+\\.[0-9a-f]{32}$",
+   "description": "不可变资源标识（Palantir rid 格式 ri.<service>.<instance>.<kind>.<uuid4hex>）。"
+  },
+  "displayMetadata": {
+   "type": "object",
+   "additionalProperties": false,
+   "properties": {
+    "icon": {
+     "type": "string",
+     "minLength": 1
+    },
+    "color": {
+     "type": "string",
+     "pattern": "^#[0-9A-Fa-f]{6}$"
+    },
+    "visibility": {
+     "type": "string",
+     "enum": [
+      "normal",
+      "promoted",
+      "hidden"
+     ]
+    },
+    "category": {
+     "type": "string",
+     "minLength": 1
+    }
+   },
+   "description": "展示层元数据（对标 Palantir displayMetadata）：对象浏览器/图谱渲染所需，与业务语义解耦。"
   },
   "typeId": {
    "type": "string",

@@ -4,9 +4,9 @@
 
 ## 这是什么
 
-- **语义层制品** `freight/semantic_layer.json`：558 类 / 568 关系 / 16 规则 / 15 动作 / 4 函数，覆盖 30 个业务域（订单、运单、计价、结算、证据等）。
+- **语义层制品** `freight/semantic_layer.json`：500 类 / 503 链接 / 1961 属性（注册表）/ 16 规则 / 15 动作 / 4 函数，覆盖 35 个业务域（订单、运单、计价、结算、证据等）。
 - **确定性引擎** `freight/engine.py`：报价复算、账单对账、差异归因——金额全部整数分、规则走 AST，LLM 不参与金额计算。
-- **语义门禁** `scripts/semantic_gate.py`：CI 强制入口，8 类覆盖（schema/domain_range/ast/rule_cases/references/shacl/shacl_cases/model_tools）+ 负样本控制。
+- **语义门禁** `scripts/semantic_gate.py`：CI 强制入口，**24 项检查 / 13 个覆盖目标**（schema/domain_range/ast/rule_cases/references/shacl/shacl_cases/model_tools/query_dsl/extension_schema/property_policy/display_metadata/breaking_changes）+ 负样本控制。
 - **REST/MCP 接口**：`api.py` 挂 `/freight/*` 与 `/profile/*` 路由；LLM agent 经 MCP 工具白名单访问。
 
 存储策略：本体只持久化类、关系、规则、动作与数据源映射；业务事实经 MCP/API 按需查询，不写入本体库（`persisted_by_ontology: false`）。
@@ -23,6 +23,9 @@ python scripts/semantic_gate.py
 # freight 层验收（12 场景，含 5 个承重测试）
 python scripts/freight_acceptance.py
 
+# 承重实验：只改本体 JSON、代码零改动，16 条用例逐条证明行为翻转
+python scripts/load_bearing_demo.py
+
 # 根层验证（36 项断言）
 python verify.py
 
@@ -36,30 +39,37 @@ python cli.py serve --port 8765
 
 ## enhancements/（Palantir 追齐层，2026-11 新增）
 
-对标 Palantir Ontory 能力的增量层，全部遵循承重验收：**只改本体 JSON、代码零改动即可启用/改变行为**。
+对标 Palantir Ontology 能力的增量层，全部遵循承重验收：**只改本体 JSON、代码零改动即可启用/改变行为**。
 
 | 模块 | 对标 Palantir 能力 | 说明 |
 |------|-------------------|------|
-| `property_registry` | Shared Property Types | 全局属性注册表（类型/单位/脱敏标记/生命周期/时序） |
-| `interfaces` | Interfaces | 对象类型多态，函数可按接口接受实现类 |
-| `security` | Markings + Object/Property Security Policies + Scoped Tokens | 强制+自主两层访问控制模型 |
-| `function_registry` | Functions（注册表） | 签名/版本/owner/测试用例入本体 JSON |
+| `property_registry` | Shared Property Types | 全局属性注册表（类型/单位/脱敏标记/生命周期/时序），**strict 执行**：写入侧按 `value_type` 校验 |
+| `interfaces` | Interfaces / ImplementsInterfaces | 显式 `implements` + `property_map` 优先，structural 形状匹配兜底 |
+| `security` | Markings + access-control-propagation | 数据源级 / 类级标记向对象传播（行级要求持有全部标记）+ 属性级列脱敏 + Agent 输出闸 |
+| `function_registry` | Functions（注册表 + 类型系统） | 参数标量类型校验 + `result_types` 返回值契约校验 |
 | `sandbox` | Functions 沙箱 | 子进程执行 + timeout + 内存限制 |
 | `usage_graph` | 使用度量 | 类被函数/动作/关系引用的反向查询 |
 | `search` | 对象搜索 | 全属性过滤 + 分页 |
-| `tools/gen_osdk.py` | OSDK | 从本体生成 TypeScript/Python 类型化客户端 |
-| `tools/proposal.py` | Global Branching / proposal | 本体变更分支评审流程 |
+| `freight/projection` | Object Storage v2（轻量档） | 属性级投影 + 双索引 + 新鲜度闸门 + 一致性比对；不做全量 OSv2 |
+| `freight/change_gate` | Ontology change management | 破坏性变更分类 + 引用影响回溯 + 逐条签字 |
+| `tools/gen_osdk.py` | OSDK | 从本体生成 TS/Python 类型化客户端（decimal→Decimal，不再退化成 str） |
+| `tools/proposal.py` | Global Branching / proposal | 分支评审 + breaking 字段，未签字的破坏项不得 merge |
+
+两个 JSON Schema 分别管两层，缺一不可：
+- `schema/semantic_layer.schema.json` —— 基础本体（类/链接/属性注册表/规则/函数）
+- `schema/ontology_extension.schema.json` —— 扩展层（属性覆盖/接口/标记/安全策略/函数注册表）
 
 ## 目录结构
 
 ```
-freight/          # freight 域：语义层 + 引擎 + REST/MCP
+freight/          # freight 域：语义层 + 引擎 + REST/MCP + 投影 + 变更门禁
 mobility/         # mobility 根域（演示城市出行）
 profile_ai/       # 展示层
-schema/           # JSON Schema 定义
-scripts/          # semantic_gate / freight_acceptance / build_release
+schema/           # JSON Schema 定义（semantic_layer + ontology_extension + query/rule/judgment/evidence/proposal）
+scripts/          # semantic_gate / freight_acceptance / load_bearing_demo / build_release
 enhancements/     # Palantir 追齐层（属性注册表/接口/安全/函数注册表/沙箱/度量）
-tools/            # OSDK 代码生成 / proposal 分支治理
+ontology/         # 500 类的建模 DSL（人工建模，属性必须显式标注类型）
+tools/            # OSDK 代码生成 / ontology 渲染 / proposal 分支治理
 tests/            # pytest 套件 + 规则/SHACL 用例数据
 verify.py         # 根层 36 项验证
 ```
@@ -68,8 +78,11 @@ verify.py         # 根层 36 项验证
 
 1. 金额整数分、规则确定性，LLM 不碰金额与原因选择。
 2. 每个能力必须能"只改本体 JSON、代码零改动"地启用/改变（承重测试）。
-3. CI 必过 semantic_gate；本体变更走 proposal（tools/proposal.py）。
+3. CI 必过 semantic_gate（24 项，含扩展层 schema / 策略口径 / 展示层 / 破坏性变更）。
 4. 事实不入本体库（persisted_by_ontology=false）。
+5. **注册表必须执行**：属性类型、函数签名、返回结构、标记传播，光登记不算。
+6. **物化层必须可验真**：投影不新鲜就回退全表，绝不让索引静默少行。
+7. **破坏性变更必须签字**：`freight/breaking_approvals.json` 路径完全一致才算数。
 
 ## 部署
 

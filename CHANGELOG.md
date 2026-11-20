@@ -1,5 +1,111 @@
 # Changelog
 
+## 3.1.0 (2026-11-20) — 六项 Palantir 对齐缺口闭合（契约层 / 展示层 / 运行时三件套）
+
+上一版把属性升成了一等公民，但只做到「登记」。本轮把**声明与执行**接起来，
+并补上展示层、物化层、标记传播与破坏性变更审查。六项缺口逐条对应实测证据。
+
+### 修正（承认并清理）
+- **扩展层此前完全没有 JSON Schema**：往 `ontology_extension.json` 塞
+  `totally_bogus_top_key` / `bogus_field_xyz` / `bogus_param_key` /
+  `value_type="not_a_real_type"` 全部加载成功。扩展层是追齐层的第二份本体，
+  没有契约就等于垃圾键静默入库。
+- **属性注册表只登记不执行**：`validate_object` 只校验属性名白名单 + 状态机，
+  `estimated_fee="abc"`（decimal）能直接写进去。注册表在门禁层是权威、在运行层是装饰。
+- **扩展层与基础注册表类型分叉 4 处**：`estimated_fee`/`actual_fee`/`variance`
+  被写成 `integer` + `unit=cents`，`status` 被写成 `string`（基础层是 `decimal/CNY`、`enum`）。
+  扩展层覆盖后，金额实际按「整数分」解释。
+- **函数参数类型是自由字符串且连枚举都不校验**：`validate_signature` 只查
+  必填/未知参数，`fee_breakdown(waybill_id=12345)` 一路通过。
+- **OSDK 生成器没接基础属性注册表**：1950+ 个属性被判「未注册」并退化成
+  `str | None`——「强类型客户端」其实是弱类型，且看不出来。
+- **`smoke_concurrency` 长期红**（HEAD 上 6 个错误）：`_read_conn` 在写事务进行中
+  把**写连接**借给其他读线程，触发 SQLite 连接不可跨线程共享的硬约束。改为
+  只有写事务的发起线程才回落到写连接。
+- 种子数据两处类型脏值：`actual_duration_min`/`duration_min` 写 `218.0`（integer 字段）；
+  `closed_at` 用 `""` 表示「未关闭」（datetime 字段）。改为 `218` / `None`。
+- **`RID_LEDGER_DRIFT` 是死检查**（承重实验 L9 抓出）：`ledger_key = f"{kind[:-1]}:{oid}"`
+  对 `classes` 求前缀得到 `"classe"`，台账里是 `"class:Waybill"`，`if expected` 直接短路——
+  **类 rid 被手改也一声不响**。改为显式映射 `{classes: class, relations: relation}`，
+  并新增 `RID_LEDGER_MISSING`：台账缺项不能当「没问题」，没有基线就无从判断是否被改。
+- **二分真相缺一道闸**（承重实验 L12b 抓出）：同一属性在基础注册表标了 `PII`、
+  扩展层写 `null` 时，运行时取扩展层那份 ⇒ **脱敏静默消失**，而两份文件各自都合法、
+  schema 也都过。门禁补 `PROP_MARKING_DIVERGED` / `PROP_TYPE_DIVERGED`。
+
+### 新增（P0 契约层）
+- `schema/ontology_extension.schema.json`：扩展层元模型契约。顶层
+  `additionalProperties:false` 锁死 10 个键；`$defs.propertyType` 与基础 schema
+  枚举一致（门禁做漂移比对）；`$defs.functionParam` 扩到 7 键
+  （`name/label/description/type/required/of/interface`）且 `type` 走枚举，
+  `object_set`/`object_ref` 强制要求 `of`。
+- `freight/semantic.py`：`validate_object` 增加 `_check_value_types()`，按注册表
+  `value_type` + `nullable` 执行；`datetime`/`date` 校验 ISO 形态。
+- `freight/fact_mcp.py::update_object`：写入收口。动作里 10+ 处直连 UPDATE 也过类型校验——
+  只校验创建路径等于「新建管、改一条就绕过」。
+- `property_registry_policy` 收口为 `enforcement=strict` + `legacy_grace=false`；
+  门禁新增 `POLICY_STRICT` 断言，改回 incremental 会红。
+
+### 新增（P1 对齐层）
+- 类/链接补 **`rid`**（不可变标识，`ri.mobility.main.object-type|link-type.<uuid5>`）+
+  **`plural_display_name`** + **`display_metadata`**（icon/color/visibility/category）。
+  `freight/rid_ledger.json` 台账接管 rid：改名时在台账写一行即可续链，身份不断。
+- **函数签名类型化**：参数标量类型校验（与 `SemanticLayer._type_ok` 同口径）；
+  新增 `result_types` 注册表（`FeeBreakdown`/`QuoteReconcile`/`FeeBreakdownBatch`），
+  `returns` 必须是标量类型 / 已注册结果类型 / 对象类型；运行时按 Result Type
+  校验返回字段的缺失、多余与类型。
+- **接口显式 implements**（对标 `ImplementsInterfaces2`）：`match` 支持
+  `structural`/`explicit`，显式声明优先并支持 `property_map` 属性映射；
+  谎报实现（声明 Shipper 实现 Chargeable 但 Shipper 没金额属性）由
+  `IFACE_UNIMPLEMENTED` 拦。
+- OSDK 类型映射补齐 `decimal→Decimal`（Python）/`number`（TS）、`datetime`/`date`/`json`/`enum`。
+  金额不再退化成 `str`。
+
+### 新增（P2 运行时三件套）
+- **物化**：`freight/projection.py` 轻量对象投影（`object_props` 属性级行式表 +
+  数值/字符串双索引 + 增量状态计数）。写入路径同一事务内同步；查询引擎用投影
+  **收窄候选集**后仍逐行复算。**正确性边界写清楚**：复算能滤掉多余候选，
+  救不回被漏掉的候选，所以收窄前过 `is_fresh()` 闸门，不新鲜整条回退全表。
+  `consistency()` 做全量逐属性比对（值级过期只有它能查）。
+- **标记传播**：`SecurityEngine.marking_trace()` 实现数据源级 + 类级标记向对象继承，
+  行级可见要求「持有**全部**有效标记」（Palantir 语义）。**属性标记不参与行级判定**——
+  属性 marking 管列（置 null），提升成整行不可见是过度管控。新增 `guard_output()`
+  防 Agent 输出外泄。
+- **破坏性变更**：`freight/change_gate.py` 分类 类/属性/类型/基数 变更，
+  回溯引用方（函数/规则/动作/数据源/接口/派生类型/OSDK 生成物），
+  `freight/breaking_approvals.json` 逐条签字（路径完全一致才算）。
+  门禁第 15 项 + `tools/proposal.py` 的 `review.json` 增加 `breaking` 字段。
+
+### 门禁
+- 20 项 → **24 项**，新增 `#schema`(扩展层) / `#policy` / `#display` / `#breaking`；
+  每项都带负向用例（不是空绿）。
+
+### 承重实验（`scripts/load_bearing_demo.py`）
+单测的 `make_ext(mutator)` 只改内存 dict，证明不了「本体文件是唯一真相」——代码里
+完全可以再写一份默认值兜底而测试照绿。本脚本换更硬的口径：把仓库拷到
+`runs/load_bearing_<ts>/`，**用 `open()/json.dump` 真改 JSON**，再在拷贝里用子进程跑探针，
+比对「改前/改后」。16 条用例覆盖六项缺口，改前/改后结论见 `logs/load_bearing_*.json`：
+
+| 用例 | 只改这一处 JSON | 改前 → 改后 |
+|---|---|---|
+| L1/L2 | 扩展层塞垃圾键 / `value_type` 非法 | 门禁 PASS → `EXT_SCHEMA_INVALID` |
+| L3 | `waiting_minutes.value_type: number→boolean` | 种子回放成功(47 对象) → `OntologyViolation` 启动失败 |
+| L4/L5 | 同上 | 创建/更新该字段成功 → 类型不符被拒 |
+| L6 | `policy` 改回 `incremental` | PASS → `POLICY_NOT_STRICT` |
+| L7 | `waybill_id` 参数 `string→integer` | 调用成功 → `SIGNATURE_INVALID` |
+| L8 | Result Type 删 `conclusion` | 调用成功 → `RETURN_FIELD_UNDECLARED` |
+| L9 | 手改 `Waybill.rid` 末位 | PASS → `RID_LEDGER_DRIFT`（修 bug 前：仍是 PASS） |
+| L10 | 改 `label`/`plural_display_name` | 仍 PASS——改名不断链 |
+| L11 | 加「CRM → FINANCE」数据源标记 | Shipper 可见 → 整行不可见，拒绝原因指认 CRM |
+| L12 | 扩展层给 `waiting_minutes` 标 PII | 行仍可见，只该列置 null |
+| L12b | 只改基础层 marking（扩展层 null） | PASS → `PROP_MARKING_DIVERGED`（修 bug 前：仍是 PASS） |
+| L13/L14 | 删 `Waybill.properties[waiting_minutes]` | 评审 PASS → FAIL(未签字 1) → 补签字回 PASS |
+| L15 | 手工删投影行 | 闸门判不新鲜 → 回退全表，条数与基线一致（不静默少行） |
+
+### 验证
+- `pytest` **219 passed**（`tests/test_palantir_alignment.py` 47 项，全部对应曾经的缺口）
+- 语义门禁 **24/24**；承重实验 **16/16**（改回原样后门禁 exit=0）
+- 7 个 smoke 全过（`smoke_concurrency` 由红转绿）；`scripts/freight_acceptance.py` 12/12
+
 ## 3.0.0 (2026-11-20) — 本体元模型对齐 Palantir 三件套 + 500 类真实建模（清掉 540 个模板空壳）
 
 ### 修正（承认并清理）

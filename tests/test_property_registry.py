@@ -12,6 +12,18 @@ def _props(registry: PropertyRegistry, class_id: str) -> dict:
     return {p.name: p for p in registry.properties_of(class_id)}
 
 
+def _incremental(raw):
+    """显式退回 incremental 口径。
+
+    出厂配置已收口为 strict（legacy 通道关闭）。legacy 解析路径仍是受支持的模式，
+    但属于「历史兼容」而非常态，所以测它必须显式打开，不能白嫖出厂默认值。
+    """
+    raw["property_registry_policy"] = {
+        "enforcement": "incremental", "legacy_grace": True,
+    }
+    return raw
+
+
 class TestRegisteredResolution:
     def test_registered_property_resolves_with_marking(self, make_ext):
         reg = PropertyRegistry(make_ext())
@@ -30,7 +42,7 @@ class TestRegisteredResolution:
 
     def test_legacy_property_unregistered(self, make_ext_without):
         # schema v3 后基础本体全量注册；要测 legacy 语义必须显式摘掉该属性
-        reg = PropertyRegistry(make_ext_without({"order_id"}))
+        reg = PropertyRegistry(make_ext_without({"order_id"}, _incremental))
         p = reg.resolve("Waybill", "order_id")  # 未注册的存量属性
         assert p.registered is False and p.origin == "legacy"
 
@@ -43,7 +55,7 @@ class TestLoadBearing:
             raw["property_types"] = [
                 p for p in raw["property_types"] if p["name"] != "shipper_name"
             ]
-            return raw
+            return _incremental(raw)
 
         reg = PropertyRegistry(make_ext_without({"shipper_name"}, mutate))
         p = reg.resolve("Shipper", "shipper_name")

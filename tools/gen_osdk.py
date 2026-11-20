@@ -24,8 +24,23 @@ sys.path.insert(0, ROOT)
 from enhancements.registry import ExtensionRegistry  # noqa: E402
 from freight.semantic import SemanticLayer  # noqa: E402
 
-TS_TYPE = {"string": "string", "integer": "number", "number": "number", "boolean": "boolean"}
-PY_TYPE = {"string": "str", "integer": "int", "number": "float", "boolean": "bool"}
+TS_TYPE = {
+    "string": "string", "text": "string", "enum": "string",
+    "integer": "number", "number": "number", "decimal": "number",
+    "boolean": "boolean",
+    "datetime": "string", "date": "string",
+    "json": "unknown",
+}
+# decimal 在 Python 侧用 Decimal 而不是 float：金额用 float 会掉精度，
+# 而「decimal 和 number 的区别」正是这张表存在的理由。类型映射抹平这个区别，
+# 等于把注册表里的精度语义当摆设。
+PY_TYPE = {
+    "string": "str", "text": "str", "enum": "str",
+    "integer": "int", "number": "float", "decimal": "Decimal",
+    "boolean": "bool",
+    "datetime": "str", "date": "str",
+    "json": "Any",
+}
 
 
 def _pascal(name: str) -> str:
@@ -167,6 +182,7 @@ def generate_python(sem: SemanticLayer, ext: ExtensionRegistry) -> str:
         "",
         "import json",
         "from dataclasses import dataclass, field",
+        "from decimal import Decimal",
         "from typing import Any",
         "import urllib.request",
         "",
@@ -215,8 +231,10 @@ def generate_python(sem: SemanticLayer, ext: ExtensionRegistry) -> str:
         lines.append(f"class {cid}Filters(TypedDict, total=False):")
         for prop in cls.get("properties", []):
             pt = ext.property_types.get(prop)
-            py = PY_TYPE.get(pt.get("value_type", "string"), "str") if pt else "Any"
-            lines.append(f"    {prop}: Any  # value_type={py}")
+            # TypedDict 的过滤器值允许各种算子（$in 列表、字符串匹配…），
+            # 所以类型是 Any；注释里标出注册表的 value_type，别把 Py 类型当值类型。
+            vt = pt.get("value_type", "string") if pt else "unregistered"
+            lines.append(f"    {prop}: Any  # value_type={vt}")
         lines.append("")
         lines.append(f"def {fname}_query(where: {cid}Filters, extras: Optional[QueryExtras] = None) -> dict:")
         lines.append(f"    return {{'set': {{'from': '{cid}'}}, 'where': dict(where), **(extras or {{}})}}")
@@ -341,7 +359,11 @@ def main() -> int:
     args = parser.parse_args()
 
     sem = SemanticLayer()
-    ext = ExtensionRegistry(base_classes=sem.classes)
+    # 必须传 base_property_types：schema v3 之后属性注册表的权威在基础本体，
+    # 只传 extension 会让 1950+ 个属性被判「未注册」，全部退化成 str/Any ——
+    # 生成出来的强类型客户端其实是弱类型，还看不出来。
+    ext = ExtensionRegistry(base_classes=sem.classes,
+                            base_property_types=sem.raw.get("property_types"))
     os.makedirs(args.out, exist_ok=True)
 
     ts_path = os.path.join(args.out, "typescript.ts")

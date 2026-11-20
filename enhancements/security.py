@@ -1,10 +1,14 @@
-"""P3 安全层：对标 Palantir 强制 + 自主两层访问控制。
+"""P3 安全层：对标 Palantir 强制 + 自主两层访问控制 + marking 传播。
 
 模型（对照 Palantir 官方文档 access-control-propagation / object-and-property-policies）：
 
 强制控制（Mandatory）——角色再高也不豁免：
-- markings：属性/行携带标记，用户必须是标记成员才能读。
+- markings：属性/行/对象携带标记，用户必须是**全部**标记的成员才能读。
   Palantir 语义："A user must be a member of all markings applied to a resource"。
+- **传播继承**：对象的有效标记 = 类级标记 ∪ 行内受标记属性的标记 ∪ 数据源标记。
+  数据源（data_source_markings）一旦打标，该类所有对象都继承——这正是
+  「标记沿数据流传播」的实现点。少了它，marking 只是贴在列上的标签，
+  换一个入口（另一张表、另一个 API）就能绕过。
 
 自主控制（Discretionary）——读时过滤：
 - object_security_policies（行级）：行匹配 row_filter 时要求 required_marking；
@@ -12,7 +16,8 @@
   "they will see a null value in place of the property value"，而非报错）。
 
 Scope Token（对标 Scoped Tokens + model_tools 门禁）：
-- agent 令牌携带可见类/函数/MCP 工具子集，服务端按令牌过滤工具面。
+- agent 令牌携带可见类/函数/MCP 工具子集，服务端按令牌过滤工具面；
+- 令牌自身带 markings，Agent 输出不得高于令牌权限（`guard_output`）。
 
 全部策略定义在 ontology_extension.json：加/删一条策略 -> 行为即变（承重验收）。
 """
@@ -46,11 +51,60 @@ class AccessDenied(Exception):
 
 
 class SecurityEngine:
-    def __init__(self, ext):
+    def __init__(self, ext, data_sources: list[dict] | None = None):
         self.ext = ext
+        # 类 -> 数据源系统集合；用于数据源标记传播（继承链的源头）
+        self.systems_of_class: dict[str, set[str]] = {}
+        for ds in data_sources or []:
+            if ds.get("class") and ds.get("system"):
+                self.systems_of_class.setdefault(ds["class"], set()).add(ds["system"])
+
+    # -------------------------------------------------- marking 传播（继承链）
+    def marking_trace(self, class_id: str, props: dict) -> list[dict]:
+        """对象**行级**有效标记的来源明细（Palantir 式传播可追溯）。
+
+        两个来源，取并集：
+          1. 数据源：类映射到的外部系统被打标 -> 该类所有对象继承；
+          2. 类级：直接挂在对象类型上的标记。
+
+        **属性标记不参与行级判定**。属性 marking 管的是「这一列读不读得到」
+        （`mask_properties` 里置 null），不是「整行看不看得见」。把列标记提升成
+        行不可见是过度管控：一个运单因为带了运费字段就整条消失，业务上等于
+        「看不见运单」，而不是「看不见运费」。
+        """
+        trace: list[dict] = []
+        for rule in self.ext.data_source_markings:
+            system = rule.get("system")
+            if system and system in self.systems_of_class.get(class_id, set()):
+                trace.append({"marking": rule["marking"], "origin": "data_source",
+                              "source": system})
+        for rule in self.ext.class_markings:
+            if rule.get("object_type") == class_id:
+                trace.append({"marking": rule["marking"], "origin": "class",
+                              "source": class_id})
+        return trace
+
+    def property_markings(self, props: dict) -> dict[str, str]:
+        """列级标记清单（属性 -> 标记），供 mask_properties / 审计使用。"""
+        out: dict[str, str] = {}
+        for prop in props:
+            pt = self.ext.property_types.get(prop)
+            if pt and pt.get("marking"):
+                out[prop] = pt["marking"]
+        return out
+
+    def effective_markings(self, class_id: str, props: dict) -> set[str]:
+        return {t["marking"] for t in self.marking_trace(class_id, props)}
+
+    def _all_markings_held(self, required: set[str], ctx: SecurityContext) -> bool:
+        """Palantir 语义：必须是**全部**标记的成员，不是任一。"""
+        return required <= ctx.markings
 
     # -------------------------------------------------- 行级（对象实例过滤）
     def visible_object(self, class_id: str, props: dict, ctx: SecurityContext) -> bool:
+        # 传播继承的强制控制先于行级策略：任一有效标记不持有 -> 整行不可见
+        if not self._all_markings_held(self.effective_markings(class_id, props), ctx):
+            return False
         for pol in self.ext.object_security_policies:
             if pol.get("object_type") != class_id:
                 continue
@@ -62,16 +116,25 @@ class SecurityEngine:
                     return False  # 行命中过滤且无标记 -> 该行不可见
         return True
 
+    def deny_reason(self, class_id: str, props: dict, ctx: SecurityContext) -> dict | None:
+        """拒绝原因（缺哪些标记、来自哪里），便于前端/Agent 解释而不是干瞪眼。"""
+        missing = self.effective_markings(class_id, props) - ctx.markings
+        if not missing:
+            return None
+        origins = [t for t in self.marking_trace(class_id, props)
+                   if t["marking"] in missing]
+        return {"code": "MARKING_DENIED", "missing": sorted(missing),
+                "origins": origins}
+
     def filter_objects(self, class_id: str, rows: list[dict], ctx: SecurityContext) -> list[dict]:
         return [r for r in rows if self.visible_object(class_id, r, ctx)]
 
     # -------------------------------------------------- 列级（属性脱敏）
     def mask_properties(self, class_id: str, props: dict, ctx: SecurityContext) -> dict:
         masked = dict(props)
-        # 属性注册表 marking（强制控制，属性级）
-        for name, val in list(masked.items()):
-            pt = self.ext.property_types.get(name)
-            if pt and pt.get("marking") and not ctx.has_marking(pt["marking"]):
+        # 属性注册表 marking（强制控制，属性级）：无标记 -> null，不报错
+        for name, marking in self.property_markings(props).items():
+            if not ctx.has_marking(marking):
                 masked[name] = None  # Palantir 语义：null 而非报错
         # 列级策略（psp，读时过滤）
         for pol in self.ext.property_security_policies:
@@ -101,6 +164,21 @@ class SecurityEngine:
             return list(all_tools)
         allowed = set(ctx.scope_token.get("mcp_tools", []))
         return [t for t in all_tools if t in allowed]
+
+    # -------------------------------------------------- Agent 输出防外泄
+    def guard_output(self, class_id: str, props: dict, ctx: SecurityContext) -> dict:
+        """Agent 输出前的最后一道闸：不得导出高于会话权限的内容。
+
+        只靠读侧过滤不够——Agent 可能把对象塞进生成文本、摘要或函数返回值里，
+        绕过 mask_properties。这里对**输出结构**再做一次强制判定：
+        有效标记超出上下文 -> 整段拒绝（不是脱敏，因为自由文本脱不干净）。
+        """
+        reason = self.deny_reason(class_id, props, ctx)
+        if reason is not None:
+            raise AccessDenied(
+                f"对象类型 {class_id} 的有效标记 {reason['missing']} 超出现有权限，"
+                f"不可导出到 Agent 输出", code="OUTPUT_MARKING_DENIED")
+        return self.mask_properties(class_id, props, ctx)
 
     # -------------------------------------------------- 策略测试器（对标 Test policies）
     def simulate(self, class_id: str, rows: list[dict], ctx: SecurityContext) -> dict:

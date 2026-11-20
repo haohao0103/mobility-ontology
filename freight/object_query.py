@@ -21,6 +21,7 @@ import os
 import time
 from typing import Any
 
+from . import projection
 from .object_set import object_set_id as _object_set_id, query_digest
 from .semantic import BusinessReject
 
@@ -256,6 +257,12 @@ class ObjectQueryEngine:
         self.derived_types: dict[str, dict] = {
             d["id"]: d for d in sem.raw.get("derived_types", [])
         }
+        # 本轮求值是否吃到了投影加速（可观测性：没吃到就是全表扫描）
+        self.last_projection_hit = False
+        # 投影不新鲜导致回退（可观测性：出现说明写入口被绕过或库没回填）
+        self.last_projection_stale = False
+        # 投影不新鲜导致回退（可观测性：出现说明写入口被绕过或库没回填）
+        self.last_projection_stale = False
 
     def _derived_of(self, type_id: str, stack: tuple = ()) -> dict | None:
         """取派生类型定义；带循环检测（派生链不得指回自身）。"""
@@ -478,9 +485,10 @@ class ObjectQueryEngine:
                 rows = self._resolve_set(derived["derivation"], store,
                                          depth + 1, _stack + (type_id,))
             else:
-                rows = self._rows_of_type(store, type_id)
+                rows = self._rows_of_type(store, type_id, node.get("where"))
             where = node.get("where")
             if where is not None:
+                # 投影只负责收窄候选集；语义正确性必须在这里复算一遍。
                 rows = [r for r in rows if eval_predicate(r["props"], where)]
             return rows
         if "ids" in node:
@@ -551,15 +559,103 @@ class ObjectQueryEngine:
             raise QueryError("集合表达式缺算子", "SET_INVALID")
         return rows
 
-    def _rows_of_type(self, store, class_id: str) -> list[dict]:
+    def _rows_of_type(self, store, class_id: str, where: dict | None = None) -> list[dict]:
+        """取某类型的对象行；where 可先经投影收窄候选集。
+
+        收窄只是**减少反序列化行数**。正确性边界：复算能滤掉多余候选，
+        但救不回被漏掉的候选，所以 `_projected_ids` 必须先过新鲜度闸门，
+        不新鲜就整条回退全表扫描。
+        """
+        candidate_ids = self._projected_ids(store, class_id, where)
+        if candidate_ids is None:
+            rows = store.all("SELECT * FROM objects WHERE type=?", (class_id,))
+        else:
+            self.last_projection_hit = True
+            if not candidate_ids:
+                return []
+            placeholders = ",".join("?" * len(candidate_ids))
+            rows = store.all(
+                f"SELECT * FROM objects WHERE type=? AND object_id IN ({placeholders})",
+                (class_id, *candidate_ids),
+            )
         out = []
-        for r in store.all("SELECT * FROM objects WHERE type=?", (class_id,)):
+        for r in rows:
             out.append({
                 "object_id": r["object_id"], "type": r["type"],
                 "name": r["name"], "status": r["status"],
                 "props": json.loads(r["props"]),
             })
         return out
+
+    # 投影能支撑的算子：等值 / 集合 / 数值区间。其余（neq/nin/contains/模糊匹配/
+    # exists）一律回退全表——用投影硬凑这些算子只会得到近似结果，而近似就是错。
+    _PROJECTION_OPS = {"eq", "in", "gt", "gte", "lt", "lte"}
+
+    def _projected_ids(self, store, class_id: str,
+                       where: dict | None) -> list[str] | None:
+        """用 object_props 投影求候选 object_id；不可用时返回 None（回退全扫描）。
+
+        只处理「扁平 AND」形态：{prop: {op: value}} 且不含 $and/$or/$not。
+        组合谓词涉及集合代数，交给上层逐行求值，不在这里猜测语义。
+        """
+        if not where or not hasattr(store, "all"):
+            return None
+        if any(k in COMBO_KEYS for k in where):
+            return None
+        # 新鲜度闸门：不新鲜就不要用投影收窄，否则会静默少行。
+        # 走 store 的线程本地只读连接，绝不在读线程里碰写连接。
+        checker = getattr(store, "projection_is_fresh", None)
+        if checker is not None and not checker():
+            self.last_projection_stale = True
+            return None
+        clauses: list[str] = []
+        args: list = []
+        for prop, spec in where.items():
+            if not isinstance(spec, dict):
+                spec = {"eq": spec}
+            for op, value in spec.items():
+                op = op.lstrip("$")
+                if op not in self._PROJECTION_OPS:
+                    return None
+                if op == "in":
+                    if not isinstance(value, list) or not value:
+                        return None
+                elif value is None:
+                    return None
+                kind, num, text = projection._classify(
+                    value if op != "in" else value[0])
+                if kind not in ("num", "str"):
+                    return None
+                col = "num_value" if kind == "num" else "str_value"
+                base = ("SELECT object_id FROM object_props "
+                        "WHERE class=? AND prop=? AND value_kind=?")
+                if op == "eq":
+                    clauses.append(base + f" AND {col}=?")
+                    args += [class_id, prop, kind, num if kind == "num" else text]
+                elif op in ("gt", "gte", "lt", "lte"):
+                    if kind != "num":
+                        return None
+                    sym = {"gt": ">", "gte": ">=", "lt": "<", "lte": "<="}[op]
+                    clauses.append(base + f" AND {col}{sym}?")
+                    args += [class_id, prop, kind, num]
+                else:  # in
+                    kinds = {projection._classify(v)[0] for v in value}
+                    if kinds != {kind}:
+                        return None
+                    ph = ",".join("?" * len(value))
+                    clauses.append(base + f" AND {col} IN ({ph})")
+                    args += [class_id, prop, kind]
+                    if kind == "num":
+                        args += [projection._classify(v)[1] for v in value]
+                    else:
+                        args += [projection._classify(v)[2] for v in value]
+        if not clauses:
+            return None
+        sql = " INTERSECT ".join(clauses)
+        try:
+            return [r["object_id"] for r in store.all(sql, tuple(args))]
+        except Exception:  # noqa: BLE001 - 投影表缺失/结构不符一律回退
+            return None
 
     def _row(self, store, object_id: str) -> dict | None:
         r = store.one("SELECT * FROM objects WHERE object_id=?", (object_id,))

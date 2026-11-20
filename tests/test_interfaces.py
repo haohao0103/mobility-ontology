@@ -9,6 +9,20 @@ from enhancements.interfaces import (
 from enhancements.function_registry import FunctionRegistry, FunctionRegistryError
 
 
+def _structural(raw, *interface_ids):
+    """把指定接口退回 structural 形状匹配（删掉显式 implements）。
+
+    出厂配置已改为显式 implements（Palantir ImplementsInterfaces2 语义）：
+    显式声明存在时它就是权威，改属性 shape 不再影响实现类集合。
+    要测 structural 匹配路径，必须显式退回——不能靠出厂默认值偶然成立。
+    """
+    for i in raw["interfaces"]:
+        if not interface_ids or i["id"] in interface_ids:
+            i.pop("implements", None)
+            i["match"] = "structural"
+    return raw
+
+
 class TestStructuralMatch:
     def test_chargeable_matches(self, make_ext):
         reg = InterfaceRegistry(make_ext())
@@ -33,30 +47,68 @@ class TestStructuralMatch:
 
 class TestLoadBearing:
     def test_delete_required_anyof_shrinks_implementations(self, make_ext):
-        """承重：删掉 required_any_of 金额属性要求 -> Chargeable 实现类暴增。"""
+        """承重（structural 路径）：删掉 required_any_of 金额要求 -> Chargeable 实现类暴增。"""
 
         def mutate(raw):
             for i in raw["interfaces"]:
                 if i["id"] == "Chargeable":
                     del i["required_any_of"]
-            return raw
+            return _structural(raw, "Chargeable")
 
-        before = InterfaceRegistry(make_ext()).implementations("Chargeable")
+        before = InterfaceRegistry(make_ext(_structural)).implementations("Chargeable")
         after = InterfaceRegistry(make_ext(mutate)).implementations("Chargeable")
         assert len(after) > len(before)
         assert set(before) < set(after)
 
     def test_remove_timeseries_flag_kills_temporal_iface(self, make_ext):
-        """承重：属性注册表去掉 status 的 timeseries -> TemporalTracked 无实现类。"""
+        """承重（structural 路径）：去掉 status 的 timeseries -> TemporalTracked 无实现类。"""
 
         def mutate(raw):
             for p in raw["property_types"]:
                 if p["name"] == "status":
                     p["timeseries"] = False
-            return raw
+            return _structural(raw, "TemporalTracked")
 
         reg = InterfaceRegistry(make_ext(mutate))
         assert reg.implementations("TemporalTracked") == []
+
+    def test_explicit_implements_is_authoritative(self, make_ext):
+        """承重（显式路径）：显式 implements 存在时，改 shape 不影响实现类集合。"""
+
+        def mutate(raw):
+            for p in raw["property_types"]:
+                if p["name"] == "status":
+                    p["timeseries"] = False
+            return raw  # 保留出厂显式 implements
+
+        reg = InterfaceRegistry(make_ext(mutate))
+        assert "Waybill" in reg.implementations("TemporalTracked")
+
+    def test_lying_implements_is_caught(self, make_ext):
+        """承重：声明「Shipper 实现 Chargeable」但 Shipper 没有金额属性 -> IFACE_UNIMPLEMENTED。"""
+
+        def mutate(raw):
+            for i in raw["interfaces"]:
+                if i["id"] == "Chargeable":
+                    i["implements"].append({"object_type": "Shipper"})
+            return raw
+
+        issues = make_ext(mutate).validate()
+        assert any(i["code"] == "IFACE_UNIMPLEMENTED" for i in issues)
+
+    def test_property_map_allows_renamed_property(self, make_ext):
+        """承重：接口属性名与实现类不同名时，靠 property_map 接线。"""
+
+        def mutate(raw):
+            for i in raw["interfaces"]:
+                if i["id"] == "Party":
+                    i["implements"] = [
+                        {"object_type": "Shipper",
+                         "property_map": {"status": "status"}},
+                    ]
+            return raw
+
+        assert make_ext(mutate).validate() == []
 
 
 class TestPolymorphicFunction:

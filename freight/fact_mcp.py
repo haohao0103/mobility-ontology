@@ -197,8 +197,22 @@ class FactMCP:
     def insert_object(self, *args, **kwargs):
         return self.store.insert_object(*args, **kwargs)
 
-    def update_object(self, *args, **kwargs):
-        return self.store.update_object(*args, **kwargs)
+    def update_object(self, object_id, props, name=None, status=None, at=None):
+        """写入收口：更新前按属性注册表校验类型。
+
+        动作用例直接 UPDATE 对象属性（10+ 处调用点），如果只在校验创建路径，
+        类型约束就只在「新建」生效，改一条就绕过去了 —— 这种校验是装饰。
+        收口放在 FactMCP 这个唯一写入口，避免在每个动作里重复。
+        """
+        sem = getattr(self.runtime, "sem", None) if self.runtime is not None else None
+        if sem is not None:
+            row = self.store.get_row(object_id)
+            if row is not None:
+                payload = dict(props or {})
+                if status:
+                    payload["status"] = status
+                sem.validate_object(row["type"], payload)
+        return self.store.update_object(object_id, props, name, status, at)
 
     def get_row(self, *args, **kwargs):
         return self.store.get_row(*args, **kwargs)

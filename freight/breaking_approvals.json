@@ -1,0 +1,117 @@
+{
+ "note": "破坏性变更签字台账。每条必须与 freight/change_gate.py classify() 产出的 path 完全一致；模糊匹配等于没有门禁。新增条目必须写清楚为什么可以破坏契约。",
+ "approvals": [
+  {
+   "path": "relations[fee_derived_from_quote_item].cardinality",
+   "code": "RELATION_CARDINALITY_TIGHTENED",
+   "approved_by": "ontology-migration-v3",
+   "at": "2026-11-20",
+   "reason": "schema v3 迁移：这些历史链接原先未声明基数（语义等价 many_to_many），v3 按业务语义显式声明为 one_to_one / one_to_many / many_to_one。收紧是真实变更；证据仅为种子数据回放通过（行数有限），生产存量必须另行回放 engine._check_cardinality 后才算确认。"
+  },
+  {
+   "path": "relations[fee_included_in_settlement].cardinality",
+   "code": "RELATION_CARDINALITY_TIGHTENED",
+   "approved_by": "ontology-migration-v3",
+   "at": "2026-11-20",
+   "reason": "schema v3 迁移：这些历史链接原先未声明基数（语义等价 many_to_many），v3 按业务语义显式声明为 one_to_one / one_to_many / many_to_one。收紧是真实变更；证据仅为种子数据回放通过（行数有限），生产存量必须另行回放 engine._check_cardinality 后才算确认。"
+  },
+  {
+   "path": "relations[fee_priced_by_rule].cardinality",
+   "code": "RELATION_CARDINALITY_TIGHTENED",
+   "approved_by": "ontology-migration-v3",
+   "at": "2026-11-20",
+   "reason": "schema v3 迁移：这些历史链接原先未声明基数（语义等价 many_to_many），v3 按业务语义显式声明为 one_to_one / one_to_many / many_to_one。收紧是真实变更；证据仅为种子数据回放通过（行数有限），生产存量必须另行回放 engine._check_cardinality 后才算确认。"
+  },
+  {
+   "path": "relations[invoice_billed_to_shipper].cardinality",
+   "code": "RELATION_CARDINALITY_TIGHTENED",
+   "approved_by": "ontology-migration-v3",
+   "at": "2026-11-20",
+   "reason": "schema v3 迁移：这些历史链接原先未声明基数（语义等价 many_to_many），v3 按业务语义显式声明为 one_to_one / one_to_many / many_to_one。收紧是真实变更；证据仅为种子数据回放通过（行数有限），生产存量必须另行回放 engine._check_cardinality 后才算确认。"
+  },
+  {
+   "path": "relations[order_generates_waybill].cardinality",
+   "code": "RELATION_CARDINALITY_TIGHTENED",
+   "approved_by": "ontology-migration-v3",
+   "at": "2026-11-20",
+   "reason": "schema v3 迁移：这些历史链接原先未声明基数（语义等价 many_to_many），v3 按业务语义显式声明为 one_to_one / one_to_many / many_to_one。收紧是真实变更；证据仅为种子数据回放通过（行数有限），生产存量必须另行回放 engine._check_cardinality 后才算确认。"
+  },
+  {
+   "path": "relations[order_has_cargo].cardinality",
+   "code": "RELATION_CARDINALITY_TIGHTENED",
+   "approved_by": "ontology-migration-v3",
+   "at": "2026-11-20",
+   "reason": "schema v3 迁移：这些历史链接原先未声明基数（语义等价 many_to_many），v3 按业务语义显式声明为 one_to_one / one_to_many / many_to_one。收紧是真实变更；证据仅为种子数据回放通过（行数有限），生产存量必须另行回放 engine._check_cardinality 后才算确认。"
+  },
+  {
+   "path": "relations[order_has_quote].cardinality",
+   "code": "RELATION_CARDINALITY_TIGHTENED",
+   "approved_by": "ontology-migration-v3",
+   "at": "2026-11-20",
+   "reason": "schema v3 迁移：这些历史链接原先未声明基数（语义等价 many_to_many），v3 按业务语义显式声明为 one_to_one / one_to_many / many_to_one。收紧是真实变更；证据仅为种子数据回放通过（行数有限），生产存量必须另行回放 engine._check_cardinality 后才算确认。"
+  },
+  {
+   "path": "relations[quote_contains_item].cardinality",
+   "code": "RELATION_CARDINALITY_TIGHTENED",
+   "approved_by": "ontology-migration-v3",
+   "at": "2026-11-20",
+   "reason": "schema v3 迁移：这些历史链接原先未声明基数（语义等价 many_to_many），v3 按业务语义显式声明为 one_to_one / one_to_many / many_to_one。收紧是真实变更；证据仅为种子数据回放通过（行数有限），生产存量必须另行回放 engine._check_cardinality 后才算确认。"
+  },
+  {
+   "path": "relations[quote_item_priced_by_rule].cardinality",
+   "code": "RELATION_CARDINALITY_TIGHTENED",
+   "approved_by": "ontology-migration-v3",
+   "at": "2026-11-20",
+   "reason": "schema v3 迁移：这些历史链接原先未声明基数（语义等价 many_to_many），v3 按业务语义显式声明为 one_to_one / one_to_many / many_to_one。收紧是真实变更；证据仅为种子数据回放通过（行数有限），生产存量必须另行回放 engine._check_cardinality 后才算确认。"
+  },
+  {
+   "path": "relations[settlement_generates_invoice].cardinality",
+   "code": "RELATION_CARDINALITY_TIGHTENED",
+   "approved_by": "ontology-migration-v3",
+   "at": "2026-11-20",
+   "reason": "schema v3 迁移：这些历史链接原先未声明基数（语义等价 many_to_many），v3 按业务语义显式声明为 one_to_one / one_to_many / many_to_one。收紧是真实变更；证据仅为种子数据回放通过（行数有限），生产存量必须另行回放 engine._check_cardinality 后才算确认。"
+  },
+  {
+   "path": "relations[shipper_places_order].cardinality",
+   "code": "RELATION_CARDINALITY_TIGHTENED",
+   "approved_by": "ontology-migration-v3",
+   "at": "2026-11-20",
+   "reason": "schema v3 迁移：这些历史链接原先未声明基数（语义等价 many_to_many），v3 按业务语义显式声明为 one_to_one / one_to_many / many_to_one。收紧是真实变更；证据仅为种子数据回放通过（行数有限），生产存量必须另行回放 engine._check_cardinality 后才算确认。"
+  },
+  {
+   "path": "relations[waybill_assigned_to_driver].cardinality",
+   "code": "RELATION_CARDINALITY_TIGHTENED",
+   "approved_by": "ontology-migration-v3",
+   "at": "2026-11-20",
+   "reason": "schema v3 迁移：这些历史链接原先未声明基数（语义等价 many_to_many），v3 按业务语义显式声明为 one_to_one / one_to_many / many_to_one。收紧是真实变更；证据仅为种子数据回放通过（行数有限），生产存量必须另行回放 engine._check_cardinality 后才算确认。"
+  },
+  {
+   "path": "relations[waybill_has_exception].cardinality",
+   "code": "RELATION_CARDINALITY_TIGHTENED",
+   "approved_by": "ontology-migration-v3",
+   "at": "2026-11-20",
+   "reason": "schema v3 迁移：这些历史链接原先未声明基数（语义等价 many_to_many），v3 按业务语义显式声明为 one_to_one / one_to_many / many_to_one。收紧是真实变更；证据仅为种子数据回放通过（行数有限），生产存量必须另行回放 engine._check_cardinality 后才算确认。"
+  },
+  {
+   "path": "relations[waybill_has_track].cardinality",
+   "code": "RELATION_CARDINALITY_TIGHTENED",
+   "approved_by": "ontology-migration-v3",
+   "at": "2026-11-20",
+   "reason": "schema v3 迁移：这些历史链接原先未声明基数（语义等价 many_to_many），v3 按业务语义显式声明为 one_to_one / one_to_many / many_to_one。收紧是真实变更；证据仅为种子数据回放通过（行数有限），生产存量必须另行回放 engine._check_cardinality 后才算确认。"
+  },
+  {
+   "path": "relations[waybill_produces_fee].cardinality",
+   "code": "RELATION_CARDINALITY_TIGHTENED",
+   "approved_by": "ontology-migration-v3",
+   "at": "2026-11-20",
+   "reason": "schema v3 迁移：这些历史链接原先未声明基数（语义等价 many_to_many），v3 按业务语义显式声明为 one_to_one / one_to_many / many_to_one。收紧是真实变更；证据仅为种子数据回放通过（行数有限），生产存量必须另行回放 engine._check_cardinality 后才算确认。"
+  },
+  {
+   "path": "relations[waybill_uses_vehicle].cardinality",
+   "code": "RELATION_CARDINALITY_TIGHTENED",
+   "approved_by": "ontology-migration-v3",
+   "at": "2026-11-20",
+   "reason": "schema v3 迁移：这些历史链接原先未声明基数（语义等价 many_to_many），v3 按业务语义显式声明为 one_to_one / one_to_many / many_to_one。收紧是真实变更；证据仅为种子数据回放通过（行数有限），生产存量必须另行回放 engine._check_cardinality 后才算确认。"
+  }
+ ]
+}

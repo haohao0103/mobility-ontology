@@ -36,12 +36,12 @@
 | P-01 | 类型声明与元数据 | Object Type / Property / Link Type 一等公民，含 API 名、主键、标题属性、状态、显示元数据、数据源绑定 | [semantic_layer.json](../freight/semantic_layer.json) 已有 18 类 / 28 关系，含 key、属性白名单、状态枚举；JSON Schema 待 P0-02，Owner 与 iri 待 P0-03 | Neo4j Ontology Graph Spec、LinkML | 小 | **拼装**：二选一作为 canonical，生成 JSON Schema |
 | P-02 | 状态、Interfaces 与多态 | 类型支持 experimental/active/deprecated；Interfaces 声明共享属性，多类型实现，可按接口检索 | 类级 `status` / `interfaces` 待 P1-13；`object_type_search` 默认过滤 deprecated 未实现 | LinkML abstract/mixin | 中 | **拼装声明层 + 自研运行时** |
 | P-03 | 版本与分支 | 本体版本、分支、变更集、发布与回滚；对象数据侧另有分支 | `freight/releases/` 已有 demo 快照；正式快照与回滚待 P0-09；无分支、无变更集 | TerminusDB（git 式版本）、git + 不可变快照 | 大 | **引入 git/快照 + 自研变更集语义**；不引入 TerminusDB 作存储 |
-| P-04 | 对象物化与索引（OSv2） | 对象按 schema 物化，增量索引，多索引（搜索/聚合/地理），索引一致性有保证，对象集合服务直接查索引 | `storage_policy: knowledge-only`，事实经 MCP 现查 SQLite / Connector / HugeGraph；无物化、无索引 | 无等价物；PG + Elasticsearch/Vespa 可拼 | 大 | **暂缓全量 OSv2**；先做轻量对象投影（见 3.1） |
+| P-04 | 对象物化与索引（OSv2） | 对象按 schema 物化，增量索引，多索引（搜索/聚合/地理），索引一致性有保证，对象集合服务直接查索引 | **已落地轻量档（v3.1）**：`freight/projection.py` 属性级行式投影 `object_props` + 数值/字符串双索引 + 增量状态计数；查询引擎用投影收窄候选集后逐行复算；`is_fresh()` 闸门（不新鲜整条回退全表）+ `consistency()` 全量比对。**缺**：跨表物化视图、地理索引、聚合预计算、自适应查询计划 | 无等价物；PG + Elasticsearch/Vespa 可拼 | 大 | **暂缓全量 OSv2**；轻量投影已落地，其余按 3.1 触发条件再上 |
 | P-05 | Object Set 与 search-around | Object Set Service：filter / pivot / search-around / aggregate / 分页；对象集合可作为后续操作的输入 | 已有基于锚点的 `search_around`（[fact_mcp.py](../freight/fact_mcp.py)）；`object_set.py`、`object_set_id`、`next_page_token` 待 P0-15；无完整集合代数 | 无统一实现；图库 + 搜索引擎拼装 | 中 | **自研语义 + 拼装存储与检索** |
 | P-06 | Action Type 定义（收敛为只读提议） | 参数 schema、必填与类型、submission criteria、表单与规则、权限；Action Type 是一等公民 | 仅有 `actions_for` 按类型与状态返回可用动作（15 个）；`action_preflight` 已有原型；无参数 schema、无提交条件、无统一提议契约 | 无 | 中 | **自研（只读提议）**：声明 + preflight，不做 apply |
 | P-07 | Action 应用与副作用 | applyAction / batch apply、前置校验、edits（增删改对象与链接）、副作用（通知 / webhook / 触发器）、action log 审计、幂等 | 当前无 apply、无 edits、无副作用；审计仅有证据/预检的部分能力 | 无本体级 | — | **暂缓**：本项目不做写回，仅保留只读 preflight 与审计 |
 | P-08 | Functions | 类型化函数运行时，输入输出绑定本体类型，支持 function-backed actions，供 Workshop / AIP 调用 | 已有 4 个确定性函数（fee_breakdown、quote_reconcile、evidence_chain、action_preflight），未类型化、未注册为运行时 | 无本体专用；任意沙箱/serverless 可承载 | 中 | **自研类型绑定 + 引入沙箱执行** |
-| P-09 | 强制访问控制 | markings（组织 / 分级 / 隔舱 / need-to-know）+ 行级 / 列级权限 + 标记沿数据传播继承 + 拒绝审计 | 对象类型组过滤待 P0-16；无 markings、无行级/列级、无传播继承 | OpenFGA（ReBAC）、OPA / Cedar（ABAC/PBAC）；无 marking 传播模型 | 大 | **引入授权引擎骨架 + 自研 marking 传播** |
+| P-09 | 强制访问控制 | markings（组织 / 分级 / 隔舱 / need-to-know）+ 行级 / 列级权限 + 标记沿数据传播继承 + 拒绝审计 | **已落地（v3.1）**：markings 四类 + 行级 `object_security_policies` + 列级 `property_security_policies` + **传播继承**（`marking_trace()`：数据源级 / 类级 → 对象，行级要求持有全部标记）+ `deny_reason()` 拒绝原因 + `guard_output()` Agent 输出闸 + scope token 工具面过滤。**边界**：属性 marking 只管列（置 null），不提升为整行不可见 | OpenFGA（ReBAC）、OPA / Cedar（ABAC/PBAC）；无 marking 传播模型 | 大 | **自研 marking 传播已完成**；授权引擎骨架（OpenFGA/OPA）仍未引入 |
 | P-10 | Lineage | 数据源 → 对象 → 动作 → 消费的全链路血缘，可按对象类型/属性追溯 | `evidence_chain` 与证据/审计部分实现（P1-05）；无系统级 lineage | OpenLineage / Marquez（数据级） | 中 | **引入 OpenLineage 采集 + 自研本体级映射** |
 | P-11 | OSDK / Ontology API | 由本体生成类型化 SDK（TS/Python/Java）+ REST/GraphQL API | FastAPI + MCP 工具面；无由本体生成的类型化 SDK | LinkML generators、OpenAPI 生成器 | 中 | **拼装**：canonical schema → 类型与 SDK 生成 |
 | P-12 | Agent 工具面 | 对象、动作、函数统一作为 AIP 工具，带权限、可评测、可观测 | `catalog` + `object_type_search` + `describe` + MCP 事实查询 + 证据链已成型（P0-13 收口）；无工具级权限与评测集 | MCP 生态；无本体工具治理 | 中 | **自研**：工具注册、权限、评测、token 预算检索 |
@@ -83,6 +83,12 @@
 - OpenFGA 可提供 ReBAC 骨架（对象/类型/关系级授权）；
 - OPA / Cedar 可提供策略求值；
 - 但 **markings 的继承与传播**（数据源 → 对象 → 属性 → Agent 输出）没有开源实现，必须自研，并作为 P-06 提议校验与 P-12 工具过滤的共同底座。
+
+**v3.1 落地状态**：传播已自研完成（`enhancements/security.py::marking_trace` /
+`guard_output`），声明式配置在 `ontology_extension.json` 的
+`data_source_markings` / `class_markings`。OpenFGA / OPA 仍未引入——
+当前策略面小（3 标记 / 1 行级 / 2 列级 / 1 数据源），自研成本低于接入成本；
+策略条数上到几十条再评估。
 
 ## 4. 拼装清单汇总
 

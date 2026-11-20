@@ -28,7 +28,8 @@ class EnhancedSystem:
                                   base_property_types=system.sem.raw.get("property_types"))
         self.properties = PropertyRegistry(self.ext)
         self.interfaces = InterfaceRegistry(self.ext)
-        self.security = SecurityEngine(self.ext)
+        self.security = SecurityEngine(self.ext,
+                                       data_sources=system.sem.data_sources)
         self.functions = FunctionRegistry(self.ext, self.security, self.interfaces)
         self.usage = UsageGraph(self.ext, system.sem.raw)
         self.store = system.facts.store

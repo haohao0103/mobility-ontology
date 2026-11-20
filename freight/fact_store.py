@@ -10,6 +10,8 @@ import json
 import sqlite3
 import threading
 
+from freight import projection
+
 # 并发模型（对标 Palantir 服务端多租户的降级实现，P0-3）：
 # - 写路径：单一写连接 + api 层写锁串行（SQLite 单写者约束）
 # - 读路径：WAL 模式下每线程独立只读连接，读写互不阻塞
@@ -93,15 +95,30 @@ class FactStore:
         except sqlite3.OperationalError:
             pass
         conn.executescript(SCHEMA)
+        # 投影表与源表同生命周期：建表放在同一处，避免「老库没有投影表」这类
+        # 只在生产环境出现的分叉。
+        conn.executescript(projection.PROJECTION_SCHEMA)
+        # 老库首次升级 / 绕过写入口改库后的自愈：状态计数与实际不符就全量重建。
+        # 不重建的后果不是报错而是静默返回空集，比报错危险得多。
+        try:
+            if not projection.is_fresh(conn):
+                projection.sync_all(conn)
+                conn.commit()
+        except sqlite3.Error:
+            pass
         self._read_local = threading.local()
+        # 最近一次写操作的线程；只有它能借写连接读未提交数据
+        self._write_thread: int | None = None
 
     def _read_conn(self) -> sqlite3.Connection:
         """线程本地只读连接；WAL 模式下读写不互斥。
 
-        写事务进行中（conn.in_transaction）时回落到写连接：
-        同一事务内的读写必须看到未提交数据（seed/复合写流程依赖此语义）。
+        **只有写事务的发起线程**才回落到写连接：同一事务内的读写必须看到未提交
+        数据（seed / 复合写流程依赖此语义）。其他线程即使在写事务进行中，也必须
+        用独立只读连接——把写连接借给别的线程会直接撞
+        "bad parameter or other API misuse"，这是 SQLite 连接不可跨线程共享的硬约束。
         """
-        if self.conn.in_transaction:
+        if self.conn.in_transaction and threading.get_ident() == self._write_thread:
             return self.conn
         c = getattr(self._read_local, "conn", None)
         if c is None:
@@ -130,19 +147,31 @@ class FactStore:
 
     def insert_object(self, object_id: str, type_id: str, name: str,
                       status: str | None, props: dict, at: str) -> None:
+        self._write_thread = threading.get_ident()
         self.conn.execute(
             "INSERT OR REPLACE INTO objects(object_id,type,name,status,props,created_at,updated_at) "
             "VALUES (?,?,?,?,?,?,?)",
             (object_id, type_id, name, status, json.dumps(props, ensure_ascii=False), at, at),
         )
+        projection.sync_object(self.conn, object_id)
 
     def update_object(self, object_id: str, props: dict, name: str | None,
                       status: str | None, at: str) -> None:
+        self._write_thread = threading.get_ident()
         self.conn.execute(
             "UPDATE objects SET props=?, name=COALESCE(?,name), status=?, updated_at=? "
             "WHERE object_id=?",
             (json.dumps(props, ensure_ascii=False), name, status, at, object_id),
         )
+        projection.sync_object(self.conn, object_id)
+
+    def projection_is_fresh(self) -> bool:
+        """投影新鲜度（用线程本地只读连接判定）。
+
+        不能用 self.conn：那是单写连接，读线程直接用它会和在写的线程抢同一个
+        sqlite3 连接，报 "bad parameter or other API misuse"。
+        """
+        return projection.is_fresh(self._read_conn())
 
     def get_row(self, object_id: str) -> dict | None:
         return self.one("SELECT * FROM objects WHERE object_id=?", (object_id,))
@@ -150,6 +179,7 @@ class FactStore:
     def add_relation(self, subject_id: str, predicate: str, object_id: str,
                      subject_type: str, object_type: str,
                      at: str, source_system: str = "ontology") -> None:
+        self._write_thread = threading.get_ident()
         self.conn.execute(
             """INSERT INTO relations
                (subject_id,predicate,object_id,subject_type,object_type,source_system,
@@ -161,6 +191,7 @@ class FactStore:
 
     def close_relation(self, subject_id: str, predicate: str, at: str,
                        keep_object_id: str | None = None) -> int:
+        self._write_thread = threading.get_ident()
         sql = ("UPDATE relations SET valid_to=? WHERE subject_id=? AND predicate=? "
                "AND valid_to IS NULL")
         args: list = [at, subject_id, predicate]
@@ -172,6 +203,7 @@ class FactStore:
     def add_evidence(self, evidence_id: str, object_id: str, evidence_type: str,
                      source_system: str, occurred_at: str, version: str,
                      summary: str, payload: dict, checksum: str) -> None:
+        self._write_thread = threading.get_ident()
         self.conn.execute(
             """INSERT OR REPLACE INTO evidence
                (evidence_id,object_id,evidence_type,source_system,occurred_at,version,summary,payload,checksum)
@@ -182,6 +214,7 @@ class FactStore:
 
     def add_event(self, object_id: str, event_type: str, occurred_at: str,
                   actor: str, payload: dict | None = None) -> None:
+        self._write_thread = threading.get_ident()
         self.conn.execute(
             "INSERT INTO events(object_id,event_type,occurred_at,actor,payload) VALUES (?,?,?,?,?)",
             (object_id, event_type, occurred_at, actor,
@@ -191,6 +224,7 @@ class FactStore:
     def add_audit(self, occurred_at: str, actor: str, role: str, action_id: str,
                   object_id: str, decision: str, idempotency_key: str | None,
                   request: dict, result: dict) -> int:
+        self._write_thread = threading.get_ident()
         cur = self.conn.execute(
             """INSERT INTO audit
                (occurred_at,actor,role,action_id,object_id,decision,idempotency_key,request,result)

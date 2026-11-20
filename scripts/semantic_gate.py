@@ -943,6 +943,75 @@ def _deep_predicate(depth: int) -> dict:
     return node
 
 
+def check_state_machines(root: str) -> dict:
+    """P2-4：状态机完备性——状态的来源与归宿说得清，终态不得再有迁出边。
+
+    迁移边真源在动作的 from_status/to_status；状态机声明（顶层 state_machines）
+    补的是「起点 / 终态 / 外部可写状态」。判据内核在
+    `SemanticLayer.validate_state_machines()`，本函数负责跑一遍 + 用四条负向
+    用例证明判据真的会拦（不拦就是装饰）。
+    """
+    target = "freight/semantic_layer.json#state_machines"
+    item: dict = {"target": target, "ok": True, "issues": []}
+    layer_path = os.path.join(root, "freight", "semantic_layer.json")
+    sem = SemanticLayer(layer_path)
+    for iss in sem.validate_state_machines():
+        if iss.get("severity") == "info":
+            continue
+        item["ok"] = False
+        item["issues"].append({"code": iss["code"], "path": iss["path"],
+                               "message": iss["message"]})
+
+    def _mutate_drop_decl(raw):
+        raw.get("state_machines", {}).pop("Waybill", None)
+        return raw
+
+    def _mutate_bad_terminal(raw):
+        raw["state_machines"]["Waybill"]["terminal"] = ["ACCEPTED"]
+        return raw
+
+    def _mutate_unknown_state(raw):
+        raw["state_machines"]["Waybill"]["initial"] = ["NOT_A_STATUS"]
+        return raw
+
+    def _mutate_orphan_decl(raw):
+        raw["state_machines"]["Ghost"] = {"initial": [], "terminal": [],
+                                          "external_states": []}
+        return raw
+
+    negatives = [
+        ("有动作却不声明状态机", _mutate_drop_decl, "STATE_MACHINE_UNDECLARED"),
+        ("终态仍有迁出边", _mutate_bad_terminal, "STATE_MACHINE_TERMINAL_HAS_OUTGOING"),
+        ("声明含不存在的状态", _mutate_unknown_state, "STATE_MACHINE_DECL_INVALID"),
+        ("无动作却声明状态机", _mutate_orphan_decl, "STATE_MACHINE_ORPHAN_DECL"),
+    ]
+    with open(layer_path, encoding="utf-8") as f:
+        base_raw = json.load(f)
+    for label, mutate, expect_code in negatives:
+        bad_raw = mutate(json.loads(json.dumps(base_raw)))
+        tmp = os.path.join(root, "logs", ".state_machine_negative.json")
+        os.makedirs(os.path.dirname(tmp), exist_ok=True)
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(bad_raw, f, ensure_ascii=False)
+        try:
+            bad_sem = SemanticLayer(tmp)
+            codes = {i["code"] for i in bad_sem.validate_state_machines()}
+        except Exception as exc:  # noqa: BLE001 - 负向用例崩了也算没拦住
+            codes = set()
+            item["issues"].append({
+                "code": "STATE_MACHINE_NEGATIVE_CRASH", "path": target,
+                "message": f"负向用例执行异常: {exc}"})
+        finally:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+        if expect_code not in codes:
+            item["ok"] = False
+            item["issues"].append({
+                "code": "STATE_MACHINE_NEGATIVE_LEAKED", "path": target,
+                "message": f"负向用例未被拦截（期望 {expect_code}）: {label}"})
+    return item
+
+
 def main() -> int:
     results = [check_schema(CURRENT, "freight/semantic_layer.json")]
     results.append(check_metadata(CURRENT, "freight/semantic_layer.json"))
@@ -959,6 +1028,7 @@ def main() -> int:
     results.append(check_policy_strict(ROOT))
     results.append(check_display_metadata(ROOT))
     results.append(check_breaking_changes(ROOT))
+    results.append(check_state_machines(ROOT))
     results.append(check_query_schema(ROOT))
     for manifest in list_manifests():
         version = manifest["version"]
@@ -1014,6 +1084,7 @@ def main() -> int:
         "property_policy": "enhancements/ontology_extension.json#policy",
         "display_metadata": "freight/semantic_layer.json#display",
         "breaking_changes": "freight/semantic_layer.json#breaking",
+        "state_machines": "freight/semantic_layer.json#state_machines",
     }
     coverage = {
         name: {"target": target, "ok": bool(by_target.get(target))}

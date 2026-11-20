@@ -2054,6 +2054,15 @@ class FreightSystem:
         }
 
     # ------------------------------------------------------------------ 追溯
+    def state_history(self, object_id: str) -> dict:
+        """对象状态轨迹（实现见事实层 facts.state_history，REST/MCP 共用一份）。"""
+        return self.facts.state_history(object_id)
+
+    def state_machine(self, type_id: str | None = None,
+                      object_id: str | None = None) -> dict:
+        """状态机视图（实现见事实层 facts.state_machine）。"""
+        return self.facts.state_machine(type_id, object_id)
+
     def trace(self, object_id: str) -> dict:
         detail = self.get_object(object_id)
         events = self.facts.all(
@@ -2169,10 +2178,32 @@ class FreightSystem:
                 raise BusinessReject(
                     view["blocked_reason"] or "动作前置条件不满足", "RULE_REJECTED",
                     {"blockers": view["blockers"]})
-            for param in action.get("params", []):
-                if param.get("required") and payload.get(param["name"]) in (None, ""):
+            params = action.get("params", [])
+            declared = {p["name"] for p in params}
+            unknown = sorted(set(payload) - declared)
+            if unknown:
+                # 未声明参数一律拒收：动作参数是本体声明的契约，多塞一个键
+                # 意味着调用方以为它生效了——那种"静默接受"比报错难查得多。
+                raise BusinessReject(
+                    f"未声明的参数: {', '.join(unknown)}；「{action['label']}」只接受 "
+                    f"{', '.join(sorted(declared)) or '（无参数）'}",
+                    "PARAM_UNKNOWN")
+            for param in params:
+                value = payload.get(param["name"])
+                if param.get("required") and value in (None, ""):
                     raise BusinessReject(
-                        f"缺少必填参数: {param['label']} ({param['name']})", "VALIDATION_ERROR")
+                        f"缺少必填参数: {param['label']} ({param['name']})",
+                        "VALIDATION_ERROR")
+                if value in (None, ""):
+                    continue
+                # 类型口径与函数参数一致（同一个 SemanticLayer._type_ok），
+                # 动作与函数不能各判各的。
+                ptype = param.get("type", "string")
+                if not self.sem._type_ok(ptype, value):
+                    raise BusinessReject(
+                        f"参数 {param['label']} ({param['name']}) 类型不符："
+                        f"声明 {ptype}，实际 {type(value).__name__}（{value!r:.40}）",
+                        "VALIDATION_ERROR")
 
             result = self._apply_action(action, row, props, actor, role, payload, at)
             evidence = self._record_action_evidence(

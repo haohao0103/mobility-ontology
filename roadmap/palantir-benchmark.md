@@ -1,8 +1,9 @@
 # Palantir 能力对标矩阵（Ontology 基准）
 
-> 状态：Draft（待评审）
-> 版本：0.3
-> 更新：2026-11-19
+> 状态：**v3.2 实测基线**（2026-11-20 逐条复核代码，非沿用上版描述）
+> 版本：0.4
+> 更新：2026-11-20
+> 复核方式：每条「本项目现状」都能在代码里指出文件与行；门禁 25 项 / 承重实验 18 条为证
 > 基准对象：Palantir Foundry / AIP Ontology
 > 适用项目：`freight`、`mobility`、`profile_ai` 及后续业务域
 > 配套文档：[roadmap/README.md](README.md)、[plan/README.md](../plan/README.md)
@@ -33,19 +34,19 @@
 
 | ID | 能力项 | Palantir 基准行为 | 本项目现状 | 开源候选 | 差距 | 结论 |
 |---|---|---|---|---|---|---|
-| P-01 | 类型声明与元数据 | Object Type / Property / Link Type 一等公民，含 API 名、主键、标题属性、状态、显示元数据、数据源绑定 | [semantic_layer.json](../freight/semantic_layer.json) 已有 18 类 / 28 关系，含 key、属性白名单、状态枚举；JSON Schema 待 P0-02，Owner 与 iri 待 P0-03 | Neo4j Ontology Graph Spec、LinkML | 小 | **拼装**：二选一作为 canonical，生成 JSON Schema |
-| P-02 | 状态、Interfaces 与多态 | 类型支持 experimental/active/deprecated；Interfaces 声明共享属性，多类型实现，可按接口检索 | 类级 `status` / `interfaces` 待 P1-13；`object_type_search` 默认过滤 deprecated 未实现 | LinkML abstract/mixin | 中 | **拼装声明层 + 自研运行时** |
-| P-03 | 版本与分支 | 本体版本、分支、变更集、发布与回滚；对象数据侧另有分支 | `freight/releases/` 已有 demo 快照；正式快照与回滚待 P0-09；无分支、无变更集 | TerminusDB（git 式版本）、git + 不可变快照 | 大 | **引入 git/快照 + 自研变更集语义**；不引入 TerminusDB 作存储 |
+| P-01 | 类型声明与元数据 | Object Type / Property / Link Type 一等公民，含 API 名、主键、标题属性、状态、显示元数据、数据源绑定 | **v3.1 已落地**：[semantic_layer.json](../freight/semantic_layer.json) 500 类 / 503 链接 / 1961 属性注册表（类×属性 3527 组合 0 未注册）；每类带 `rid`（不可变）+ `plural_display_name` + `display_metadata`（icon/color/visibility/category）+ `iri` + `owner` + `key` + `statuses`；`id` 承担 API 名语义（不另设 `api_name`，避免三源真相）。**缺**：标题属性（title property）无显式声明；类级生命周期 status（experimental/active/deprecated）无 | Neo4j Ontology Graph Spec、LinkML | 小 | **拼装**：二选一作为 canonical，生成 JSON Schema |
+| P-02 | 状态、Interfaces 与多态 | 类型支持 experimental/active/deprecated；Interfaces 声明共享属性，多类型实现，可按接口检索 | **状态机已升为独立层（v3.2）**：顶层 `state_machines` 声明（initial / terminal / external_states），迁移边真源仍在动作 `from_status→to_status`；`SemanticLayer.state_machine()` 出机器图（迁移边带稳定 id `transition:<Type>:<action>`、可达集、外部状态），`validate_state_machines()` 六类完备性判据（来源不明 / 归宿不明 / 终态有迁出边 / 边引用非法状态 / 有动作未声明 / 无动作却声明），门禁第 25 项含 4 条负向用例；REST `/ontology/state-machines`、`/objects/{id}/state-history` + MCP 原语 `ontology.state_machine`。执行侧早已强制（`engine._action_view` INVALID_STATE + 规则阻断 RULE_BLOCKED）。**Interfaces**：显式 `implements` + `property_map` 优先，3 个接口 / 33 个实现，谎报实现由 `IFACE_UNIMPLEMENTED` 拦。**缺**：类级生命周期 status；deprecated 过滤（仅属性级有告警）；标题属性 | LinkML abstract/mixin | 小 | **声明层拼装 + 运行时自研（状态机/接口均已落地）** |
+| P-03 | 版本与分支 | 本体版本、分支、变更集、发布与回滚；对象数据侧另有分支 | `freight/releases/` 快照 + checksum 校验（门禁逐个快照跑 schema/规则/SHACL）+ `tools/proposal.py` 分支评审 + `freight/change_gate.py` 破坏性变更分类与逐条签字（`breaking_approvals.json` 16 条）。**缺**：无对象数据侧分支、无变更集、无一键回滚 | TerminusDB（git 式版本）、git + 不可变快照 | 大 | **引入 git/快照 + 自研变更集语义**；不引入 TerminusDB 作存储 |
 | P-04 | 对象物化与索引（OSv2） | 对象按 schema 物化，增量索引，多索引（搜索/聚合/地理），索引一致性有保证，对象集合服务直接查索引 | **已落地轻量档（v3.1）**：`freight/projection.py` 属性级行式投影 `object_props` + 数值/字符串双索引 + 增量状态计数；查询引擎用投影收窄候选集后逐行复算；`is_fresh()` 闸门（不新鲜整条回退全表）+ `consistency()` 全量比对。**缺**：跨表物化视图、地理索引、聚合预计算、自适应查询计划 | 无等价物；PG + Elasticsearch/Vespa 可拼 | 大 | **暂缓全量 OSv2**；轻量投影已落地，其余按 3.1 触发条件再上 |
-| P-05 | Object Set 与 search-around | Object Set Service：filter / pivot / search-around / aggregate / 分页；对象集合可作为后续操作的输入 | 已有基于锚点的 `search_around`（[fact_mcp.py](../freight/fact_mcp.py)）；`object_set.py`、`object_set_id`、`next_page_token` 待 P0-15；无完整集合代数 | 无统一实现；图库 + 搜索引擎拼装 | 中 | **自研语义 + 拼装存储与检索** |
-| P-06 | Action Type 定义（收敛为只读提议） | 参数 schema、必填与类型、submission criteria、表单与规则、权限；Action Type 是一等公民 | 仅有 `actions_for` 按类型与状态返回可用动作（15 个）；`action_preflight` 已有原型；无参数 schema、无提交条件、无统一提议契约 | 无 | 中 | **自研（只读提议）**：声明 + preflight，不做 apply |
-| P-07 | Action 应用与副作用 | applyAction / batch apply、前置校验、edits（增删改对象与链接）、副作用（通知 / webhook / 触发器）、action log 审计、幂等 | 当前无 apply、无 edits、无副作用；审计仅有证据/预检的部分能力 | 无本体级 | — | **暂缓**：本项目不做写回，仅保留只读 preflight 与审计 |
-| P-08 | Functions | 类型化函数运行时，输入输出绑定本体类型，支持 function-backed actions，供 Workshop / AIP 调用 | 已有 4 个确定性函数（fee_breakdown、quote_reconcile、evidence_chain、action_preflight），未类型化、未注册为运行时 | 无本体专用；任意沙箱/serverless 可承载 | 中 | **自研类型绑定 + 引入沙箱执行** |
+| P-05 | Object Set 与 search-around | Object Set Service：filter / pivot / search-around / aggregate / 分页；对象集合可作为后续操作的输入 | **v3.1 已有**：`freight/object_query.py` Object Set DSL（`from/where/$eq/$in/$gt/$lt/$or` + 字段选择 + 排序 + 分页 + `next_page_token` + `object_set_id`）、`search_around`（多跳 + 关系过滤）、`aggregate`、`ontology.sql` 编译到查询树 IR（对标 Ontology SQL）。**缺**：pivot / 完整集合代数 / 跨源 join | 无统一实现；图库 + 搜索引擎拼装 | 中 | **自研语义 + 拼装存储与检索** |
+| P-06 | Action Type 定义 | 参数 schema、必填与类型、submission criteria、表单与规则、权限；Action Type 是一等公民 | **v3.2 已落地**：15 个动作声明 `params`（name/label/type/required，9 个带参）+ `from_status→to_status` 前置状态 + `roles`；执行侧 `engine.execute_action` 校验必填、**按 `type` 校验标量类型**（与属性写入同一份 `SemanticLayer._type_ok`）并**拒收未声明参数**（`PARAM_UNKNOWN`）；`action.plan` 预检返回 blockers 与影响面。**缺**：submission criteria（规则化提交条件）、统一提议契约、表单 | 无 | 中 | **自研**：声明 + preflight 已成；提议契约待补 |
+| P-07 | Action 应用与副作用 | applyAction / batch apply、前置校验、edits（增删改对象与链接）、副作用（通知 / webhook / 触发器）、action log 审计、幂等 | **v3.2 更正（上一版此处写「无 apply、无 edits」是错的）**：`freight/engine.py::execute_action/_apply_action` 已实现 apply —— 前置校验（角色 / 状态 / 规则）、edits（属性写回 + 关系与事件写入）、action log 审计（APPROVED / REJECTED 双写 + 失败回滚）、**幂等键 replay**（`audit_by_key`）、证据记录。**缺**：batch apply、跨对象 edits、webhook / 通知 / 触发器等副作用 | 无本体级 | 中 | **自研 apply 已完成**；批量与副作用暂缓 |
+| P-08 | Functions | 类型化函数运行时，输入输出绑定本体类型，支持 function-backed actions，供 Workshop / AIP 调用 | **v3.1 已类型化**：4 个确定性函数（fee_breakdown、quote_reconcile、evidence_chain、action_preflight）注册在扩展层 `function_registry`，参数走标量类型校验（与属性写入同一判据）、返回值按 `result_types`（FeeBreakdown / QuoteReconcile / FeeBreakdownBatch）校验缺失/多余/类型（`RETURN_FIELD_*`）；`enhancements/sandbox` 子进程 + timeout + 内存限制；`function-backed action` 已有 | 无本体专用；任意沙箱/serverless 可承载 | 小 | **自研类型绑定 + 引入沙箱执行（已成）** |
 | P-09 | 强制访问控制 | markings（组织 / 分级 / 隔舱 / need-to-know）+ 行级 / 列级权限 + 标记沿数据传播继承 + 拒绝审计 | **已落地（v3.1）**：markings 四类 + 行级 `object_security_policies` + 列级 `property_security_policies` + **传播继承**（`marking_trace()`：数据源级 / 类级 → 对象，行级要求持有全部标记）+ `deny_reason()` 拒绝原因 + `guard_output()` Agent 输出闸 + scope token 工具面过滤。**边界**：属性 marking 只管列（置 null），不提升为整行不可见 | OpenFGA（ReBAC）、OPA / Cedar（ABAC/PBAC）；无 marking 传播模型 | 大 | **自研 marking 传播已完成**；授权引擎骨架（OpenFGA/OPA）仍未引入 |
-| P-10 | Lineage | 数据源 → 对象 → 动作 → 消费的全链路血缘，可按对象类型/属性追溯 | `evidence_chain` 与证据/审计部分实现（P1-05）；无系统级 lineage | OpenLineage / Marquez（数据级） | 中 | **引入 OpenLineage 采集 + 自研本体级映射** |
-| P-11 | OSDK / Ontology API | 由本体生成类型化 SDK（TS/Python/Java）+ REST/GraphQL API | FastAPI + MCP 工具面；无由本体生成的类型化 SDK | LinkML generators、OpenAPI 生成器 | 中 | **拼装**：canonical schema → 类型与 SDK 生成 |
-| P-12 | Agent 工具面 | 对象、动作、函数统一作为 AIP 工具，带权限、可评测、可观测 | `catalog` + `object_type_search` + `describe` + MCP 事实查询 + 证据链已成型（P0-13 收口）；无工具级权限与评测集 | MCP 生态；无本体工具治理 | 中 | **自研**：工具注册、权限、评测、token 预算检索 |
-| P-13 | Ontology Manager / 变更治理 | 图形化编辑、审批流、变更预览、影响面分析、冲突检测 | JSON + Git PR + CI（规划中）；无 UI、无影响面分析 | 无等价；Git + CI + schema diff 可拼 | 中 | **拼装 Git/CI + 自研影响面分析**（UI 可暂缓） |
+| P-10 | Lineage | 数据源 → 对象 → 动作 → 消费的全链路血缘，可按对象类型/属性追溯 | 已有 `evidence_chain` 函数、`evidence` / `audit` / `events` 三张表与 `usage_graph` 反向引用（类被谁引用）；**v3.2 增补对象状态轨迹**（`state_history`，只取状态变更事件）。**缺**：系统级血缘图（数据源 → 对象 → 动作 → 消费），不可按属性追溯 | OpenLineage / Marquez（数据级） | 中 | **引入 OpenLineage 采集 + 自研本体级映射** |
+| P-11 | OSDK / Ontology API | 由本体生成类型化 SDK（TS/Python/Java）+ REST/GraphQL API | **v3.1 已有**：`tools/gen_osdk.py` 由本体生成 TS + Python 强类型客户端（接基础属性注册表，1961 属性不再退化成 `str`；`decimal→Decimal`）；REST 为 FastAPI + MCP 工具面。**缺**：Java SDK、GraphQL | LinkML generators、OpenAPI 生成器 | 小 | **拼装**：canonical schema → 类型与 SDK 生成 |
+| P-12 | Agent 工具面 | 对象、动作、函数统一作为 AIP 工具，带权限、可评测、可观测 | 已成型：本体原语 10 个（catalog / object_type_search / schema / path / query / traverse / search_around / aggregate / sql / **state_machine**）+ 动作 `action.plan` / `action.execute` + 函数；scope token 按令牌裁剪工具面；`guard_output()` 卡 Agent 输出越权。**缺**：工具级评测集与调用观测 | MCP 生态；无本体工具治理 | 中 | **自研**：工具注册、权限、评测、token 预算检索 |
+| P-13 | Ontology Manager / 变更治理 | 图形化编辑、审批流、变更预览、影响面分析、冲突检测 | **v3.1/v3.2 治理内核已有**：JSON + Git + CI 门禁（25 项）+ `freight/change_gate.py`（类/属性/类型/基数/状态机变更分类 + 引用影响回溯：函数/规则/动作/数据源/接口/派生类型/OSDK 生成物）+ 逐条签字（`breaking_approvals.json`，路径完全一致才算）+ `tools/proposal.py` 评审 `verdict`；承重实验 18 条（只改 JSON、代码零改动、行为必变）。**缺**：图形化编辑器、审批流 UI | 无等价；Git + CI + schema diff 可拼 | 小 | **拼装 Git/CI + 自研影响面分析**（UI 可暂缓） |
 
 ## 3. 三个决定性判断
 
@@ -90,6 +91,24 @@
 当前策略面小（3 标记 / 1 行级 / 2 列级 / 1 数据源），自研成本低于接入成本；
 策略条数上到几十条再评估。
 
+### 3.4 状态机（P-02）：迁移边留在动作，声明只补动作说不清的三件事
+
+Palantir 的 Object Type 自带状态机（状态 + 迁移 + 事件），Agent 与工作台都按它渲染。
+本项目的动作本来就带 `from_status→to_status`，缺的不是流转本身，而是**流转之外那三件事**：
+起点是哪些状态、终点是哪些状态、哪些状态是外部系统写的（我们写不出来）。
+
+因此采用**单真源 + 显式补充**：
+
+- **迁移边真源仍在动作**（不把 `from/to` 复制到第二处，避免二源真相）；
+- 顶层 `state_machines` 只声明 `initial` / `terminal` / `external_states`；
+- 完备性判据据此检查：状态**来源**说得清（起点 / 有迁入边 / 外部可写）、
+  状态**归宿**说得清（有迁出边 / 终态 / 外部可写）、终态不得再有迁出边、
+  声明里的状态必须在类的状态集内、有动作必须声明、无动作不许声明；
+- 门禁第 25 项 + 4 条负向用例；视图与轨迹经 REST / MCP 暴露。
+
+代价与收益：代价是每类多写一小段声明（当前 8 类）；收益是"这个对象怎么走"从
+散落在 15 个动作里的隐含知识，变成可查询、可校验、可渲染的一等公民。
+
 ## 4. 拼装清单汇总
 
 ### 4.1 可以拼装或引入（约 30–40% 工作量）
@@ -123,12 +142,16 @@
   - P-09 marking 先做读侧过滤，不阻塞检索，且早于 P-06 提议校验。
 - 具体的任务重排另行产出 gap-driven 执行清单，不在本文件展开。
 
-## 6. 总评
+## 6. 总评（2026-11-20 复核后）
 
 - 开源生态能覆盖的是**声明层、校验层、推理层、SDK 生成层**，约占总工作量的 30–40%；
 - Palantir 真正的护城河是 **OSv2 + Action 运行时 + markings** 三件套的耦合，开源无等价物；
-- 本项目不追求复刻 Action 执行：先做知识存储、检索与使用（P-04 / P-05 / P-12），再做只读判断与提议（P-06），P-07 暂缓；
-- 结论：**拼装上半身，重点投入知识存储 / 检索 / 使用与安全；判断与提议次之；Action 执行不做，物化按触发条件渐进。**
+- **声明层与运行时内核已对齐**：类型三件套（P-01）、状态机（P-02）、动作声明与执行（P-06/P-07）、
+  类型化函数（P-08）、markings 传播（P-09）、OSDK（P-11）、治理内核（P-13）；
+- **平台件仍缺**：OSv2 全量物化（P-04 轻量档）、Object Set 完备代数（P-05）、
+  系统级血缘（P-10）、版本分支与回滚（P-03）、批量动作与副作用（P-07）、工具评测集（P-12）；
+- 结论：**能力声明层与运行时已够用，剩余差距集中在 Foundry 的平台工程量，不在本体方法论。**
+  下一轮优先级：P-10 血缘 → P-03 变更集 → P-05 pivot。
 
 ## 7. 维护规则
 

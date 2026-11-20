@@ -93,24 +93,18 @@ class FunctionRegistry:
 
     @classmethod
     def _scalar_ok(cls, ptype: str, value) -> bool:
-        if value is None:
-            return True
-        if ptype in ("string", "text", "enum"):
-            return isinstance(value, str)
-        if ptype == "integer":
-            return isinstance(value, int) and not isinstance(value, bool)
-        if ptype in ("number", "decimal"):
-            return isinstance(value, (int, float)) and not isinstance(value, bool)
-        if ptype == "boolean":
-            return isinstance(value, bool)
-        if ptype == "date":
-            return isinstance(value, str) and bool(cls.DATE_RE.match(value))
-        if ptype == "timestamp":
-            return isinstance(value, str) and bool(cls.DATETIME_RE.match(value))
-        if ptype == "json":
-            return isinstance(value, (dict, list))
-        # object_set / object_ref 由步骤 4 / object_ref 分支单独判定
-        return True
+        """标量类型校验：与属性写入侧 **同一份判据**（委托，不复制）。
+
+        这里原来自己写了一份，和 `SemanticLayer._type_ok` 对 "timestamp" 与
+        "datetime" 的口径还不一样：属性侧叫 datetime、函数侧叫 timestamp，
+        同一个时间类型两个名字，谁没被枚举覆盖到就悄悄不校验。
+        现在只有一份实现，两个入口调用它。
+        """
+        from freight.semantic import SemanticLayer
+
+        # object_set / object_ref 由步骤 4 / object_ref 分支单独判定，
+        # 这里返回 True 不误杀（与属性侧未知类型放行口径一致）。
+        return SemanticLayer._type_ok(ptype, value)
 
     def validate_signature(self, function_id: str, args: dict) -> list[str]:
         fn = self.ext.function_registry.get(function_id)

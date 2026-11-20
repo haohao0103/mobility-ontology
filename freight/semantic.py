@@ -57,6 +57,13 @@ class SemanticLayer:
             p["name"]: p for p in (self.raw.get("property_types") or [])
             if p.get("name")
         }
+        # 状态机声明（Palantir 式 Object Type 状态机）：
+        # 迁移边（from -> to）真源仍在动作上，状态机声明只补充「起点 / 终点 /
+        # 外部可写状态」这三件动作说不清的事，避免同一份流转写两遍（二源真相）。
+        self.state_machines = {
+            k: v for k, v in (self.raw.get("state_machines") or {}).items()
+            if isinstance(v, dict)
+        }
 
     def class_of(self, type_id: str) -> dict:
         if type_id not in self.classes:
@@ -82,7 +89,10 @@ class SemanticLayer:
             return isinstance(value, bool)
         if value_type == "date":
             return isinstance(value, str) and bool(cls.DATE_RE.match(value))
-        if value_type == "datetime":
+        # "datetime" 与 "timestamp" 指同一件事：属性侧历史上叫 datetime，
+        # 函数参数侧叫 timestamp。两种名字都必须走同一条 ISO 校验 ——
+        # 只认一个名字，等于让另一个名字下的值完全不校验。
+        if value_type in ("datetime", "timestamp"):
             return isinstance(value, str) and bool(cls.DATETIME_RE.match(value))
         if value_type == "json":
             return isinstance(value, (dict, list))
@@ -151,6 +161,158 @@ class SemanticLayer:
             a for a in self.raw["actions"]
             if a["target"] == type_id and (not a.get("from_status") or status in a["from_status"])
         ]
+
+    # ------------------------------------------------------------------ 状态机
+    def _machine_edges(self, type_id: str) -> list[dict]:
+        """该对象类型上的迁移边（真源：动作的 from_status / to_status）。"""
+        edges = []
+        for a in self.raw["actions"]:
+            if a["target"] != type_id:
+                continue
+            to = a.get("to_status")
+            if not to:
+                continue
+            edges.append({
+                "id": f"transition:{type_id}:{a['id']}",
+                "action": a["id"],
+                "label": a.get("label", a["id"]),
+                "from": list(a.get("from_status") or []),
+                "to": to,
+                "roles": list(a.get("roles") or []),
+            })
+        return edges
+
+    def state_machine(self, type_id: str) -> dict | None:
+        """状态机视图（Palantir 式）：迁移边 + 起点/终点/外部状态 + 可达集。
+
+        返回 None 表示该类型没有状态机（无动作且未声明）——500 个类里绝大多数
+        是这种情况，它们不该被硬塞进状态机模型。
+        """
+        edges = self._machine_edges(type_id)
+        decl = self.state_machines.get(type_id)
+        if not edges and not decl:
+            return None
+        cls = self.classes.get(type_id, {})
+        statuses = list(cls.get("statuses") or [])
+        initial = list((decl or {}).get("initial") or [])
+        terminal = list((decl or {}).get("terminal") or [])
+        external = list((decl or {}).get("external_states") or [])
+
+        from_sources = {s for e in edges for s in e["from"]}
+        to_targets = {e["to"] for e in edges}
+        # 可达集：从起点出发沿边可达的状态
+        adj: dict[str, set[str]] = {}
+        for e in edges:
+            for s in e["from"]:
+                adj.setdefault(s, set()).add(e["to"])
+        reachable: set[str] = set()
+        stack = list(initial)
+        while stack:
+            cur = stack.pop()
+            if cur in reachable:
+                continue
+            reachable.add(cur)
+            stack.extend(adj.get(cur, ()))
+        return {
+            "object_type": type_id,
+            "statuses": statuses,
+            "initial": initial,
+            "terminal": terminal,
+            "external_states": external,
+            "transitions": edges,
+            "reachable": sorted(reachable),
+            # 归宿不明：没有迁出边、也没声明为终态/外部状态（走不出、说不清）
+            "dead_ends": sorted(
+                s for s in statuses
+                if s not in from_sources and s not in terminal and s not in external
+            ),
+            # 来源不明：没有迁入边、不是起点，也没声明为外部可写（怎么来的说不清）
+            "unreachable": sorted(
+                s for s in statuses
+                if s not in to_targets and s not in initial and s not in external
+            ),
+        }
+
+    def state_machines_view(self) -> dict:
+        return {
+            "machines": [m for m in
+                         (self.state_machine(c["id"]) for c in self.raw["classes"])
+                         if m],
+            "declared": sorted(self.state_machines),
+        }
+
+    def validate_state_machines(self) -> list[dict]:
+        """状态机完备性判据（门禁第 25 项的判据内核）。
+
+        判据分两类：
+        - 硬错误（必须 FAIL）：状态来源不明、状态没有归宿、终态还能迁出、
+          迁移边指向不存在的状态、有动作却不声明状态机；
+        - 结构性提示（记录但不拦）：多起点、外部可写状态没有迁入边。
+        """
+        issues: list[dict] = []
+
+        def add(code: str, path: str, message: str, severity: str = "error") -> None:
+            issues.append({"code": code, "path": path, "message": message,
+                           "severity": severity})
+
+        targets = {a["target"] for a in self.raw["actions"] if a.get("to_status")}
+        for type_id in sorted(targets):
+            decl = self.state_machines.get(type_id)
+            if decl is None:
+                add("STATE_MACHINE_UNDECLARED", f"state_machines[{type_id}]",
+                    f"{type_id} 有状态流转动作但未声明状态机（起点/终点/外部状态）")
+                continue
+            machine = self.state_machine(type_id)
+            statuses = set(machine["statuses"])
+            for field in ("initial", "terminal", "external_states"):
+                val = decl.get(field, [])
+                if not isinstance(val, list):
+                    add("STATE_MACHINE_DECL_INVALID",
+                        f"state_machines[{type_id}].{field}",
+                        f"{field} 必须是数组")
+                    continue
+                for s in val:
+                    if s not in statuses:
+                        add("STATE_MACHINE_DECL_INVALID",
+                            f"state_machines[{type_id}].{field}",
+                            f"{field} 含不属于 {type_id} 状态集的状态: {s}")
+            for e in machine["transitions"]:
+                for s in e["from"]:
+                    if s not in statuses:
+                        add("STATE_MACHINE_EDGE_INVALID",
+                            f"actions[{e['action']}].from_status",
+                            f"{type_id} 迁移边起点 {s} 不在状态集内")
+                if e["to"] not in statuses:
+                    add("STATE_MACHINE_EDGE_INVALID",
+                        f"actions[{e['action']}].to_status",
+                        f"{type_id} 迁移边终点 {e['to']} 不在状态集内")
+            for s in machine["unreachable"]:
+                add("STATE_MACHINE_STATUS_ORIGIN_MISSING",
+                    f"state_machines[{type_id}]",
+                    f"{type_id}.{s} 既不是起点、也没有任何迁入边，"
+                    f"且未声明为外部可写状态 —— 它的来源说不清")
+            for s in machine["dead_ends"]:
+                add("STATE_MACHINE_STATUS_SINK_MISSING",
+                    f"state_machines[{type_id}]",
+                    f"{type_id}.{s} 没有迁出边，也未声明为终态 —— 机器走不到头")
+            for s in machine["terminal"]:
+                out_edges = sorted(
+                    e["action"] for e in machine["transitions"] if s in e["from"]
+                )
+                if out_edges:
+                    add("STATE_MACHINE_TERMINAL_HAS_OUTGOING",
+                        f"state_machines[{type_id}].terminal",
+                        f"{type_id}.{s} 被声明为终态，但仍有迁出动作 {out_edges}")
+            if len(machine["initial"]) > 1:
+                add("STATE_MACHINE_MULTI_INITIAL",
+                    f"state_machines[{type_id}].initial",
+                    f"{type_id} 有多个起点 {machine['initial']}，"
+                    f"请确认是否应改为 external_states", severity="info")
+        for type_id in sorted(self.state_machines):
+            if type_id not in targets:
+                add("STATE_MACHINE_ORPHAN_DECL", f"state_machines[{type_id}]",
+                    f"{type_id} 声明了状态机但没有任何迁移动作")
+        return issues
 
     def rules_for(self, type_id: str, props: dict) -> list[dict]:
         matched = []

@@ -221,6 +221,24 @@ def object_graph(object_id: str, depth: int = Query(2, ge=1, le=5)):
     return guard(lambda: get_system().graph(object_id, depth))
 
 
+@router.get("/ontology/state-machines")
+def state_machines():
+    """状态机总览：全部已声明状态机的对象类型。"""
+    return guard(lambda: get_system().state_machine())
+
+
+@router.get("/ontology/state-machines/{object_type}")
+def state_machine_of_type(object_type: str):
+    """单个对象类型的状态机：状态集、起点/终态/外部状态、迁移边与可达集。"""
+    return guard(lambda: get_system().state_machine(object_type))
+
+
+@router.get("/objects/{object_id}/state-history")
+def object_state_history(object_id: str):
+    """对象状态轨迹：只含状态变更事件，附该类型的完整状态机。"""
+    return guard(lambda: get_system().state_history(object_id))
+
+
 @router.get("/objects/{object_id}/trace")
 def object_trace(object_id: str):
     return guard(lambda: get_system().trace(object_id))

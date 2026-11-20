@@ -70,6 +70,7 @@ def probe_gate(root: str, args: dict) -> dict:
         "extension_schema": g.check_extension_schema,
         "policy": g.check_policy_strict,
         "display": g.check_display_metadata,
+        "state_machines": g.check_state_machines,
     }[args["check"]]
     item = fn(root)
     return {"ok": item["ok"],
@@ -217,6 +218,23 @@ def probe_projection(root: str, args: dict) -> dict:
             "consistency": len(projection.consistency(s.conn))}
 
 
+
+def probe_action_param(root: str, args: dict) -> dict:
+    """动作参数类型化：同一调用，改声明后必须被拒。"""
+    s = _fresh_system(seed=False)
+    try:
+        oid = "fee:LBPROBE"
+        s.add_object("FeeItem", oid, "承重探针", "NORMAL",
+                     {"fee_id": "LBPROBE", "fee_type": "waiting",
+                      "actual_amount": 100, "quoted_amount": 100})
+        out = s.execute_action("dispute_charge", oid, "probe", "customer_service",
+                                {"reason": "金额争议"})
+        return {"ok": True, "after_status": out.get("after_status")}
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": type(exc).__name__,
+                "code": getattr(exc, "code", None), "message": str(exc)[:200]}
+
+
 PROBES = {
     "gate": probe_gate,
     "gate_full": probe_gate_full,
@@ -228,6 +246,7 @@ PROBES = {
     "security": probe_security,
     "review": probe_review,
     "projection": probe_projection,
+    "action_param": probe_action_param,
 }
 
 
@@ -340,6 +359,23 @@ def mut_approve_drop(raw):
         "approved_by": "load_bearing_demo",
         "reason": "承重实验：补签后评审应放行，用来证明 FAIL 来自「未签字」而不是「一律拒绝」。",
     })
+    return raw
+
+
+
+def mut_bad_state_machine(raw):
+    """把 Waybill 的终态改成还有迁出边的 ACCEPTED -> 完备性判据必须报警。"""
+    raw["state_machines"]["Waybill"]["terminal"] = ["ACCEPTED"]
+    return raw
+
+
+def mut_param_type_number(raw):
+    """把 dispute_charge.reason 的声明类型从 string 改成 number。"""
+    for a in raw.get("actions") or []:
+        if a["id"] == "dispute_charge":
+            for p in a.get("params") or []:
+                if p["name"] == "reason":
+                    p["type"] = "number"
     return raw
 
 
@@ -491,7 +527,26 @@ CASES = [
         and m["stale_flag"] is True and m["after_break"] == b["baseline"]
         and m["healed"] == b["baseline"] and m["consistency"] == 0,
     },
+    {
+        "id": "L16", "gap": "P2-4 状态机完备性",
+        "change": f"{LAYER} state_machines[Waybill].terminal 改成 ACCEPTED",
+        "file": LAYER, "mut": mut_bad_state_machine,
+        "probe": ("gate", {"check": "state_machines"}),
+        "expect": "门禁变 FAIL 报 STATE_MACHINE_TERMINAL_HAS_OUTGOING",
+        "check": lambda b, m: b["ok"] and not m["ok"]
+        and "STATE_MACHINE_TERMINAL_HAS_OUTGOING" in m["codes"],
+    },
+    {
+        "id": "L17", "gap": "P2-5 动作参数类型化",
+        "change": f"{LAYER} dispute_charge.reason 参数 type: string -> number",
+        "file": LAYER, "mut": mut_param_type_number,
+        "probe": ("action_param", {}),
+        "expect": "同一调用（传字符串）由成功变 VALIDATION_ERROR",
+        "check": lambda b, m: b["ok"] and not m["ok"]
+        and m["code"] == "VALIDATION_ERROR",
+    },
 ]
+
 
 
 # ======================================================================

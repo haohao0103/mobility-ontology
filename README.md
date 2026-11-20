@@ -23,7 +23,7 @@ python scripts/semantic_gate.py
 # freight 层验收（12 场景，含 5 个承重测试）
 python scripts/freight_acceptance.py
 
-# 承重实验：只改本体 JSON、代码零改动，16 条用例逐条证明行为翻转
+# 承重实验：只改本体 JSON、代码零改动，18 条用例逐条证明行为翻转
 python scripts/load_bearing_demo.py
 
 # 根层验证（36 项断言）
@@ -51,6 +51,7 @@ python cli.py serve --port 8765
 | `usage_graph` | 使用度量 | 类被函数/动作/关系引用的反向查询 |
 | `search` | 对象搜索 | 全属性过滤 + 分页 |
 | `freight/projection` | Object Storage v2（轻量档） | 属性级投影 + 双索引 + 新鲜度闸门 + 一致性比对；不做全量 OSv2 |
+| 顶层 `state_machines` | Object Type 状态机 | 迁移边真源在动作，声明只补起点/终态/外部状态；完备性判据 + 门禁第 25 项 + REST/MCP 视图与状态轨迹 |
 | `freight/change_gate` | Ontology change management | 破坏性变更分类 + 引用影响回溯 + 逐条签字 |
 | `tools/gen_osdk.py` | OSDK | 从本体生成 TS/Python 类型化客户端（decimal→Decimal，不再退化成 str） |
 | `tools/proposal.py` | Global Branching / proposal | 分支评审 + breaking 字段，未签字的破坏项不得 merge |
@@ -78,11 +79,13 @@ verify.py         # 根层 36 项验证
 
 1. 金额整数分、规则确定性，LLM 不碰金额与原因选择。
 2. 每个能力必须能"只改本体 JSON、代码零改动"地启用/改变（承重测试）。
-3. CI 必过 semantic_gate（24 项，含扩展层 schema / 策略口径 / 展示层 / 破坏性变更）。
+3. CI 必过 semantic_gate（25 项，含扩展层 schema / 策略口径 / 展示层 / 破坏性变更 / 状态机完备性）。
 4. 事实不入本体库（persisted_by_ontology=false）。
 5. **注册表必须执行**：属性类型、函数签名、返回结构、标记传播，光登记不算。
 6. **物化层必须可验真**：投影不新鲜就回退全表，绝不让索引静默少行。
 7. **破坏性变更必须签字**：`freight/breaking_approvals.json` 路径完全一致才算数。
+8. **状态机必须声明且完备**：有迁移动作的对象类型必须声明 `state_machines`，
+   状态的来源与归宿说得清，终态不得再有迁出边（门禁第 25 项）。
 
 ## 部署
 

@@ -250,6 +250,17 @@
     "sql"
    ],
    "returns": "Object[]|Groups[]"
+  },
+  {
+   "name": "ontology.state_machine",
+   "system": "本体",
+   "description": "读取对象类型的状态机：状态集、起点、终态、外部可写状态、迁移边（带稳定 transition id）与可达集。传 object_id 时附带该对象当前状态、可用迁移与已走过的状态轨迹。",
+   "arguments": {
+    "object_type": "string|null",
+    "object_id": "string|null"
+   },
+   "required": [],
+   "returns": "StateMachine"
   }
  ],
  "functions": [
@@ -68342,5 +68353,95 @@
     "WarehouseZone"
    ]
   }
- ]
+ ],
+ "state_machines": {
+  "Waybill": {
+   "initial": [
+    "CREATED"
+   ],
+   "terminal": [
+    "DELIVERED"
+   ],
+   "external_states": []
+  },
+  "FeeItem": {
+   "initial": [
+    "NORMAL"
+   ],
+   "terminal": [
+    "WAIVED"
+   ],
+   "external_states": []
+  },
+  "Settlement": {
+   "initial": [
+    "DRAFT"
+   ],
+   "terminal": [
+    "ON_HOLD",
+    "REVERSED"
+   ],
+   "external_states": [
+    "PENDING",
+    "POSTED"
+   ]
+  },
+  "Invoice": {
+   "initial": [],
+   "terminal": [
+    "VOIDED"
+   ],
+   "external_states": [
+    "DRAFT",
+    "ISSUED"
+   ]
+  },
+  "ExceptionTicket": {
+   "initial": [
+    "OPEN"
+   ],
+   "terminal": [
+    "CLOSED"
+   ],
+   "external_states": [
+    "PROCESSING"
+   ]
+  },
+  "Quote": {
+   "initial": [
+    "DRAFT"
+   ],
+   "terminal": [
+    "SUPERSEDED"
+   ],
+   "external_states": [
+    "EXPIRED",
+    "VOID"
+   ]
+  },
+  "SubcontractOrder": {
+   "initial": [
+    "DRAFT"
+   ],
+   "terminal": [
+    "CONFIRMED"
+   ],
+   "external_states": [
+    "COMPLETED",
+    "SETTLED",
+    "VOID"
+   ]
+  },
+  "Stop": {
+   "initial": [
+    "PLANNED"
+   ],
+   "terminal": [
+    "COMPLETED"
+   ],
+   "external_states": [
+    "EXCEPTION"
+   ]
+  }
+ }
 }

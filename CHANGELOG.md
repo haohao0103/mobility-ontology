@@ -1,5 +1,53 @@
 # Changelog
 
+## 3.2.0 (2026-11-20) — 状态机升为独立层 + 动作参数类型化 + 对齐矩阵纠偏
+
+上一版把六项 Palantir 缺口闭合了，但**对齐基准矩阵（`roadmap/palantir-benchmark.md`）
+停在改造之前**，其中 4 条与代码不符——包括一条方向性错误（P-07 写「无 apply」，
+而引擎里 apply 一直在）。本轮先纠基准，再补能力。
+
+### 修正（承认并清理）
+- **对齐矩阵落后于代码**：`roadmap/palantir-benchmark.md` 标 Draft、停在 2026-11-19，
+  P-06/P-07/P-08/P-11 四条与实现不符。已按 v3.2 实测逐条重写 13 项现状，
+  状态从 Draft 改为「v3.2 实测基线」，并补上此前没人记的两个缺口：
+  **类级生命周期 status**、**标题属性（title property）**。
+- **P-07 方向性错误**：矩阵写「当前无 apply、无 edits、无副作用」，实际
+  `engine.execute_action/_apply_action` 已实现前置校验、属性写回、事件、审计、
+  **幂等键 replay**。矩阵会骗人——比代码 bug 更贵，因为它决定所有后续排期。
+- **`datetime` / `timestamp` 口径分叉**：属性值类型用 `datetime`（200 个属性），
+  函数参数类型用 `timestamp`，两个名字指同一件事——谁没被枚举覆盖到就悄悄不校验。
+  现在 `SemanticLayer._type_ok` 同时认两个名字并按 ISO 校验；
+  `function_registry._scalar_ok` 改为**委托**同一实现（原来是自己抄的一份）。
+
+### 新增（P2-4 状态机独立层）
+- `freight/semantic_layer.json` 顶层 **`state_machines`** 声明（`initial` / `terminal` /
+  `external_states`，8 个对象类型）。**迁移边真源仍在动作的 `from_status→to_status`**——
+  不把流转复制到第二处，避免二源真相；声明只补动作说不清的三件事。
+- `SemanticLayer.state_machine()`：机器图（状态集 / 起点 / 终态 / 外部状态 /
+  迁移边（稳定 id `transition:<Type>:<action>`）/ 可达集 / 来源不明 / 归宿不明）。
+- `SemanticLayer.validate_state_machines()`：六类完备性判据——来源不明、归宿不明、
+  终态仍有迁出边、迁移边引用非法状态、有动作却未声明、无动作却声明。
+- 门禁**第 25 项** `check_state_machines`（含 4 条负向用例），覆盖目标 13 → **14**。
+- 运行时暴露：REST `GET /ontology/state-machines`、`/ontology/state-machines/{type}`、
+  `/objects/{id}/state-history`；MCP 原语 **`ontology.state_machine`**（本体 JSON 声明，
+  代码零改动即生效）。
+- 对象状态轨迹 `state_history`：只取「状态变更」事件（事件类型 ∈ 该类状态集）——
+  events 表里混着证据与并发测试事件，不按状态集过滤就会把不相干事件当成状态变化。
+
+### 新增（P2-5 动作参数类型化）
+- `engine.execute_action`：参数校验从「只查必填」升级为 **查必填 + 查类型 + 拒未声明参数**
+  （`PARAM_UNKNOWN`）。类型口径复用 `SemanticLayer._type_ok`——动作与函数、动作与属性
+  三处不再各判各的。
+- 承重实验新增 2 条（L16 状态机声明改动 → 门禁 FAIL；L17 参数类型改动 → 同调用被拒），
+  两条都只改 JSON、代码零改动。
+
+### 验证
+- `pytest` **239 passed**（新增 `tests/test_state_machine.py` 20 项）
+- 语义门禁 **25 项 / 14 覆盖目标 / ok=true**
+- 承重实验 **18/18**（改回原样后门禁 exit=0）
+- `scripts/freight_acceptance.py` 12/12；7 个 smoke 全过；`verify.py` 36/36
+
+
 ## 3.1.0 (2026-11-20) — 六项 Palantir 对齐缺口闭合（契约层 / 展示层 / 运行时三件套）
 
 上一版把属性升成了一等公民，但只做到「登记」。本轮把**声明与执行**接起来，

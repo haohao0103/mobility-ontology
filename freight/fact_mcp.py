@@ -575,6 +575,81 @@ class FactMCP:
             ),
         )
 
+    def state_machine(self, object_type: str | None = None,
+                      object_id: str | None = None) -> dict:
+        """状态机读取（本体原语 ontology.state_machine）。
+
+        只读：返回状态集、起点/终态/外部状态、迁移边（带稳定 id）与可达集；
+        给 object_id 时再附当前状态、可用迁移与已走过的状态轨迹。
+        放在事实层实现（store + sem 都在这里），引擎与 REST 共用这一份。
+        """
+        return self._record(
+            "ontology.state_machine",
+            {"object_type": object_type, "object_id": object_id},
+            "本体",
+            lambda: self._state_machine_view(object_type, object_id),
+        )
+
+    def state_history(self, object_id: str) -> dict:
+        """对象状态轨迹：只取「状态变更」事件（事件类型 ∈ 该类状态集）。
+
+        events 表里混着证据事件、并发测试事件等；不按状态集过滤就会把不相干
+        的事件当成状态变化 —— 轨迹必须是状态序列，不是事件流水。
+        """
+        row = self.store.get_row(object_id)
+        if row is None:
+            raise BusinessReject(f"对象不存在: {object_id}", "OBJECT_NOT_FOUND")
+        row = self.decode(row)
+        machine = self.sem.state_machine(row["type"])
+        cls = self.sem.classes.get(row["type"], {})
+        statuses = set((machine or {}).get("statuses") or cls.get("statuses") or [])
+        rows = self.store.all(
+            "SELECT * FROM events WHERE object_id=? ORDER BY occurred_at, id",
+            (object_id,))
+        steps = []
+        for r in rows:
+            if r["event_type"] not in statuses:
+                continue
+            steps.append({
+                "at": r["occurred_at"],
+                "status": r["event_type"],
+                "actor": r["actor"],
+                "payload": json.loads(r["payload"]),
+            })
+        return {
+            "object_id": object_id,
+            "type": row["type"],
+            "current_status": row["status"],
+            "statuses": sorted(statuses),
+            "steps": steps,
+            "step_count": len(steps),
+            "machine": machine,
+        }
+
+    def _state_machine_view(self, object_type: str | None = None,
+                            object_id: str | None = None) -> dict:
+        if object_id:
+            history = self.state_history(object_id)
+            machine = history.get("machine")
+            if machine is None:
+                return {"object_id": object_id, "type": history["type"],
+                        "machine": None,
+                        "note": f"{history['type']} 未声明状态机"}
+            available = [t for t in machine["transitions"]
+                         if history["current_status"] in t["from"]]
+            return {
+                "object_id": object_id,
+                "type": history["type"],
+                "current_status": history["current_status"],
+                "available_transitions": available,
+                "history": history["steps"],
+                "machine": machine,
+            }
+        if object_type:
+            return {"object_type": object_type,
+                    "machine": self.sem.state_machine(object_type)}
+        return self.sem.state_machines_view()
+
     def schema_search_around(self, type_ids: list[str],
                              link_type_ids: list[str] | None = None,
                              direction: str = "both") -> dict:
@@ -1378,6 +1453,8 @@ class FactMCP:
                 args.get("max_depth", 4), args.get("limit", 10)),
             "ontology.sql": lambda: self.sql(
                 args.get("sql", ""), args.get("params")),
+            "ontology.state_machine": lambda: self.state_machine(
+                args.get("object_type"), args.get("object_id")),
             "ontology.query": lambda: self.query_objects(
                 args["type"], args.get("where"), args.get("select"),
                 args.get("order_by"), args.get("limit", 100),

@@ -67,6 +67,8 @@ class SemanticLayer:
         if status and status not in cls["statuses"]:
             raise OntologyViolation(f"{type_id} 非法状态: {status}")
 
+    CARDINALITIES = ("one_to_one", "one_to_many", "many_to_one", "many_to_many")
+
     def validate_relation(self, predicate: str, subject_type: str, object_type: str) -> None:
         rel = self.relations.get(predicate)
         if rel is None:
@@ -78,6 +80,11 @@ class SemanticLayer:
         if object_type != rel["range"]:
             raise OntologyViolation(
                 f"关系 {predicate} 值域应为 {rel['range']}，实际 {object_type}"
+            )
+        card = rel.get("cardinality", "many_to_many")
+        if card not in self.CARDINALITIES:
+            raise OntologyViolation(
+                f"关系 {predicate} 基数声明非法: {card}（合法值 {self.CARDINALITIES}）"
             )
 
     def relation_label(self, predicate: str) -> str:

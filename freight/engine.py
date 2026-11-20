@@ -74,8 +74,41 @@ class FreightSystem:
         if not subject or not obj:
             raise BusinessReject(f"关系两端对象不存在: {subject_id} -> {object_id}")
         self.sem.validate_relation(predicate, subject["type"], obj["type"])
+        self._check_cardinality(predicate, subject_id, object_id)
         self.facts.add_relation(subject_id, predicate, object_id,
                                 subject["type"], obj["type"], at, source_system)
+
+    def _check_cardinality(self, predicate: str, subject_id: str,
+                           object_id: str) -> None:
+        """链接基数写入校验（Palantir Link Type cardinality 语义）。
+
+        读法 domain->range：
+          one_to_many  domain 实例可挂多个 range，range 唯一归属（range 侧查重）
+          many_to_one  domain 实例唯一挂一个 range（subject 侧查重）
+          one_to_one   双侧查重
+          many_to_many 不限制（缺省）
+        只对活跃关系（valid_to IS NULL）生效；时态关闭后可重新挂。
+        """
+        rel = self.sem.relations.get(predicate, {})
+        card = rel.get("cardinality", "many_to_many")
+        if card == "many_to_many":
+            return
+        if card in ("many_to_one", "one_to_one"):
+            dup = self.facts.store.one(
+                "SELECT 1 FROM relations WHERE predicate=? AND subject_id=? "
+                "AND object_id<>? AND valid_to IS NULL",
+                (predicate, subject_id, object_id))
+            if dup:
+                raise OntologyViolation(
+                    f"基数违规 {predicate}[{card}]: {subject_id} 已有其他活跃关联")
+        if card in ("one_to_many", "one_to_one"):
+            dup = self.facts.store.one(
+                "SELECT 1 FROM relations WHERE predicate=? AND object_id=? "
+                "AND subject_id<>? AND valid_to IS NULL",
+                (predicate, object_id, subject_id))
+            if dup:
+                raise OntologyViolation(
+                    f"基数违规 {predicate}[{card}]: {object_id} 已归属其他对象")
 
     def add_evidence(self, evidence_id: str, object_id: str, evidence_type: str,
                      source_system: str, occurred_at: str, version: str,
@@ -841,6 +874,29 @@ class FreightSystem:
                 "selected": vehicle_type == selected,
             })
         return rows
+
+    def fee_breakdown_batch(self, waybills: list) -> dict:
+        """批量费用拆解（object_set 参数形态，对齐 Palantir Function 的
+        ObjectSet 入参：一次函数调用吃整个对象集，而非逐对象循环调用）。"""
+        if not isinstance(waybills, list) or not waybills:
+            raise BusinessReject("waybills 必须是非空对象 ID 列表", "SET_INVALID")
+        results = []
+        total_variance = 0.0
+        for oid in waybills:
+            r = self.fee_analysis(oid)
+            results.append({
+                "waybill_id": oid,
+                "quoted_total": r["quoted_total"],
+                "actual_total": r["actual_total"],
+                "variance": r["variance"],
+                "finding_codes": [f["code"] for f in r["findings"]],
+            })
+            total_variance += float(r["variance"])
+        return {
+            "count": len(results),
+            "total_variance": round(total_variance, 2),
+            "results": results,
+        }
 
     def fee_analysis(self, waybill_id: str, sem: SemanticLayer | None = None) -> dict:
         semantic = sem or self.sem

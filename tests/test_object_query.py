@@ -179,6 +179,48 @@ class TestSetAlgebra:
                 "set": {"from": "Shipper"},
                 "link": "waybill_produces_fee", "direction": "out"}}}, _store(sys_mod))
 
+    def test_union_substitutes_inheritance(self, engine, sys_mod):
+        """Palantir 无 OWL 继承的补偿：概念父类查询 = union 子类实例集。
+
+        查"承运资源"（概念上的父类 = 司机 ∪ 车辆）不需要类型系统推理，
+        直接组合代数 union 即可，且对拍：union total == 两子类分别查询之和。
+        """
+        eng, _ = engine
+        store = _store(sys_mod)
+        union = eng.execute({"set": {"union": [{"from": "Driver"},
+                                               {"from": "Vehicle"}]}}, store)
+        d = eng.execute({"set": {"from": "Driver"}}, store)
+        v = eng.execute({"set": {"from": "Vehicle"}}, store)
+        assert union["total"] == d["total"] + v["total"]
+        types = {o["type"] for o in union["objects"]}
+        assert types == {"Driver", "Vehicle"}
+        # 统一视图上继续谓词过滤（父类视图的用法）
+        idle = eng.execute({
+            "set": {"union": [{"from": "Driver"}, {"from": "Vehicle"}]},
+            "where": {"status": {"$eq": "IDLE"}}}, store)
+        assert idle["total"] <= union["total"]
+
+    def test_union_substitutes_inheritance(self, engine, sys_mod):
+        """Palantir 无 OWL 继承的补偿：概念父类查询 = union 子类实例集。
+
+        查"承运资源"（概念上的父类 = 司机 ∪ 车辆）不需要类型系统推理，
+        直接组合代数 union 即可，且对拍：union total == 两子类分别查询之和。
+        """
+        eng, _ = engine
+        store = _store(sys_mod)
+        union = eng.execute({"set": {"union": [{"from": "Driver"},
+                                               {"from": "Vehicle"}]}}, store)
+        d = eng.execute({"set": {"from": "Driver"}}, store)
+        v = eng.execute({"set": {"from": "Vehicle"}}, store)
+        assert union["total"] == d["total"] + v["total"]
+        types = {o["type"] for o in union["objects"]}
+        assert types == {"Driver", "Vehicle"}
+        # 统一视图上继续谓词过滤（父类视图的用法）
+        idle = eng.execute({
+            "set": {"union": [{"from": "Driver"}, {"from": "Vehicle"}]},
+            "where": {"status": {"$eq": "IDLE"}}}, store)
+        assert idle["total"] <= union["total"]
+
     def test_ids_set(self, engine, sys_mod):
         eng, _ = engine
         out = eng.execute({"set": {"ids": ["waybill:WB20261105001"]}}, _store(sys_mod))

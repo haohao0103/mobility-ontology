@@ -1,453 +1,493 @@
 {
- "meta": {
-  "name": "enhancement-extension",
-  "description": "Palantir 追齐层：属性类型注册表 / 接口 / 安全标记 / 函数注册表。叠加在 freight/semantic_layer.json 之上，只改本文件即可启用新行为（承重验收原则）。",
-  "version": "1.0.0",
-  "base": "freight/semantic_layer.json",
-  "effective_from": "2026-11-19"
- },
- "property_types": [
-  {
-   "name": "shipper_name",
-   "label": "货主名称",
-   "value_type": "string",
-   "unit": null,
-   "marking": "PII",
-   "timeseries": false,
-   "primary_key": false,
-   "status": "active",
-   "owner": "freight-core",
-   "version": "1.0.0",
-   "iri": "https://w3id.org/mobility-ontology/freight#shipper_name",
-   "effective_from": "2026-11-19",
-   "used_by": [
-    "Shipper"
-   ]
+  "meta": {
+    "name": "enhancement-extension",
+    "description": "Palantir 追齐层：属性类型注册表 / 接口 / 安全标记 / 函数注册表。叠加在 freight/semantic_layer.json 之上，只改本文件即可启用新行为（承重验收原则）。",
+    "version": "1.0.0",
+    "base": "freight/semantic_layer.json",
+    "effective_from": "2026-11-19"
   },
-  {
-   "name": "contact",
-   "label": "联系方式",
-   "value_type": "string",
-   "unit": null,
-   "marking": "PII",
-   "timeseries": false,
-   "primary_key": false,
-   "status": "active",
-   "owner": "freight-core",
-   "version": "1.0.0",
-   "iri": "https://w3id.org/mobility-ontology/freight#contact",
-   "effective_from": "2026-11-19",
-   "used_by": [
-    "Shipper"
-   ]
-  },
-  {
-   "name": "driver_name",
-   "label": "司机姓名",
-   "value_type": "string",
-   "unit": null,
-   "marking": "PII",
-   "timeseries": false,
-   "primary_key": false,
-   "status": "active",
-   "owner": "freight-core",
-   "version": "1.0.0",
-   "iri": "https://w3id.org/mobility-ontology/freight#driver_name",
-   "effective_from": "2026-11-19",
-   "used_by": [
-    "Driver"
-   ]
-  },
-  {
-   "name": "estimated_fee",
-   "label": "预估费用",
-   "value_type": "integer",
-   "unit": "cents",
-   "marking": "FINANCE",
-   "timeseries": false,
-   "primary_key": false,
-   "status": "active",
-   "owner": "freight-core",
-   "version": "1.0.0",
-   "iri": "https://w3id.org/mobility-ontology/freight#estimated_fee",
-   "effective_from": "2026-11-19",
-   "used_by": [
-    "Waybill"
-   ]
-  },
-  {
-   "name": "actual_fee",
-   "label": "实收费用",
-   "value_type": "integer",
-   "unit": "cents",
-   "marking": "FINANCE",
-   "timeseries": false,
-   "primary_key": false,
-   "status": "active",
-   "owner": "freight-core",
-   "version": "1.0.0",
-   "iri": "https://w3id.org/mobility-ontology/freight#actual_fee",
-   "effective_from": "2026-11-19",
-   "used_by": [
-    "Waybill"
-   ]
-  },
-  {
-   "name": "variance",
-   "label": "费用差异",
-   "value_type": "integer",
-   "unit": "cents",
-   "marking": "FINANCE",
-   "timeseries": false,
-   "primary_key": false,
-   "status": "active",
-   "owner": "freight-core",
-   "version": "1.0.0",
-   "iri": "https://w3id.org/mobility-ontology/freight#variance",
-   "effective_from": "2026-11-19",
-   "used_by": [
-    "Waybill"
-   ]
-  },
-  {
-   "name": "waiting_minutes",
-   "label": "等候时长",
-   "value_type": "number",
-   "unit": "minutes",
-   "marking": null,
-   "timeseries": false,
-   "primary_key": false,
-   "status": "active",
-   "owner": "freight-core",
-   "version": "1.0.0",
-   "iri": "https://w3id.org/mobility-ontology/freight#waiting_minutes",
-   "effective_from": "2026-11-19",
-   "used_by": [
-    "Waybill"
-   ]
-  },
-  {
-   "name": "status",
-   "label": "状态（时序）",
-   "value_type": "string",
-   "unit": null,
-   "marking": null,
-   "timeseries": true,
-   "primary_key": false,
-   "status": "active",
-   "owner": "freight-core",
-   "version": "1.0.0",
-   "iri": "https://w3id.org/mobility-ontology/freight#status",
-   "effective_from": "2026-11-19",
-   "used_by": [
-    "Waybill",
-    "Driver",
-    "FeeItem",
-    "Shipper"
-   ]
-  },
-  {
-   "name": "waybill_id",
-   "label": "运单号（主键）",
-   "value_type": "string",
-   "unit": null,
-   "marking": null,
-   "timeseries": false,
-   "primary_key": true,
-   "status": "active",
-   "owner": "freight-core",
-   "version": "1.0.0",
-   "iri": "https://w3id.org/mobility-ontology/freight#waybill_id",
-   "effective_from": "2026-11-19",
-   "used_by": [
-    "Waybill"
-   ]
-  },
-  {
-   "name": "driver_id",
-   "label": "司机工号（主键）",
-   "value_type": "string",
-   "unit": null,
-   "marking": null,
-   "timeseries": false,
-   "primary_key": true,
-   "status": "active",
-   "owner": "freight-core",
-   "version": "1.0.0",
-   "iri": "https://w3id.org/mobility-ontology/freight#driver_id",
-   "effective_from": "2026-11-19",
-   "used_by": [
-    "Driver"
-   ]
-  },
-  {
-   "name": "fee_id",
-   "label": "费用项 ID（主键）",
-   "value_type": "string",
-   "unit": null,
-   "marking": null,
-   "timeseries": false,
-   "primary_key": true,
-   "status": "active",
-   "owner": "freight-core",
-   "version": "1.0.0",
-   "iri": "https://w3id.org/mobility-ontology/freight#fee_id",
-   "effective_from": "2026-11-19",
-   "used_by": [
-    "FeeItem"
-   ]
-  },
-  {
-   "name": "calc_basis",
-   "label": "计费依据",
-   "value_type": "string",
-   "unit": null,
-   "marking": null,
-   "timeseries": false,
-   "primary_key": false,
-   "status": "experimental",
-   "owner": "freight-core",
-   "version": "1.0.0",
-   "iri": "https://w3id.org/mobility-ontology/freight#calc_basis",
-   "effective_from": "2026-11-19",
-   "used_by": [
-    "FeeItem"
-   ]
-  }
- ],
- "property_registry_policy": {
-  "enforcement": "incremental",
-  "note": "incremental：新增属性必须先注册（门禁拦截未注册新属性）；存量属性未注册的标记 legacy 不报错。strict 模式全部强制。",
-  "legacy_grace": true
- },
- "interfaces": [
-  {
-   "id": "Chargeable",
-   "label": "可计费对象",
-   "description": "携带金额属性、可进入费用拆解与对账流程的对象。",
-   "match": "structural",
-   "required_properties": [
-    "status"
-   ],
-   "required_any_of": [
-    "actual_fee",
-    "actual_amount",
-    "quoted_amount"
-   ],
-   "owner": "freight-core",
-   "version": "1.0.0"
-  },
-  {
-   "id": "Party",
-   "label": "业务主体",
-   "description": "有名称与联系方式的参与方（货主、司机等）。",
-   "match": "structural",
-   "required_properties": [
-    "status"
-   ],
-   "required_any_of": [
-    "shipper_name",
-    "driver_name"
-   ],
-   "owner": "freight-core",
-   "version": "1.0.0"
-  },
-  {
-   "id": "TemporalTracked",
-   "label": "状态时序跟踪对象",
-   "description": "状态属性为时序属性，支持按时间点查询历史值。",
-   "match": "structural",
-   "required_properties": [
-    "status"
-   ],
-   "required_timeseries": [
-    "status"
-   ],
-   "owner": "freight-core",
-   "version": "1.0.0"
-  }
- ],
- "markings": [
-  {
-   "id": "PII",
-   "label": "个人信息",
-   "description": "姓名、联系方式等个人信息。无标记用户不可读，角色再高也不豁免（强制控制）。",
-   "category": "Information",
-   "members": [
-    "freight-core",
-    "compliance-ops"
-   ]
-  },
-  {
-   "id": "FINANCE",
-   "label": "财务敏感",
-   "description": "金额类字段。仅结算与财务角色可读。",
-   "category": "Finance",
-   "members": [
-    "freight-core",
-    "settlement-ops"
-   ]
-  },
-  {
-   "id": "DISPUTE_OPS",
-   "label": "争议处理",
-   "description": "争议状态的费用项仅争议处理组可见（行级安全示例）。",
-   "category": "Operations",
-   "members": [
-    "dispute-ops",
-    "freight-core"
-   ]
-  }
- ],
- "object_security_policies": [
-  {
-   "id": "osp-feeitem-disputed",
-   "object_type": "FeeItem",
-   "description": "DISPUTED 状态的费用项仅 DISPUTE_OPS 标记成员可见（行级）。",
-   "row_filter": {
-    "property": "status",
-    "equals": "DISPUTED"
-   },
-   "required_marking": "DISPUTE_OPS"
-  }
- ],
- "property_security_policies": [
-  {
-   "id": "psp-pii",
-   "description": "PII 标记属性列级脱敏：无 PII 标记的用户读到 null。",
-   "properties": [
-    "shipper_name",
-    "contact",
-    "driver_name"
-   ],
-   "required_marking": "PII"
-  },
-  {
-   "id": "psp-finance",
-   "description": "FINANCE 标记属性列级脱敏：无 FINANCE 标记的用户读到 null。",
-   "properties": [
-    "estimated_fee",
-    "actual_fee",
-    "variance"
-   ],
-   "required_marking": "FINANCE"
-  }
- ],
- "scope_tokens": {
-  "note": "LLM agent 令牌最小化：令牌携带可见类/函数子集，服务端按令牌过滤工具面。",
-  "default_token": {
-   "id": "agent-readonly",
-   "classes": [
-    "Waybill",
-    "FeeItem",
-    "Shipper",
-    "Driver"
-   ],
-   "functions": [
-    "fee_breakdown",
-    "quote_reconcile"
-   ],
-   "mcp_tools": [
-    "ontology.catalog",
-    "ontology.object_type_search",
-    "ontology.schema"
-   ]
-  }
- },
- "function_registry": [
-  {
-   "id": "fee_breakdown",
-   "label": "费用拆解",
-   "version": "1.1.0",
-   "owner": "freight-core",
-   "implementation": "freight.engine.FreightSystem.fee_analysis",
-   "description": "确定性拆解运单的报价、规则应计、实收、减免和差异。",
-   "signature": {
-    "params": [
-     {
-      "name": "waybill_id",
-      "type": "string",
-      "required": true
-     },
-     {
-      "type": "string",
-      "name": "version",
-      "required": false
-     }
-    ],
-    "returns": "FeeBreakdown"
-   },
-   "sandbox": {
-    "timeout_ms": 5000,
-    "memory_mb": 256
-   },
-   "accepts_interface": null,
-   "tests": [
+  "property_types": [
     {
-     "name": "wb001-fee-sum-closes",
-     "args": {
-      "waybill_id": "waybill:WB20261105001"
-     },
-     "expect": {
-      "status": "EXPLAINED"
-     }
-    }
-   ]
-  },
-  {
-   "id": "quote_reconcile",
-   "label": "报价对账",
-   "version": "1.0.0",
-   "owner": "freight-core",
-   "implementation": "freight.engine.FreightSystem.quote_reconcile",
-   "description": "确定性对比订单报价明细与实际费用。",
-   "signature": {
-    "params": [
-     {
+      "name": "shipper_name",
+      "label": "货主名称",
+      "value_type": "string",
+      "unit": null,
+      "marking": "PII",
+      "timeseries": false,
+      "primary_key": false,
+      "status": "active",
+      "owner": "freight-core",
+      "version": "1.0.0",
+      "iri": "https://w3id.org/mobility-ontology/freight#shipper_name",
+      "effective_from": "2026-11-19",
+      "used_by": [
+        "Shipper"
+      ]
+    },
+    {
+      "name": "contact",
+      "label": "联系方式",
+      "value_type": "string",
+      "unit": null,
+      "marking": "PII",
+      "timeseries": false,
+      "primary_key": false,
+      "status": "active",
+      "owner": "freight-core",
+      "version": "1.0.0",
+      "iri": "https://w3id.org/mobility-ontology/freight#contact",
+      "effective_from": "2026-11-19",
+      "used_by": [
+        "Shipper"
+      ]
+    },
+    {
+      "name": "driver_name",
+      "label": "司机姓名",
+      "value_type": "string",
+      "unit": null,
+      "marking": "PII",
+      "timeseries": false,
+      "primary_key": false,
+      "status": "active",
+      "owner": "freight-core",
+      "version": "1.0.0",
+      "iri": "https://w3id.org/mobility-ontology/freight#driver_name",
+      "effective_from": "2026-11-19",
+      "used_by": [
+        "Driver"
+      ]
+    },
+    {
+      "name": "estimated_fee",
+      "label": "预估费用",
+      "value_type": "integer",
+      "unit": "cents",
+      "marking": "FINANCE",
+      "timeseries": false,
+      "primary_key": false,
+      "status": "active",
+      "owner": "freight-core",
+      "version": "1.0.0",
+      "iri": "https://w3id.org/mobility-ontology/freight#estimated_fee",
+      "effective_from": "2026-11-19",
+      "used_by": [
+        "Waybill"
+      ]
+    },
+    {
+      "name": "actual_fee",
+      "label": "实收费用",
+      "value_type": "integer",
+      "unit": "cents",
+      "marking": "FINANCE",
+      "timeseries": false,
+      "primary_key": false,
+      "status": "active",
+      "owner": "freight-core",
+      "version": "1.0.0",
+      "iri": "https://w3id.org/mobility-ontology/freight#actual_fee",
+      "effective_from": "2026-11-19",
+      "used_by": [
+        "Waybill"
+      ]
+    },
+    {
+      "name": "variance",
+      "label": "费用差异",
+      "value_type": "integer",
+      "unit": "cents",
+      "marking": "FINANCE",
+      "timeseries": false,
+      "primary_key": false,
+      "status": "active",
+      "owner": "freight-core",
+      "version": "1.0.0",
+      "iri": "https://w3id.org/mobility-ontology/freight#variance",
+      "effective_from": "2026-11-19",
+      "used_by": [
+        "Waybill"
+      ]
+    },
+    {
+      "name": "waiting_minutes",
+      "label": "等候时长",
+      "value_type": "number",
+      "unit": "minutes",
+      "marking": null,
+      "timeseries": false,
+      "primary_key": false,
+      "status": "active",
+      "owner": "freight-core",
+      "version": "1.0.0",
+      "iri": "https://w3id.org/mobility-ontology/freight#waiting_minutes",
+      "effective_from": "2026-11-19",
+      "used_by": [
+        "Waybill"
+      ]
+    },
+    {
+      "name": "status",
+      "label": "状态（时序）",
+      "value_type": "string",
+      "unit": null,
+      "marking": null,
+      "timeseries": true,
+      "primary_key": false,
+      "status": "active",
+      "owner": "freight-core",
+      "version": "1.0.0",
+      "iri": "https://w3id.org/mobility-ontology/freight#status",
+      "effective_from": "2026-11-19",
+      "used_by": [
+        "Waybill",
+        "Driver",
+        "FeeItem",
+        "Shipper"
+      ]
+    },
+    {
       "name": "waybill_id",
-      "type": "string",
-      "required": true
-     }
-    ],
-    "returns": "QuoteReconcile"
-   },
-   "sandbox": {
-    "timeout_ms": 5000,
-    "memory_mb": 256
-   },
-   "accepts_interface": "Chargeable",
-   "tests": []
+      "label": "运单号（主键）",
+      "value_type": "string",
+      "unit": null,
+      "marking": null,
+      "timeseries": false,
+      "primary_key": true,
+      "status": "active",
+      "owner": "freight-core",
+      "version": "1.0.0",
+      "iri": "https://w3id.org/mobility-ontology/freight#waybill_id",
+      "effective_from": "2026-11-19",
+      "used_by": [
+        "Waybill"
+      ]
+    },
+    {
+      "name": "driver_id",
+      "label": "司机工号（主键）",
+      "value_type": "string",
+      "unit": null,
+      "marking": null,
+      "timeseries": false,
+      "primary_key": true,
+      "status": "active",
+      "owner": "freight-core",
+      "version": "1.0.0",
+      "iri": "https://w3id.org/mobility-ontology/freight#driver_id",
+      "effective_from": "2026-11-19",
+      "used_by": [
+        "Driver"
+      ]
+    },
+    {
+      "name": "fee_id",
+      "label": "费用项 ID（主键）",
+      "value_type": "string",
+      "unit": null,
+      "marking": null,
+      "timeseries": false,
+      "primary_key": true,
+      "status": "active",
+      "owner": "freight-core",
+      "version": "1.0.0",
+      "iri": "https://w3id.org/mobility-ontology/freight#fee_id",
+      "effective_from": "2026-11-19",
+      "used_by": [
+        "FeeItem"
+      ]
+    },
+    {
+      "name": "calc_basis",
+      "label": "计费依据",
+      "value_type": "string",
+      "unit": null,
+      "marking": null,
+      "timeseries": false,
+      "primary_key": false,
+      "status": "experimental",
+      "owner": "freight-core",
+      "version": "1.0.0",
+      "iri": "https://w3id.org/mobility-ontology/freight#calc_basis",
+      "effective_from": "2026-11-19",
+      "used_by": [
+        "FeeItem"
+      ]
+    }
+  ],
+  "property_registry_policy": {
+    "enforcement": "incremental",
+    "note": "incremental：新增属性必须先注册（门禁拦截未注册新属性）；存量属性未注册的标记 legacy 不报错。strict 模式全部强制。",
+    "legacy_grace": true
   },
-  {
-   "id": "chargeable_variance",
-   "label": "可计费对象差异计算（接口多态示例）",
-   "version": "1.0.0",
-   "owner": "freight-core",
-   "implementation": "enhancements.interfaces.compute_variance",
-   "description": "按 Chargeable 接口接受任意实现类，计算金额口径差异；演示接口多态的函数路由。",
-   "signature": {
-    "params": [
-     {
-      "name": "object_id",
-      "type": "string",
-      "required": true,
-      "interface": "Chargeable"
-     }
-    ],
-    "returns": "number"
-   },
-   "sandbox": {
-    "timeout_ms": 3000,
-    "memory_mb": 128
-   },
-   "accepts_interface": "Chargeable",
-   "tests": []
-  }
- ],
- "lifecycle_statuses": [
-  "endorsed",
-  "active",
-  "experimental",
-  "deprecated"
- ]
+  "interfaces": [
+    {
+      "id": "Chargeable",
+      "label": "可计费对象",
+      "description": "携带金额属性、可进入费用拆解与对账流程的对象。",
+      "match": "structural",
+      "required_properties": [
+        "status"
+      ],
+      "required_any_of": [
+        "actual_fee",
+        "actual_amount",
+        "quoted_amount"
+      ],
+      "owner": "freight-core",
+      "version": "1.0.0"
+    },
+    {
+      "id": "Party",
+      "label": "业务主体",
+      "description": "有名称与联系方式的参与方（货主、司机等）。",
+      "match": "structural",
+      "required_properties": [
+        "status"
+      ],
+      "required_any_of": [
+        "shipper_name",
+        "driver_name"
+      ],
+      "owner": "freight-core",
+      "version": "1.0.0"
+    },
+    {
+      "id": "TemporalTracked",
+      "label": "状态时序跟踪对象",
+      "description": "状态属性为时序属性，支持按时间点查询历史值。",
+      "match": "structural",
+      "required_properties": [
+        "status"
+      ],
+      "required_timeseries": [
+        "status"
+      ],
+      "owner": "freight-core",
+      "version": "1.0.0"
+    }
+  ],
+  "markings": [
+    {
+      "id": "PII",
+      "label": "个人信息",
+      "description": "姓名、联系方式等个人信息。无标记用户不可读，角色再高也不豁免（强制控制）。",
+      "category": "Information",
+      "members": [
+        "freight-core",
+        "compliance-ops"
+      ]
+    },
+    {
+      "id": "FINANCE",
+      "label": "财务敏感",
+      "description": "金额类字段。仅结算与财务角色可读。",
+      "category": "Finance",
+      "members": [
+        "freight-core",
+        "settlement-ops"
+      ]
+    },
+    {
+      "id": "DISPUTE_OPS",
+      "label": "争议处理",
+      "description": "争议状态的费用项仅争议处理组可见（行级安全示例）。",
+      "category": "Operations",
+      "members": [
+        "dispute-ops",
+        "freight-core"
+      ]
+    }
+  ],
+  "object_security_policies": [
+    {
+      "id": "osp-feeitem-disputed",
+      "object_type": "FeeItem",
+      "description": "DISPUTED 状态的费用项仅 DISPUTE_OPS 标记成员可见（行级）。",
+      "row_filter": {
+        "property": "status",
+        "equals": "DISPUTED"
+      },
+      "required_marking": "DISPUTE_OPS"
+    }
+  ],
+  "property_security_policies": [
+    {
+      "id": "psp-pii",
+      "description": "PII 标记属性列级脱敏：无 PII 标记的用户读到 null。",
+      "properties": [
+        "shipper_name",
+        "contact",
+        "driver_name"
+      ],
+      "required_marking": "PII"
+    },
+    {
+      "id": "psp-finance",
+      "description": "FINANCE 标记属性列级脱敏：无 FINANCE 标记的用户读到 null。",
+      "properties": [
+        "estimated_fee",
+        "actual_fee",
+        "variance"
+      ],
+      "required_marking": "FINANCE"
+    }
+  ],
+  "scope_tokens": {
+    "note": "LLM agent 令牌最小化：令牌携带可见类/函数子集，服务端按令牌过滤工具面。",
+    "default_token": {
+      "id": "agent-readonly",
+      "classes": [
+        "Waybill",
+        "FeeItem",
+        "Shipper",
+        "Driver"
+      ],
+      "functions": [
+        "fee_breakdown",
+        "quote_reconcile"
+      ],
+      "mcp_tools": [
+        "ontology.catalog",
+        "ontology.object_type_search",
+        "ontology.schema"
+      ]
+    }
+  },
+  "function_registry": [
+    {
+      "id": "fee_breakdown",
+      "label": "费用拆解",
+      "version": "1.1.0",
+      "owner": "freight-core",
+      "implementation": "freight.engine.FreightSystem.fee_analysis",
+      "description": "确定性拆解运单的报价、规则应计、实收、减免和差异。",
+      "signature": {
+        "params": [
+          {
+            "name": "waybill_id",
+            "type": "string",
+            "required": true
+          },
+          {
+            "type": "string",
+            "name": "version",
+            "required": false
+          }
+        ],
+        "returns": "FeeBreakdown"
+      },
+      "sandbox": {
+        "timeout_ms": 5000,
+        "memory_mb": 256
+      },
+      "accepts_interface": null,
+      "tests": [
+        {
+          "name": "wb001-fee-sum-closes",
+          "args": {
+            "waybill_id": "waybill:WB20261105001"
+          },
+          "expect": {
+            "status": "EXPLAINED"
+          }
+        }
+      ]
+    },
+    {
+      "id": "quote_reconcile",
+      "label": "报价对账",
+      "version": "1.0.0",
+      "owner": "freight-core",
+      "implementation": "freight.engine.FreightSystem.quote_reconcile",
+      "description": "确定性对比订单报价明细与实际费用。",
+      "signature": {
+        "params": [
+          {
+            "name": "waybill_id",
+            "type": "string",
+            "required": true
+          }
+        ],
+        "returns": "QuoteReconcile"
+      },
+      "sandbox": {
+        "timeout_ms": 5000,
+        "memory_mb": 256
+      },
+      "accepts_interface": "Chargeable",
+      "tests": []
+    },
+    {
+      "id": "chargeable_variance",
+      "label": "可计费对象差异计算（接口多态示例）",
+      "version": "1.0.0",
+      "owner": "freight-core",
+      "implementation": "enhancements.interfaces.compute_variance",
+      "description": "按 Chargeable 接口接受任意实现类，计算金额口径差异；演示接口多态的函数路由。",
+      "signature": {
+        "params": [
+          {
+            "name": "object_id",
+            "type": "string",
+            "required": true,
+            "interface": "Chargeable"
+          }
+        ],
+        "returns": "number"
+      },
+      "sandbox": {
+        "timeout_ms": 3000,
+        "memory_mb": 128
+      },
+      "accepts_interface": "Chargeable",
+      "tests": []
+    },
+    {
+      "id": "fee_breakdown_batch",
+      "label": "批量费用拆解",
+      "version": "1.0.0",
+      "owner": "freight-core",
+      "implementation": "freight.engine.FreightSystem.fee_breakdown_batch",
+      "description": "对整个运单对象集批量执行费用拆解（object_set 参数形态，对齐 Palantir Function 的 ObjectSet 入参）。",
+      "signature": {
+        "params": [
+          {
+            "name": "waybills",
+            "type": "object_set",
+            "of": "Waybill",
+            "required": true,
+            "description": "查询树(dict) 或对象 ID 列表(list)"
+          }
+        ],
+        "returns": "FeeBreakdownBatch"
+      },
+      "sandbox": {
+        "timeout_ms": 30000,
+        "memory_mb": 512
+      },
+      "accepts_interface": null,
+      "tests": [
+        {
+          "name": "batch-variance-sum",
+          "args": {
+            "waybills": {
+              "set": {
+                "from": "Waybill"
+              }
+            }
+          },
+          "expect": {
+            "count": ">=1"
+          }
+        }
+      ]
+    }
+  ],
+  "lifecycle_statuses": [
+    "endorsed",
+    "active",
+    "experimental",
+    "deprecated"
+  ]
 }

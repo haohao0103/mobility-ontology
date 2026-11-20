@@ -26189,5 +26189,70 @@
       "iri": "https://w3id.org/mobility-ontology/freight/action#depart_stop",
       "effective_from": "2025-01-01"
     }
+  ],
+  "derived_types": [
+    {
+      "id": "CarrierResource",
+      "label": "承运资源",
+      "aliases": [
+        "承运",
+        "运力资源",
+        "司机车辆"
+      ],
+      "description": "派生视图：司机 ∪ 车辆（承运侧统一资源视图，组合代数替代类层级继承，对齐 Palantir 派生类型）",
+      "derivation": {
+        "union": [
+          {
+            "from": "Driver"
+          },
+          {
+            "from": "Vehicle"
+          }
+        ]
+      },
+      "properties": [
+        "object_id",
+        "name",
+        "status",
+        "fleet",
+        "driver_name",
+        "qualification",
+        "plate",
+        "vehicle_type",
+        "capacity_t"
+      ],
+      "owner": "freight-core",
+      "version": "1.0.0",
+      "source": "derived"
+    },
+    {
+      "id": "DisputedFee",
+      "label": "争议费用",
+      "aliases": [
+        "争议",
+        "被申诉费用"
+      ],
+      "description": "派生视图：状态为 DISPUTED 的费用项（行级安全策略 osp-feeitem-disputed 继续生效）",
+      "derivation": {
+        "from": "FeeItem",
+        "where": {
+          "status": {
+            "$eq": "DISPUTED"
+          }
+        }
+      },
+      "properties": [
+        "fee_id",
+        "fee_type",
+        "fee_label",
+        "quoted_amount",
+        "actual_amount",
+        "calc_basis",
+        "status"
+      ],
+      "owner": "freight-core",
+      "version": "1.0.0",
+      "source": "derived"
+    }
   ]
 }

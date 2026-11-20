@@ -76,6 +76,13 @@
       "items": {
         "$ref": "#/$defs/action"
       }
+    },
+    "derived_types": {
+      "type": "array",
+      "description": "派生对象类型：命名查询视图（组合代数/谓词），查询引擎 from:派生类型 时递归解析 derivation。",
+      "items": {
+        "$ref": "#/$defs/derivedType"
+      }
     }
   },
   "$defs": {
@@ -689,6 +696,45 @@
     "relationId": {
       "type": "string",
       "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "derivedType": {
+      "type": "object",
+      "required": [
+        "id",
+        "label",
+        "derivation",
+        "properties"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "aliases": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "description": {
+          "type": "string"
+        },
+        "derivation": {
+          "type": "object"
+        },
+        "properties": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "owner": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        }
+      }
     }
   }
 }

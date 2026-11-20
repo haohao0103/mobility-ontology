@@ -595,6 +595,49 @@ class SemanticLayer:
                 "groups": member_groups,
             })
 
+        # 派生对象类型也参与类型发现（kind="derived"）：
+        # 用户问"承运资源/司机车辆"能锚定到派生视图，而非只知道实体类。
+        for did, dt in {d["id"]: d
+                        for d in self.raw.get("derived_types", [])}.items():
+            label = str(dt.get("label", did))
+            aliases = [str(x) for x in (dt.get("aliases") or [])]
+            fields = {
+                "id": did.lower(),
+                "label": label.lower(),
+                "description": str(dt.get("description", "")).lower(),
+                "aliases": " ".join(aliases).lower(),
+            }
+            score = 0
+            matched_fields = set()
+            if query:
+                if query in fields["id"]:
+                    score += 8
+                    matched_fields.add("id")
+                if query in fields["label"]:
+                    score += 6
+                    matched_fields.add("label")
+                if query in fields["aliases"]:
+                    score += 6
+                    matched_fields.add("aliases")
+                if query in fields["description"]:
+                    score += 3
+                    matched_fields.add("description")
+            for term, weight in terms.items():
+                for field_name, text in fields.items():
+                    if term in text:
+                        score += weight
+                        matched_fields.add(field_name)
+            if score <= 0:
+                continue
+            hits.append({
+                "kind": "derived",
+                "id": did,
+                "label": label,
+                "score": score,
+                "matched_fields": sorted(matched_fields),
+                "groups": [],
+            })
+
         # 费用类型命中时，把费用关联回它的本体作用域（通常是 FeeItem）。
         fee_anchor_scores: dict[str, int] = {}
         for fee_type in self.pricing:

@@ -192,11 +192,35 @@ class ObjectQueryEngine:
         self.sem = sem
         self.ext = ext
         self.security = security
+        # 派生对象类型：命名查询视图（Palantir derived object type）
+        self.derived_types: dict[str, dict] = {
+            d["id"]: d for d in sem.raw.get("derived_types", [])
+        }
 
-    # -------------------------------------------------- 校验
+    def _derived_of(self, type_id: str, stack: tuple = ()) -> dict | None:
+        """取派生类型定义；带循环检测（派生链不得指回自身）。"""
+        d = self.derived_types.get(type_id)
+        if d is None:
+            return None
+        if type_id in stack:
+            raise QueryError(
+                f"派生类型循环引用: {' -> '.join(stack + (type_id,))}",
+                "DERIVED_CYCLE")
+        return d
+
     def _props_of(self, class_id: str) -> dict[str, str | None]:
+        derived = self.derived_types.get(class_id)
+        if derived is not None:
+            out: dict[str, str | None] = {
+                p: None for p in derived.get("properties", [])}
+            if self.ext is not None:
+                for p in out:
+                    pt = self.ext.property_types.get(p)
+                    if pt is not None:
+                        out[p] = pt.get("value_type")
+            return out
         cls = self.sem.class_of(class_id)
-        out: dict[str, str | None] = {p: None for p in cls.get("properties", [])}
+        out = {p: None for p in cls.get("properties", [])}
         if self.ext is not None:
             for p in out:
                 pt = self.ext.property_types.get(p)
@@ -204,7 +228,7 @@ class ObjectQueryEngine:
                     out[p] = pt.get("value_type")
         return out
 
-    def validate_set(self, node: Any, depth: int = 0) -> str:
+    def validate_set(self, node: Any, depth: int = 0, _stack: tuple = ()) -> str:
         """校验集合表达式，返回该集的（主）类型 ID。"""
         if depth > MAX_DEPTH:
             raise QueryError(f"集合嵌套超过 {MAX_DEPTH} 层", "QUERY_DEPTH_EXCEEDED")
@@ -218,7 +242,13 @@ class ObjectQueryEngine:
             )
         if "from" in node:
             class_id = node["from"]
-            self.sem.class_of(class_id)  # 未知类型 -> OntologyViolation -> 包一层
+            derived = self._derived_of(class_id, _stack)
+            if derived is not None:
+                # 派生类型：递归校验 derivation 树（循环检测靠栈）
+                self.validate_set(derived["derivation"], depth + 1,
+                                  _stack + (class_id,))
+            else:
+                self.sem.class_of(class_id)  # 未知类型 -> OntologyViolation
             where = node.get("where")
             if where is not None:
                 validate_predicate(where, self._props_of(class_id))
@@ -336,12 +366,21 @@ class ObjectQueryEngine:
 
     def _check_agg_prop(self, prop: str, main_type: str, numeric: bool) -> None:
         if main_type != "*":
-            cls = self.sem.class_of(main_type)
-            if prop not in cls.get("properties", []):
-                raise QueryError(
-                    f"聚合属性 {prop} 不属于类 {main_type}",
-                    "AGGREGATE_PROP_UNKNOWN", {"prop": prop},
-                )
+            # 派生类型用其声明的属性表（含跨源类型并集）
+            if main_type in self.derived_types:
+                allowed = self.derived_types[main_type].get("properties", [])
+                if prop not in allowed:
+                    raise QueryError(
+                        f"聚合属性 {prop} 不属于派生类型 {main_type}",
+                        "AGGREGATE_PROP_UNKNOWN", {"prop": prop},
+                    )
+            else:
+                cls = self.sem.class_of(main_type)
+                if prop not in cls.get("properties", []):
+                    raise QueryError(
+                        f"聚合属性 {prop} 不属于类 {main_type}",
+                        "AGGREGATE_PROP_UNKNOWN", {"prop": prop},
+                    )
             if numeric:
                 vt = (self.ext.property_types.get(prop) or {}).get("value_type") \
                     if self.ext else None
@@ -352,13 +391,21 @@ class ObjectQueryEngine:
                     )
 
     # -------------------------------------------------- 求值
-    def _resolve_set(self, node: dict, store, depth: int = 0) -> list[dict]:
+    def _resolve_set(self, node: dict, store, depth: int = 0,
+                     _stack: tuple = ()) -> list[dict]:
         """求值集合表达式 -> [{object_id, type, props}]（未过滤行级安全）。"""
         if depth > MAX_DEPTH:
             raise QueryError(f"集合嵌套超过 {MAX_DEPTH} 层", "QUERY_DEPTH_EXCEEDED")
         rows: list[dict]
         if "from" in node:
-            rows = self._rows_of_type(store, node["from"])
+            type_id = node["from"]
+            derived = self._derived_of(type_id, _stack)
+            if derived is not None:
+                # 派生类型：递归求值 derivation 树（行级安全在 execute 层统一过滤）
+                rows = self._resolve_set(derived["derivation"], store,
+                                         depth + 1, _stack + (type_id,))
+            else:
+                rows = self._rows_of_type(store, type_id)
             where = node.get("where")
             if where is not None:
                 rows = [r for r in rows if eval_predicate(r["props"], where)]

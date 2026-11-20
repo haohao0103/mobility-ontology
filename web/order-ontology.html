@@ -837,6 +837,9 @@
   .store-graph-head h3{margin:0;font-size:14px;letter-spacing:-.01em}
   .store-graph-head p{margin:4px 0 0;font-size:11.5px;color:#6d7b99;line-height:1.6;max-width:620px}
   .store-graph-badge{font-family:var(--mono);font-size:9.5px;color:#8592ad;border:1px solid #e0d8cc;background:#fff;border-radius:3px;padding:4px 7px;white-space:nowrap}
+  .kb-head-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .kb-back{font-family:var(--mono);font-size:9.5px;color:#a93c00;border:1px solid #ffc6a3;background:var(--orange-soft);border-radius:3px;padding:4px 8px;cursor:pointer}
+  .kb-back:hover{border-color:var(--orange)}
   .store-graph-canvas{position:relative;flex:1;min-height:392px;padding:4px 2px 2px;overflow-x:auto;background-image:radial-gradient(circle at 1px 1px,#e7e0d5 1px,transparent 0);background-size:22px 22px}
   .store-graph-canvas svg{display:block;width:100%;height:auto;min-width:700px}
   .store-graph-foot{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:9px 14px;border-top:1px solid #eee9e0;font-family:var(--mono);font-size:9.5px;color:#a39b8d}
@@ -3121,7 +3124,7 @@ const storeState = { data: null, error: null };
 const knowledgeState = { data: null, error: null, tab: 'classes', q: '' };
 const traceState = { tools: null, live: null, liveError: null, running: false };
 const storageState = { data: null, error: null };
-const kbState = { selected: 'Waybill', selectedRel: null };
+const kbState = { selected: 'Waybill', selectedRel: null, ego: false };
 
 const KNOWLEDGE_TABS = [
   { key: 'classes', label: '类' },
@@ -3383,7 +3386,21 @@ function kbAuxBox(id) {
   };
 }
 
+let kbLayoutOverride = null;
+
 function kbBox(id) {
+  const override = kbLayoutOverride && kbLayoutOverride[id];
+  if (override) {
+    return {
+      x: override.x,
+      y: override.y,
+      w: override.w || KB_NODE_W,
+      h: override.h || KB_NODE_H,
+      cat: override.cat || 'doc',
+      color: override.color || null,
+      rail: false
+    };
+  }
   const layout = KB_LAYOUT[id];
   if (layout) {
     return {
@@ -3392,6 +3409,7 @@ function kbBox(id) {
       w: layout.w || KB_NODE_W,
       h: layout.h || KB_NODE_H,
       cat: layout.cat,
+      color: null,
       rail: Boolean(layout.rail)
     };
   }
@@ -3401,6 +3419,48 @@ function kbBox(id) {
 function kbClassDef(id) {
   const classes = (knowledgeState.data && knowledgeState.data.classes) || [];
   return classes.find((cls) => cls.id === id) || null;
+}
+
+function kbEgoRoot() {
+  if (!kbState.ego || kbState.selectedRel) return null;
+  return kbClassDef(kbState.selected) ? kbState.selected : null;
+}
+
+function kbEgoGraph(rootId) {
+  const relations = ((knowledgeState.data && knowledgeState.data.relations) || [])
+    .filter((rel) => rel.domain === rootId || rel.range === rootId);
+  const neighborIds = [];
+  relations.forEach((rel) => {
+    const other = rel.domain === rootId ? rel.range : rel.domain;
+    if (other !== rootId && !neighborIds.includes(other) && kbClassDef(other)) {
+      neighborIds.push(other);
+    }
+  });
+  const n = neighborIds.length;
+  const arc = n ? (n * 150) / (2 * Math.PI) * 1.12 : 0;
+  const rx = Math.max(320, Math.min(500, arc));
+  const ry = rx * 0.78;
+  const cx = KB_CANVAS.w / 2;
+  const cy = 500;
+  const layout = {};
+  const rootDef = kbClassDef(rootId);
+  const rootKnown = KB_LAYOUT[rootId];
+  layout[rootId] = {
+    x: cx, y: cy, cat: (rootKnown && rootKnown.cat) || 'doc',
+    color: (!rootKnown && rootDef && rootDef.display_metadata && rootDef.display_metadata.color) || null
+  };
+  neighborIds.forEach((id, index) => {
+    const angle = -Math.PI / 2 + (2 * Math.PI * index) / n;
+    const cls = kbClassDef(id);
+    const known = KB_LAYOUT[id];
+    layout[id] = {
+      x: cx + Math.cos(angle) * rx,
+      y: cy + Math.sin(angle) * ry,
+      cat: (known && known.cat) || 'doc',
+      color: known ? null : ((cls && cls.display_metadata && cls.display_metadata.color) || '#9aa3b2')
+    };
+  });
+  return { layout, relations, neighborIds };
 }
 
 function kbRuleDef(id) {
@@ -3543,17 +3603,27 @@ function paintKnowledgeGraph() {
   const classes = data.classes || [];
   const relations = data.relations || [];
   const stats = data.stats || {};
-  const edges = relations.map((rel) => {
-    if (!KB_LAYOUT[rel.domain] || !KB_LAYOUT[rel.range]) return '';
+  const egoRoot = kbEgoRoot();
+  const ego = egoRoot ? kbEgoGraph(egoRoot) : null;
+  const egoDef = egoRoot ? kbClassDef(egoRoot) : null;
+  kbLayoutOverride = ego ? ego.layout : null;
+  const visibleClasses = ego
+    ? [egoRoot, ...ego.neighborIds].map((id) => kbClassDef(id)).filter(Boolean)
+    : classes;
+  const visibleRelations = ego ? ego.relations : relations;
+  const edges = visibleRelations.map((rel) => {
+    const a = kbBox(rel.domain);
+    const b = kbBox(rel.range);
+    if (!a || !b) return '';
     const { d, lx, ly } = kbEdgePath(rel);
-    const back = KB_LAYOUT[rel.range].x < KB_LAYOUT[rel.domain].x - 120;
+    const back = b.x < a.x - 120;
     return `<g class="kb-edge-group sg-edge-group${back ? ' back' : ''}" data-kb-edge="${esc(rel.id)}">
       <path class="kb-edge-hit" d="${d}"></path>
       <path class="kb-edge" d="${d}" marker-end="url(#kbArrow)"></path>
       <text class="sg-edge-label" x="${lx}" y="${ly}">${esc(rel.label || rel.id)}</text>
     </g>`;
   }).join('');
-  const nodes = classes.map((cls) => {
+  const nodes = visibleClasses.map((cls) => {
     const box = kbBox(cls.id);
     if (!box) return '';
     const x = box.x - box.w / 2;
@@ -3569,7 +3639,7 @@ function paintKnowledgeGraph() {
     return `<g class="kb-node sg-node cat-${box.cat}" data-kb-node="${esc(cls.id)}">
       <title>${esc(cls.id)} · ${esc(cls.label)}</title>
       <rect x="${x}" y="${y}" width="${box.w}" height="${box.h}" rx="4"></rect>
-      <rect x="${x}" y="${y}" width="3.5" height="${box.h}" rx="1.75" style="fill:${KB_CAT_BAR[box.cat] || '#cec6b8'};stroke:none"></rect>
+      <rect x="${x}" y="${y}" width="3.5" height="${box.h}" rx="1.75" style="fill:${box.color || KB_CAT_BAR[box.cat] || '#cec6b8'};stroke:none"></rect>
       <text class="sg-name" x="${box.x + 2}" y="${box.y - 4}">${esc(cls.label)}</text>
       <text class="sg-id" x="${box.x + 2}" y="${box.y + 12}">${esc(cls.id)}</text>
     </g>`;
@@ -3594,7 +3664,7 @@ function paintKnowledgeGraph() {
       return `<g class="kb-node kb-aux-node sg-node cat-${box.cat}" data-kb-node="${esc(id)}">
         <title>${esc(info.label)} · ${esc(info.sub)}</title>
         <rect x="${x}" y="${y}" width="${box.w}" height="${box.h}" rx="4"></rect>
-        <rect x="${x}" y="${y}" width="3" height="${box.h}" rx="1.5" style="fill:${KB_CAT_BAR[box.cat] || '#9aa3b2'};stroke:none"></rect>
+        <rect x="${x}" y="${y}" width="3" height="${box.h}" rx="1.5" style="fill:${box.color || KB_CAT_BAR[box.cat] || '#9aa3b2'};stroke:none"></rect>
         <text class="sg-name" x="${box.x + 1}" y="${box.y - 3}">${esc(kbCut(info.label, limit))}</text>
         <text class="sg-id" x="${box.x + 1}" y="${box.y + 9}">${esc(kbCut(info.sub, limit + 3))}</text>
       </g>`;
@@ -3607,37 +3677,56 @@ function paintKnowledgeGraph() {
     </g>`;
   }).join('');
   const legend = KB_CATS.map((cat) => `<span><i class="kb-dot ${cat.key}"></i>${esc(cat.label)}</span>`).join('');
+  const canvasHeight = ego ? 1000 : KB_CANVAS.h;
+  const graphTitle = ego
+    ? `关系邻域 · ${egoDef ? egoDef.label : egoRoot}`
+    : '本体知识图 · 全量 TBox';
+  const graphLead = ego
+    ? `以 <b>${esc(egoRoot)}</b> 为中心，展示 ${ego.relations.length} 条直接关系，涉及 ${ego.neighborIds.length} 个相邻类。点击相邻类可继续下钻，点击连线查看关系定义；「返回全量图」回到 TBox 全图。`
+    : `上半部分是 ${esc(stats.classes || classes.length)} 个类和 ${esc(stats.relations || relations.length)} 条关系：方块是类，箭头是「定义域 → 值域」。下半部分按层列出 ${esc(stats.rules || 0)} 条规则、${esc(stats.actions || 0)} 个动作、${esc(stats.functions || 0)} 个函数、${esc(stats.pricing || 0)} 组定价参数、${esc(stats.data_sources || 0)} 个数据源映射和 ${esc(stats.primitives || 0)} 个本体原语。虚线表示该规则 / 参数 / 动作作用在哪个类上，全部来自同一个 TBox 文件。`;
   host.innerHTML = `
     <div class="store-graph-card kb-card">
       <div class="store-graph-head">
         <div>
-          <h3>本体知识图 · 全量 TBox</h3>
-          <p>上半部分是 ${esc(stats.classes || classes.length)} 个类和 ${esc(stats.relations || relations.length)} 条关系：方块是类，箭头是「定义域 → 值域」。下半部分按层列出 ${esc(stats.rules || 0)} 条规则、${esc(stats.actions || 0)} 个动作、${esc(stats.functions || 0)} 个函数、${esc(stats.pricing || 0)} 组定价参数、${esc(stats.data_sources || 0)} 个数据源映射和 ${esc(stats.primitives || 0)} 个本体原语。虚线表示该规则 / 参数 / 动作作用在哪个类上，全部来自同一个 TBox 文件。</p>
+          <h3>${graphTitle}</h3>
+          <p>${graphLead}</p>
         </div>
-        <span class="store-graph-badge">GET /freight/ontology</span>
+        <div class="kb-head-actions">
+          <span class="store-graph-badge">GET /freight/ontology</span>
+          ${ego ? '<button class="kb-back" type="button" data-kb-back>返回全量图</button>' : ''}
+        </div>
       </div>
       <div class="kb-dual">
         <div class="store-graph-canvas kb-canvas" id="kbCanvas">
-          <svg class="sg-graph kb-graph" viewBox="0 0 ${KB_CANVAS.w} ${KB_CANVAS.h}" role="img" aria-label="本体知识图：全量 TBox，包含类、关系、规则、动作、函数、定价参数、数据源映射和本体原语">
+          <svg class="sg-graph kb-graph" viewBox="0 0 ${KB_CANVAS.w} ${canvasHeight}" role="img" aria-label="${ego ? '类关系邻域图' : '本体知识图：全量 TBox，包含类、关系、规则、动作、函数、定价参数、数据源映射和本体原语'}">
             <defs>
               <marker id="kbArrow" markerWidth="8" markerHeight="8" refX="7" refY="3.5" orient="auto">
                 <path d="M0,0 L0,7 L7,3.5 z" fill="#c2b9ab"></path>
               </marker>
             </defs>
-            <g class="kb-map-layer">${mapEdges}</g>
+            <g class="kb-map-layer">${ego ? '' : mapEdges}</g>
             <g>${edges}</g>
             <g>${nodes}</g>
-            <g>${lanes}</g>
+            <g>${ego ? '' : lanes}</g>
           </svg>
         </div>
         <aside class="store-record kb-detail" id="kbDetail" aria-live="polite"></aside>
       </div>
       <div class="store-graph-foot">
         <div class="kb-legend">${legend}</div>
-        <span>全量 TBox · ${esc(stats.classes || classes.length)} 类 · ${esc(stats.relations || relations.length)} 关系 · ${esc(stats.rules || 0)} 规则 · ${esc(stats.actions || 0)} 动作 · ${esc(stats.pricing || 0)} 组定价 · ${esc(stats.data_sources || 0)} 数据源</span>
+        <span>${ego
+          ? `关系邻域 · ${esc(ego.relations.length)} 关系 · ${esc(ego.neighborIds.length)} 相邻类 · ${esc(visibleClasses.length)} 节点`
+          : `全量 TBox · ${esc(stats.classes || classes.length)} 类 · ${esc(stats.relations || relations.length)} 关系 · ${esc(stats.rules || 0)} 规则 · ${esc(stats.actions || 0)} 动作 · ${esc(stats.pricing || 0)} 组定价 · ${esc(stats.data_sources || 0)} 数据源`}</span>
       </div>
     </div>`;
   bindKnowledgeGraph();
+  const back = host.querySelector('[data-kb-back]');
+  if (back) {
+    back.addEventListener('click', () => {
+      kbState.ego = false;
+      paintKnowledgeGraph();
+    });
+  }
   paintKnowledgeDetail();
   applyKnowledgeSelection();
 }
@@ -3650,8 +3739,8 @@ function bindKnowledgeGraph() {
       event.stopPropagation();
       kbState.selected = node.dataset.kbNode;
       kbState.selectedRel = null;
-      paintKnowledgeDetail();
-      applyKnowledgeSelection();
+      kbState.ego = true;
+      paintKnowledgeGraph();
     });
     node.addEventListener('mouseenter', () => kbFocus('node', node.dataset.kbNode));
     node.addEventListener('mouseleave', refreshKbFocus);
@@ -4005,8 +4094,8 @@ function bindKbDetailLinks() {
     link.addEventListener('click', () => {
       kbState.selected = link.dataset.kbGoto;
       kbState.selectedRel = null;
-      paintKnowledgeDetail();
-      applyKnowledgeSelection();
+      kbState.ego = true;
+      paintKnowledgeGraph();
     });
   });
 }
@@ -4908,12 +4997,14 @@ function jumpToKnowledge(id) {
   if (id.startsWith('relation:')) {
     kbState.selectedRel = id.slice('relation:'.length);
     kbState.selected = null;
+    kbState.ego = false;
+    paintKnowledgeGraph();
   } else {
     kbState.selected = id;
     kbState.selectedRel = null;
+    kbState.ego = true;
+    paintKnowledgeGraph();
   }
-  paintKnowledgeDetail();
-  applyKnowledgeSelection();
   const svg = document.querySelector('#kbCanvas svg');
   if (svg) {
     if (id.startsWith('relation:')) kbFocus('edge', id.slice('relation:'.length));

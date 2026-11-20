@@ -37,6 +37,11 @@ def _ts_prop_type(ext, prop: str) -> str:
     return TS_TYPE.get(pt.get("value_type", "string"), "string") if pt else "string"
 
 
+def _derived_entries(sem: SemanticLayer) -> list[tuple[str, dict]]:
+    """派生对象类型清单（本体声明，与实体类同等待遇进 codegen）。"""
+    return [(d["id"], d) for d in sem.raw.get("derived_types", [])]
+
+
 def _generate_ts_builders(sem: SemanticLayer, ext: ExtensionRegistry) -> list[str]:
     """E4：组合式查询的类型化构建器（对标 OSDK 编译期检查）。"""
     lines = [
@@ -76,6 +81,21 @@ def _generate_ts_builders(sem: SemanticLayer, ext: ExtensionRegistry) -> list[st
         lines.append(f"  return {{ set: {{ from: '{cid}' }}, where, ...extras }};")
         lines.append("}")
         lines.append("")
+    for did, dt in _derived_entries(sem):
+        name = _pascal(did)
+        lines.append(f"// 派生类型 {did}（{dt.get('label', did)}）：derivation 视图")
+        lines.append(f"export interface {name}Filters {{")
+        for prop in dt.get("properties", []):
+            ts = _ts_prop_type(ext, prop)
+            lines.append(f"  {prop}?: WhereOps<{ts}>;")
+        lines.append("}")
+        lines.append(
+            f"export function {did[0].lower() + did[1:]}Query("
+            f"where: {name}Filters, extras?: QueryExtras): ObjectSetQuery {{"
+        )
+        lines.append(f"  return {{ set: {{ from: '{did}' }}, where, ...extras }};")
+        lines.append("}")
+        lines.append("")
     return lines
 
 
@@ -100,6 +120,18 @@ def generate_typescript(sem: SemanticLayer, ext: ExtensionRegistry) -> str:
             ts = TS_TYPE.get(pt.get("value_type", "string"), "string") if pt else "string"
             opt = "?" if not (pt and pt.get("primary_key")) else ""
             lines.append(f"  {prop}{opt}: {ts} | null;")
+        lines.append("}")
+        lines.append("")
+    # 派生对象类型：与实体类同等待遇生成类型化接口（OSDK 侧一等公民）
+    for did, dt in _derived_entries(sem):
+        name = _pascal(did)
+        lines.append(f"/** 派生类型：{dt.get('label', did)}（derivation 视图） */")
+        lines.append(f"export interface {name} extends OntologyObject {{")
+        lines.append(f"  type: '{did}';")
+        for prop in dt.get("properties", []):
+            pt = ext.property_types.get(prop)
+            ts = TS_TYPE.get(pt.get("value_type", "string"), "string") if pt else "string"
+            lines.append(f"  {prop}?: {ts} | null;")
         lines.append("}")
         lines.append("")
     lines.extend(_generate_ts_builders(sem, ext))
@@ -153,6 +185,18 @@ def generate_python(sem: SemanticLayer, ext: ExtensionRegistry) -> str:
             py = PY_TYPE.get(pt.get("value_type", "string"), "str") if pt else "str"
             lines.append(f"    {prop}: {py} | None = None")
         lines.append("")
+    # 派生类型 dataclass（object_id/type 基础字段 + 派生声明属性）
+    for did, dt in _derived_entries(sem):
+        name = _pascal(did)
+        lines.append("@dataclass")
+        lines.append(f"class {name}:")
+        lines.append("    object_id: str")
+        lines.append(f"    type: str = '{did}'")
+        for prop in dt.get("properties", []):
+            pt = ext.property_types.get(prop)
+            py = PY_TYPE.get(pt.get("value_type", "string"), "str") if pt else "str"
+            lines.append(f"    {prop}: {py} | None = None")
+        lines.append("")
     # E4：组合式查询构建器（TypedDict 类型化过滤 + 查询工厂）
     lines += [
         "from typing import TypedDict, Any, Optional",
@@ -176,6 +220,16 @@ def generate_python(sem: SemanticLayer, ext: ExtensionRegistry) -> str:
         lines.append("")
         lines.append(f"def {fname}_query(where: {cid}Filters, extras: Optional[QueryExtras] = None) -> dict:")
         lines.append(f"    return {{'set': {{'from': '{cid}'}}, 'where': dict(where), **(extras or {{}})}}")
+        lines.append("")
+    for did, dt in _derived_entries(sem):
+        fname = did[0].lower() + did[1:]
+        name = _pascal(did)
+        lines.append(f"class {name}Filters(TypedDict, total=False):")
+        for prop in dt.get("properties", []):
+            lines.append(f"    {prop}: Any")
+        lines.append("")
+        lines.append(f"def {fname}_query(where: {name}Filters, extras: Optional[QueryExtras] = None) -> dict:")
+        lines.append(f"    return {{'set': {{'from': '{did}'}}, 'where': dict(where), **(extras or {{}})}}")
         lines.append("")
     lines += [
         "class OntologyClient:",
@@ -228,6 +282,23 @@ def generate_openapi(sem: SemanticLayer, ext: ExtensionRegistry) -> dict:
             "type": "object",
             "properties": props_schema,
             "required": ["object_id"],
+        }
+    # 派生类型 schema（标注 x-derived）
+    for did, dt in _derived_entries(sem):
+        props_schema: dict = {
+            "object_id": {"type": "string"},
+            "type": {"const": did},
+            "name": {"type": "string"},
+        }
+        for prop in dt.get("properties", []):
+            pt = ext.property_types.get(prop)
+            vtype = pt.get("value_type", "string") if pt else "string"
+            props_schema[prop] = {"type": vtype if vtype != "integer" else "integer"}
+        schemas[did] = {
+            "type": "object",
+            "properties": props_schema,
+            "required": ["object_id"],
+            "x-derived": True,
         }
     return {
         "openapi": "3.1.0",

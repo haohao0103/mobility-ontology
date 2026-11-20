@@ -104,9 +104,74 @@ class TestLoadBearing:
         ghost["key"] = "ghost_id"
         classes["GhostTag"] = ghost
         ts = gen_osdk.generate_typescript(
-            type("S", (), {"classes": classes})(), ext)
+            type("S", (), {"classes": classes,
+                           "raw": {"derived_types": []}})(), ext)
         assert "export interface GhostTag" in ts
         assert "ghost_id" in ts
         # 未加类前不含
         ts_before = gen_osdk.generate_typescript(sem, ext)
         assert "GhostTag" not in ts_before
+
+
+class TestDerivedTypesCodegen:
+    def test_derived_in_all_three_artifacts(self, generated):
+        """派生类型三端同产：TS interface+工厂 / Python dataclass+工厂 / OpenAPI x-derived。"""
+        ts = open(os.path.join(generated, "typescript.ts"), encoding="utf-8").read()
+        assert "export interface CarrierResource extends OntologyObject" in ts
+        assert "export interface CarrierResourceFilters" in ts
+        assert "export function carrierResourceQuery" in ts
+        assert "DisputedFee" in ts
+        py = open(os.path.join(generated, "python_client.py"), encoding="utf-8").read()
+        assert "class CarrierResource:" in py
+        assert "def carrierResource_query" in py
+        spec = json.load(open(os.path.join(generated, "openapi.json"), encoding="utf-8"))
+        s = spec["components"]["schemas"]
+        assert s["CarrierResource"].get("x-derived") is True
+        assert s["DisputedFee"].get("x-derived") is True
+
+    def test_derived_removal_drives_client(self, sem):
+        """承重：本体删派生类型 -> 再生成客户端不再含（本体驱动客户端）。"""
+        from enhancements.registry import ExtensionRegistry
+        ext = ExtensionRegistry(base_classes=sem.classes)
+        ts = gen_osdk.generate_typescript(sem, ext)
+        assert "CarrierResource" in ts
+        raw = dict(sem.raw)
+        raw["derived_types"] = []
+        stripped = type("S", (), {
+            "classes": sem.classes,
+            "raw": raw,
+        })()
+        ts2 = gen_osdk.generate_typescript(stripped, ext)
+        assert "CarrierResource" not in ts2
+
+
+class TestDerivedTypesCodegen:
+    def test_derived_in_all_three_artifacts(self, generated):
+        """派生类型三端同产：TS interface+工厂 / Python dataclass+工厂 / OpenAPI x-derived。"""
+        ts = open(os.path.join(generated, "typescript.ts"), encoding="utf-8").read()
+        assert "export interface CarrierResource extends OntologyObject" in ts
+        assert "export interface CarrierResourceFilters" in ts
+        assert "export function carrierResourceQuery" in ts
+        assert "DisputedFee" in ts
+        py = open(os.path.join(generated, "python_client.py"), encoding="utf-8").read()
+        assert "class CarrierResource:" in py
+        assert "def carrierResource_query" in py
+        spec = json.load(open(os.path.join(generated, "openapi.json"), encoding="utf-8"))
+        s = spec["components"]["schemas"]
+        assert s["CarrierResource"].get("x-derived") is True
+        assert s["DisputedFee"].get("x-derived") is True
+
+    def test_derived_removal_drives_client(self, sem):
+        """承重：本体删派生类型 -> 再生成客户端不再含（本体驱动客户端）。"""
+        from enhancements.registry import ExtensionRegistry
+        ext = ExtensionRegistry(base_classes=sem.classes)
+        ts = gen_osdk.generate_typescript(sem, ext)
+        assert "CarrierResource" in ts
+        raw = dict(sem.raw)
+        raw["derived_types"] = []
+        stripped = type("S", (), {
+            "classes": sem.classes,
+            "raw": raw,
+        })()
+        ts2 = gen_osdk.generate_typescript(stripped, ext)
+        assert "CarrierResource" not in ts2

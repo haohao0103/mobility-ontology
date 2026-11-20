@@ -26211,8 +26211,6 @@
         ]
       },
       "properties": [
-        "object_id",
-        "name",
         "status",
         "fleet",
         "driver_name",

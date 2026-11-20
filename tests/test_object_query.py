@@ -312,6 +312,79 @@ class TestPipeline:
         assert s1 == s2 and s1.startswith("os_")
 
 
+# ---------------------------------------------------------------- 分页契约
+
+class TestPageContract:
+    def test_token_chain_union_equals_one_shot(self, engine, sys_mod):
+        """keyset 分页：并集 = 一次性结果，不重不漏，set/snapshot 全程一致。"""
+        eng, _ = engine
+        store = _store(sys_mod)
+        base = {"set": {"from": "FeeItem"},
+                "orderBy": [{"prop": "actual_amount", "dir": "asc"}]}
+        one_shot = eng.execute({**base, "page": {"limit": 500}}, store)
+        expected = [o["object_id"] for o in one_shot["objects"]]
+
+        seen: list[str] = []
+        set_ids: set[str] = set()
+        snapshots: set[str] = set()
+        query = {**base, "page": {"limit": 2}}
+        for _ in range(20):
+            out = eng.execute(query, store)
+            set_ids.add(out["set_id"])
+            snapshots.add(out["snapshot_id"])
+            seen.extend(o["object_id"] for o in out["objects"])
+            token = out.get("next_page_token")
+            if not token:
+                break
+            query = {**base, "page": {"limit": 2, "token": token}}
+        assert sorted(seen) == sorted(expected)
+        assert len(seen) == len(set(seen))
+        assert len(set_ids) == 1 and len(snapshots) == 1
+        assert out["object_set_id"] == out["set_id"]
+        assert out["consistent"] is True
+
+    def test_token_query_mismatch(self, engine, sys_mod):
+        eng, _ = engine
+        store = _store(sys_mod)
+        base = {"set": {"from": "FeeItem"}}
+        p1 = eng.execute({**base, "page": {"limit": 2}}, store)
+        token = p1["next_page_token"]
+        with pytest.raises(QueryError) as exc:
+            eng.execute({
+                "set": {"from": "FeeItem", "where": {
+                    "actual_amount": {"$gte": 0}}},
+                "page": {"limit": 2, "token": token},
+            }, store)
+        assert exc.value.code == "TOKEN_QUERY_MISMATCH"
+
+    def test_token_invalid_signature(self, engine, sys_mod):
+        eng, _ = engine
+        store = _store(sys_mod)
+        p1 = eng.execute({"set": {"from": "FeeItem"}, "page": {"limit": 2}}, store)
+        token = p1["next_page_token"]
+        with pytest.raises(QueryError) as exc:
+            eng.execute({
+                "set": {"from": "FeeItem"},
+                "page": {"limit": 2, "token": token[:-1] + ("0" if token[-1] != "0" else "1")},
+            }, store)
+        assert exc.value.code == "TOKEN_INVALID"
+
+    def test_token_expired_on_snapshot_change(self, engine, sys_mod):
+        eng, _ = engine
+        store = _store(sys_mod)
+        p1 = eng.execute({"set": {"from": "FeeItem"}, "page": {"limit": 2}}, store)
+        token = p1["next_page_token"]
+        store.insert_object("waybill:PAGETEST", "Waybill", "分页快照测试",
+                            None, {}, "2026-01-01T00:00:00")
+        store.conn.commit()
+        with pytest.raises(QueryError) as exc:
+            eng.execute({
+                "set": {"from": "FeeItem"},
+                "page": {"limit": 2, "token": token},
+            }, store)
+        assert exc.value.code == "TOKEN_EXPIRED"
+
+
 # ---------------------------------------------------------------- E4 安全联动
 
 class TestSecurityIntegration:

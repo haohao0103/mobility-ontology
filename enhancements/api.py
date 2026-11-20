@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import json
 import os
 import sys
 
@@ -214,4 +215,41 @@ def usage_dependents(class_id: str):
         "class": class_id,
         "dependents": deps,
         "deletable": not deps,
+    }
+
+
+@router.get("/osdk")
+def osdk(target: str = Query("typescript")):
+    """OSDK-lite 在线生成：本体 JSON -> TS / Python / OpenAPI 3.1。
+
+    本体演进后重新请求即可同步客户端类型（演示页面据此断言 schema 漂移）。
+    """
+    import tools.gen_osdk as gen
+    e = get_enh()
+    sem, ext = e.system.sem, e.ext
+    openapi = gen.generate_openapi(sem, ext)
+    ts = gen.generate_typescript(sem, ext)
+    py = gen.generate_python(sem, ext)
+    files = {"typescript": ts, "python": py,
+             "openapi": json.dumps(openapi, ensure_ascii=False, indent=1)}
+    if target not in files:
+        raise HTTPException(400, f"OSDK_TARGET_UNKNOWN: {target}")
+    derived = sem.raw.get("derived_types", [])
+    return {
+        "target": target,
+        "code": files[target],
+        "files": files,
+        "stats": {
+            "classes": len(sem.classes),
+            "derived_types": len(derived),
+            "interfaces": len(ext.interfaces),
+            "functions": len(ext.function_registry),
+            "typescript_lines": ts.count("\n") + 1,
+            "python_lines": py.count("\n") + 1,
+            "openapi_schemas": len(openapi["components"]["schemas"]),
+            "derived_in_openapi": [
+                d["id"] for d in derived
+                if openapi["components"]["schemas"].get(d["id"], {}).get("x-derived")
+            ],
+        },
     }

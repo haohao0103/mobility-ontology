@@ -1117,6 +1117,8 @@ class SemanticLayer:
             "action_count": len(self.actions),
             "functions": list(self.raw.get("functions", [])),
             "function_count": len(self.functions),
+            "derived_types": list(self.raw.get("derived_types", [])),
+            "derived_type_count": len(self.raw.get("derived_types", [])),
             "primitives": list(self.raw.get("primitives", [])),
             "primitive_count": len(self.primitives),
             "pricing": self.pricing,

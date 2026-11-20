@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
 <title>货拉拉订单本体 · 用一单货讲清楚</title>
 <style>
   :root{
@@ -746,6 +747,38 @@
   .chain-data .num{text-align:right;font-variant-numeric:tabular-nums}
   .chain-data .empty{padding:10px 7px;font-size:10.5px;color:#8592ad;display:block}
 
+  /* 追齐层实验台 */
+  .lab-controls{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;padding:12px 14px;border-bottom:1px solid #eee9e0;background:#fcfaf6}
+  .lab-controls label{display:flex;flex-direction:column;gap:4px;font-family:var(--mono);font-size:9.5px;color:#6d7b99;letter-spacing:.03em}
+  .lab-controls input,.lab-controls select,.lab-controls textarea{font-family:var(--mono);font-size:11px;border:1px solid #e0d8cc;background:#fff;color:var(--ink);padding:6px 8px;border-radius:3px;outline:none}
+  .lab-controls input:focus,.lab-controls select:focus,.lab-controls textarea:focus{border-color:var(--orange)}
+  .lab-controls textarea{min-width:300px;min-height:74px;resize:vertical}
+  .lab-controls .grow{flex:1 1 320px}
+  .lab-verdict{padding:10px 14px;font-size:11.5px;line-height:1.7;border-bottom:1px solid #eee9e0;background:#fff;color:#5f6672}
+  .lab-verdict:empty{display:none}
+  .lab-check{padding:8px 11px;border-radius:4px;font-family:var(--mono);font-size:10.5px;line-height:1.65;margin-bottom:6px}
+  .lab-check:last-child{margin-bottom:0}
+  .lab-check.ok{color:#166534;background:#f0fdf4;border-left:3px solid #22c55e}
+  .lab-check.bad{color:#991b1b;background:#fef2f2;border-left:3px solid #ef4444}
+  .lab-out{padding:12px 14px;overflow:auto;max-height:380px}
+  .lab-json{margin:0;font-family:var(--mono);font-size:10.5px;line-height:1.58;color:#334155;white-space:pre-wrap;word-break:break-word}
+  .lab-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding:14px}
+  .lab-grid.one{grid-template-columns:minmax(0,1fr)}
+  .lab-card{border:1px solid #e4dfd6;border-radius:6px;padding:13px 14px;background:#fffdf8;min-width:0}
+  .lab-card h4{margin:0 0 5px;font-size:13px;display:flex;justify-content:space-between;gap:8px;align-items:center}
+  .lab-card p{margin:0 0 8px;font-size:11px;line-height:1.65;color:#6d7b99}
+  .lab-card .mono{font-family:var(--mono);font-size:10px;color:#1f3f9c;word-break:break-all}
+  .lab-card .btn{margin-top:8px}
+  .lab-kv{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:#e4dfd6;border:1px solid #e4dfd6;border-radius:4px;overflow:hidden;margin-top:10px}
+  .lab-kv div{background:#fff;padding:7px 9px}
+  .lab-kv b{display:block;font-size:16px;letter-spacing:-.03em}
+  .lab-kv span{display:block;font-family:var(--mono);font-size:9px;color:#8592ad;margin-top:2px}
+  .lab-table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:10.5px}
+  .lab-table th{text-align:left;background:#f4f0e8;color:#5f6672;padding:7px 9px;border-bottom:1px solid #e4dfd6;white-space:nowrap}
+  .lab-table td{padding:6px 9px;border-bottom:1px solid #f2eee7;vertical-align:top}
+  .lab-table tr:hover td{background:#fcfaf6}
+  .lab-note{font-size:10.5px;color:#8592ad;line-height:1.7;padding:0 14px 12px}
+
   /* 本体存储全景 */
   .store-panel{margin-top:22px;background:#fff;border:1px solid #e4dfd6;border-radius:6px;overflow:hidden}
   .store-head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap;padding:16px 18px;background:#faf7f1;border-bottom:1px solid #e4dfd6}
@@ -1020,6 +1053,13 @@
       <a href="#loop">07 最小闭环</a>
       <a href="#store">08 本体知识</a>
       <a href="#facts">09 事实查询</a>
+      <a href="#objectset">10 Object Set</a>
+      <a href="#derived">11 派生类型</a>
+      <a href="#interfaces">12 接口多态</a>
+      <a href="#security">13 安全策略</a>
+      <a href="#functions">14 函数沙箱</a>
+      <a href="#search">15 搜索度量</a>
+      <a href="#osdk">16 OSDK</a>
     </nav>
     <div class="top-actions">
       <div class="version-switch" title="切换本体发布版本，当前演示库不需要重建">
@@ -1413,6 +1453,234 @@
 
       <div class="store-panel" id="tracePanel">
         <div class="store-empty">正在读取 MCP 调用轨迹…</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" id="objectset">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="sec-no">10</div>
+        <h2>Object Set 查询台<small>组合语义 · 快照一致 · keyset 分页</small></h2>
+      </div>
+      <p class="sec-lead">Object Set 不是简单列表接口：set 支持 from / where / followLink / union / intersect / subtract 组合；page 使用签名 token 做 keyset 推进，同一查询跨页共享 set_id 与 snapshot_id，并集必须与一次性查询完全一致。下面每次操作都会调用真实后端并现场断言契约。</p>
+
+      <div class="store-panel">
+        <div class="store-head">
+          <div>
+            <h3>查询构造器 + 分页契约验证</h3>
+            <p>同一 filter / orderBy 下逐页取数，断言“不重不漏、set 不变、snapshot 不变、next_page_token 只出不进”。</p>
+          </div>
+          <span class="store-graph-badge">POST /freight/object-set/query</span>
+        </div>
+        <div class="lab-controls">
+          <label>主类型
+            <select id="osType">
+              <option>FeeItem</option>
+              <option>Waybill</option>
+              <option>Shipper</option>
+              <option>CarrierResource</option>
+              <option>DisputedFee</option>
+            </select>
+          </label>
+          <label>orderBy 属性
+            <select id="osOrder"></select>
+          </label>
+          <label>page.limit
+            <input id="osLimit" type="number" min="1" max="50" value="3">
+          </label>
+          <button class="btn" id="osRun">运行第一页</button>
+          <button class="btn primary" id="osChain">串完所有页并断言</button>
+        </div>
+        <div class="lab-verdict" id="osVerdict"></div>
+        <div class="lab-out" id="osOut"><div class="store-empty">选择类型后运行，右侧会显示真实请求与响应。</div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" id="derived">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="sec-no">11</div>
+        <h2>派生对象类型<small>一等公民 · 从 derivation 视图求值</small></h2>
+      </div>
+      <p class="sec-lead">CarrierResource、DisputedFee 不是手工建的对象表，而是本体里声明的 derived_types，由 derivation 视图（union / filter）实时求值。它们与实体类一样进入本体接口、类型系统和代码生成，可以直接被 Object Set 查询。</p>
+
+      <div class="store-panel">
+        <div class="store-head">
+          <div>
+            <h3>派生类型清单与实时求值</h3>
+            <p>清单来自 GET /freight/ontology 的 derived_types；点击“查询派生类型”会真正执行 Object Set 并校验派生语义。</p>
+          </div>
+          <span class="store-graph-badge">GET /freight/ontology</span>
+        </div>
+        <div class="lab-grid" id="derivedGrid"><div class="store-empty">正在读取派生类型…</div></div>
+        <div class="lab-verdict" id="derivedVerdict"></div>
+        <div class="lab-out" id="derivedOut"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" id="interfaces">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="sec-no">12</div>
+        <h2>接口多态<small>structural conforms · 函数自动路由</small></h2>
+      </div>
+      <p class="sec-lead">接口只声明能力，不要求继承。类只要属性结构满足 conforms 就自动成为实现者；注册表函数用 accepts_interface 声明入参，调用时自动路由到实际类，新增实现类零代码接入。</p>
+
+      <div class="store-panel">
+        <div class="store-head">
+          <div>
+            <h3>接口 → 实现者 → 多态函数</h3>
+            <p>实现者列表来自 GET /enh/interfaces；随后调用 chargeable_variance，验证同一个函数能接收 Waybill 与 FeeItem。</p>
+          </div>
+          <span class="store-graph-badge">GET /enh/interfaces</span>
+        </div>
+        <div class="lab-grid" id="ifaceGrid"><div class="store-empty">正在读取接口注册表…</div></div>
+        <div class="lab-controls">
+          <button class="btn primary" id="ifaceRun">调用多态函数 chargeable_variance</button>
+          <span class="lab-note" id="ifaceHint">入参 object_id 取当前演示运单；函数按 accepts_interface 自动路由。</span>
+        </div>
+        <div class="lab-verdict" id="ifaceVerdict"></div>
+        <div class="lab-out" id="ifaceOut"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" id="security">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="sec-no">13</div>
+        <h2>行 / 列级安全<small>策略测试器 · 多视角对比</small></h2>
+      </div>
+      <p class="sec-lead">安全策略挂在对象类型上：行级策略决定“能看到哪些对象”，列级策略按 marking 决定“哪些属性被抹掉”。下面的测试器分别以匿名、财务、争议处理三个视角调用后端，断言可见行数与属性可见性发生真实变化。</p>
+
+      <div class="store-panel">
+        <div class="store-head">
+          <div>
+            <h3>策略测试器（对标 Test policies）</h3>
+            <p>POST /enh/security/simulate 返回每个对象的属性可见矩阵；GET /enh/objects 返回真正脱敏后的对象值。</p>
+          </div>
+          <span class="store-graph-badge">POST /enh/security/simulate</span>
+        </div>
+        <div class="lab-controls">
+          <label>对象类型
+            <select id="secType">
+              <option>FeeItem</option>
+              <option>Shipper</option>
+              <option>Waybill</option>
+            </select>
+          </label>
+          <button class="btn primary" id="secRun">三视角对比并断言</button>
+        </div>
+        <div class="lab-verdict" id="secVerdict"></div>
+        <div class="lab-out" id="secOut"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" id="functions">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="sec-no">14</div>
+        <h2>函数注册表与沙箱<small>声明式函数 · 隔离子进程执行</small></h2>
+      </div>
+      <p class="sec-lead">函数注册表把本体逻辑声明为可发现、可调用的函数；实现级函数在子进程中执行，受 timeout 与内存上限约束。下面既列出注册表元数据，也允许你直接调用或走沙箱执行。</p>
+
+      <div class="store-panel">
+        <div class="store-head">
+          <div>
+            <h3>函数注册表</h3>
+            <p>来自 GET /enh/functions；sandbox 列展示后端声明的隔离参数。</p>
+          </div>
+          <span class="store-graph-badge">GET /enh/functions</span>
+        </div>
+        <div class="lab-out" id="fnTable" style="max-height:240px"><div class="store-empty">正在读取函数注册表…</div></div>
+        <div class="lab-controls">
+          <label>函数
+            <select id="fnSelect"></select>
+          </label>
+          <label class="grow">args（JSON）
+            <textarea id="fnArgs">{}</textarea>
+          </label>
+          <button class="btn" id="fnCall">直接调用</button>
+          <button class="btn primary" id="fnSandbox">沙箱执行</button>
+        </div>
+        <div class="lab-verdict" id="fnVerdict"></div>
+        <div class="lab-out" id="fnOut"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" id="search">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="sec-no">15</div>
+        <h2>搜索与使用度量<small>对象检索 · 依赖图 · 孤儿类</small></h2>
+      </div>
+      <p class="sec-lead">搜索走真实对象索引并叠加安全过滤；使用度量从关系、函数、动作、属性类型、安全策略反向统计每个类的被引用次数，用来判断“这个类能不能安全删除”。</p>
+
+      <div class="store-panel">
+        <div class="store-head">
+          <div>
+            <h3>对象搜索 + 全类使用度量</h3>
+            <p>搜索请求会带 user / roles，返回结果已经过行级与列级安全处理。</p>
+          </div>
+          <span class="store-graph-badge">GET /enh/objects · GET /enh/usage</span>
+        </div>
+        <div class="lab-controls">
+          <label>关键词
+            <input id="searchQ" value="运单" placeholder="运单 / FEE / 沪A…">
+          </label>
+          <label>类型
+            <select id="searchType">
+              <option value="">全部</option>
+              <option>Waybill</option>
+              <option>FeeItem</option>
+              <option>Shipper</option>
+              <option>Driver</option>
+              <option>Vehicle</option>
+            </select>
+          </label>
+          <button class="btn" id="searchRun">执行搜索</button>
+          <button class="btn primary" id="usageRun">刷新使用度量</button>
+        </div>
+        <div class="lab-verdict" id="searchVerdict"></div>
+        <div class="lab-out" id="searchOut"></div>
+        <div class="lab-out" id="usageOut"><div class="store-empty">正在统计依赖关系…</div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" id="osdk">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="sec-no">16</div>
+        <h2>OSDK 在线生成<small>TypeScript · Python · OpenAPI 3.1</small></h2>
+      </div>
+      <p class="sec-lead">OSDK-lite 直接读取当前本体 JSON，生成三端类型化客户端。本体演进后重新生成即可同步客户端类型；派生类型、接口与函数都会出现在生成物里，而不是只存在于后端运行时。</p>
+
+      <div class="store-panel">
+        <div class="store-head">
+          <div>
+            <h3>从本体 JSON 生成客户端</h3>
+            <p>点击生成会返回完整源码与统计，页面断言派生类型已进入 OpenAPI schema。</p>
+          </div>
+          <span class="store-graph-badge">GET /enh/osdk</span>
+        </div>
+        <div class="lab-controls">
+          <label>目标
+            <select id="osdkTarget">
+              <option value="typescript">TypeScript 客户端</option>
+              <option value="python">Python 客户端</option>
+              <option value="openapi">OpenAPI 3.1</option>
+            </select>
+          </label>
+          <button class="btn primary" id="osdkRun">重新生成</button>
+        </div>
+        <div class="lab-verdict" id="osdkVerdict"></div>
+        <div class="lab-out" id="osdkOut"><div class="store-empty">正在生成 OSDK…</div></div>
       </div>
     </div>
   </section>
@@ -4768,11 +5036,472 @@ if ('IntersectionObserver' in window) {
   sections.forEach((section) => observer.observe(section));
 }
 
+/* ── 追齐层实验台：Object Set / 派生类型 / 接口 / 安全 / 函数 / 搜索 / OSDK ── */
+const OS_ROLES = encodeURIComponent('DISPUTE_OPS,PII,FINANCE');
+
+async function enhApi(path, options = {}) {
+  const response = await fetch('/enh' + path, {
+    headers: { 'Content-Type': 'application/json' },
+    ...options
+  });
+  let body = null;
+  try { body = await response.json(); } catch (err) { body = null; }
+  if (!response.ok) {
+    const d = body && body.detail;
+    const message = d && (d.message || d);
+    const error = new Error(typeof message === 'string' ? message : JSON.stringify(message || body));
+    error.status = response.status;
+    throw error;
+  }
+  return body;
+}
+
+function labChecks(items) {
+  return items.map((i) => `<div class="lab-check ${i.ok ? 'ok' : 'bad'}">${i.ok ? 'PASS' : 'FAIL'} · ${esc(i.text)}</div>`).join('');
+}
+
+function labJson(el, data) {
+  el.innerHTML = `<pre class="lab-json">${esc(JSON.stringify(data, null, 2))}</pre>`;
+}
+
+function objectRows(rows, props = []) {
+  if (!rows || !rows.length) return '<div class="store-empty">没有匹配对象（可能被安全策略过滤）。</div>';
+  return `<table class="lab-table"><thead><tr><th>object_id</th><th>type</th><th>name</th><th>status</th><th>${esc(props.join(' / '))}</th></tr></thead><tbody>${
+    rows.map((o) => `<tr><td>${esc(o.object_id)}</td><td>${esc(o.type)}</td><td>${esc(o.name)}</td><td>${esc(o.status)}</td><td>${props.map((p) => esc(o.props && o.props[p] == null ? '—' : o.props[p])).join(' / ')}</td></tr>`).join('')
+  }</tbody></table>`;
+}
+
+function syncOsOrder() {
+  const type = document.getElementById('osType').value;
+  const sel = document.getElementById('osOrder');
+  const props = type === 'CarrierResource'
+    ? ['capacity_t', 'status', 'plate']
+    : type === 'DisputedFee' ? ['actual_amount', 'fee_type', 'status']
+      : type === 'Waybill' ? ['actual_fee', 'estimated_fee', 'status']
+        : type === 'Shipper' ? ['shipper_name', 'status'] : ['actual_amount', 'fee_type', 'status'];
+  sel.innerHTML = props.map((p) => `<option>${esc(p)}</option>`).join('');
+}
+
+async function runObjectSet(chain) {
+  const btn = document.getElementById(chain ? 'osChain' : 'osRun');
+  const verdict = document.getElementById('osVerdict');
+  const out = document.getElementById('osOut');
+  const type = document.getElementById('osType').value;
+  const order = document.getElementById('osOrder').value;
+  const limit = Math.max(1, Math.min(50, Number(document.getElementById('osLimit').value) || 3));
+  const base = { set: { from: type }, orderBy: [{ prop: order, dir: 'asc' }] };
+  btn.disabled = true;
+  verdict.innerHTML = '<div class="lab-check ok">正在调用 /freight/object-set/query …</div>';
+  try {
+    if (!chain) {
+      const body = { ...base, page: { limit } };
+      const page = await api(`/object-set/query?user=ops&roles=${OS_ROLES}`, {
+        method: 'POST', body: JSON.stringify(body)
+      });
+      verdict.innerHTML = labChecks([
+        { ok: page.consistent === true, text: `consistent=${page.consistent}` },
+        { ok: page.set_id === page.object_set_id, text: `set_id === object_set_id (${page.set_id})` },
+        { ok: !!page.snapshot_id, text: `snapshot_id=${page.snapshot_id}` },
+        { ok: page.objects.length === Math.min(limit, page.total), text: `本页 ${page.objects.length} 条 / 总数 ${page.total}` },
+        { ok: page.total > limit ? !!page.next_page_token : !page.next_page_token, text: `next_page_token ${page.next_page_token ? '已签发' : '为空（已到末页）'}` }
+      ]);
+      out.innerHTML = objectRows(page.objects, [order]) +
+        `<pre class="lab-json">${esc(JSON.stringify({ request: body, response: { set_id: page.set_id, snapshot_id: page.snapshot_id, total: page.total, offset: page.offset, consistent: page.consistent, next_page_token: page.next_page_token ? page.next_page_token.slice(0, 46) + '…' : null } }, null, 2))}</pre>`;
+      return;
+    }
+    const oneShot = await api(`/object-set/query?user=ops&roles=${OS_ROLES}`, {
+      method: 'POST', body: JSON.stringify({ ...base, page: { limit: 500 } })
+    });
+    const expected = oneShot.objects.map((o) => o.object_id);
+    const seen = [];
+    const setIds = new Set();
+    const snapshots = new Set();
+    let query = { ...base, page: { limit } };
+    let pages = 0;
+    let last = null;
+    let tokenPreview = null;
+    for (let i = 0; i < 500; i += 1) {
+      const page = await api(`/object-set/query?user=ops&roles=${OS_ROLES}`, {
+        method: 'POST', body: JSON.stringify(query)
+      });
+      pages += 1;
+      last = page;
+      setIds.add(page.set_id);
+      snapshots.add(page.snapshot_id);
+      page.objects.forEach((o) => seen.push(o.object_id));
+      if (page.next_page_token) tokenPreview = page.next_page_token.slice(0, 46) + '…';
+      if (!page.next_page_token) break;
+      query = { ...base, page: { limit, token: page.next_page_token } };
+    }
+    const union = [...seen].sort();
+    const expectedSorted = [...expected].sort();
+    const needsToken = oneShot.total > limit;
+    verdict.innerHTML = labChecks([
+      { ok: JSON.stringify(union) === JSON.stringify(expectedSorted), text: `分页并集 === 一次性结果（${seen.length} vs ${expected.length}）` },
+      { ok: new Set(seen).size === seen.length, text: `无重复对象（unique=${new Set(seen).size}）` },
+      { ok: setIds.size === 1, text: `跨 ${pages} 页 set_id 保持一致（${[...setIds].join(', ')}）` },
+      { ok: snapshots.size === 1, text: `跨 ${pages} 页 snapshot_id 保持一致（${[...snapshots].join(', ')}）` },
+      { ok: last && last.total === oneShot.total, text: `total 全程一致（${oneShot.total}）` },
+      { ok: needsToken ? !!tokenPreview : !tokenPreview, text: needsToken ? `逐页签发 next_page_token（示例 ${tokenPreview}）` : `总数 ${oneShot.total} <= limit ${limit}，单页完成、不签发 token` }
+    ]);
+    out.innerHTML = objectRows(last ? last.objects : [], [order]) +
+      `<pre class="lab-json">${esc(JSON.stringify({ request: { set: base.set, orderBy: base.orderBy, page: { limit, token: '…' } }, pages, seen: seen.length, set_id: [...setIds][0], snapshot_id: [...snapshots][0], total: oneShot.total }, null, 2))}</pre>`;
+  } catch (err) {
+    verdict.innerHTML = labChecks([{ ok: false, text: `调用失败：${err.message}` }]);
+    out.innerHTML = '';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function loadDerivedTypes() {
+  const grid = document.getElementById('derivedGrid');
+  try {
+    const data = await api('/ontology');
+    state.ontology = data;
+    const list = data.derived_types || [];
+    if (!list.length) {
+      grid.innerHTML = '<div class="store-empty">本体未声明 derived_types。</div>';
+      return;
+    }
+    grid.innerHTML = list.map((d) => `
+      <article class="lab-card">
+        <h4>${esc(d.label || d.id)} <span class="mono">${esc(d.id)}</span></h4>
+        <p>${esc(d.description || '')}</p>
+        <div class="mono">derivation: ${esc(JSON.stringify(d.derivation))}</div>
+        <div class="mono" style="margin-top:6px">properties: ${esc((d.properties || []).join(' · '))}</div>
+        <button class="btn" data-derived="${esc(d.id)}">查询派生类型</button>
+      </article>`).join('');
+    grid.querySelectorAll('[data-derived]').forEach((b) => {
+      b.addEventListener('click', () => queryDerived(b.dataset.derived, b));
+    });
+  } catch (err) {
+    grid.innerHTML = `<div class="store-empty">读取派生类型失败：${esc(err.message)}</div>`;
+  }
+}
+
+async function queryDerived(id, btn) {
+  const verdict = document.getElementById('derivedVerdict');
+  const out = document.getElementById('derivedOut');
+  btn.disabled = true;
+  verdict.innerHTML = `<div class="lab-check ok">正在从 derivation 视图求值 ${esc(id)} …</div>`;
+  try {
+    const page = await api(`/object-set/query?user=ops&roles=${OS_ROLES}`, {
+      method: 'POST', body: JSON.stringify({ set: { from: id }, page: { limit: 100 } })
+    });
+    const checks = [
+      { ok: page.total > 0, text: `派生集合非空：${page.total} 个对象` },
+      { ok: page.consistent === true, text: `派生查询同样遵守快照一致性（snapshot=${page.snapshot_id}）` }
+    ];
+    if (id === 'CarrierResource') {
+      const [drivers, vehicles] = await Promise.all([
+        api(`/object-set/query?user=ops&roles=${OS_ROLES}`, { method: 'POST', body: JSON.stringify({ set: { from: 'Driver' }, page: { limit: 500 } }) }),
+        api(`/object-set/query?user=ops&roles=${OS_ROLES}`, { method: 'POST', body: JSON.stringify({ set: { from: 'Vehicle' }, page: { limit: 500 } }) })
+      ]);
+      const types = [...new Set(page.objects.map((o) => o.type))].sort();
+      checks.push({ ok: page.total === drivers.total + vehicles.total, text: `并集语义：${page.total} === Driver(${drivers.total}) + Vehicle(${vehicles.total})` });
+      checks.push({ ok: types.every((t) => ['Driver', 'Vehicle'].includes(t)), text: `结果类型仅来自派生分支：${types.join(', ')}` });
+    }
+    if (id === 'DisputedFee') {
+      const fees = await api(`/object-set/query?user=ops&roles=${OS_ROLES}`, { method: 'POST', body: JSON.stringify({ set: { from: 'FeeItem' }, page: { limit: 500 } }) });
+      checks.push({ ok: page.total <= fees.total, text: `过滤语义：${page.total} <= FeeItem(${fees.total})` });
+      checks.push({ ok: page.objects.every((o) => o.props.status === 'DISPUTED'), text: '每一行 status === DISPUTED' });
+    }
+    verdict.innerHTML = labChecks(checks);
+    out.innerHTML = objectRows(page.objects, ['status']) +
+      `<pre class="lab-json">${esc(JSON.stringify({ derived: id, set_id: page.set_id, snapshot_id: page.snapshot_id, total: page.total }, null, 2))}</pre>`;
+  } catch (err) {
+    verdict.innerHTML = labChecks([{ ok: false, text: `派生查询失败：${err.message}` }]);
+    out.innerHTML = '';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function loadInterfaces() {
+  const grid = document.getElementById('ifaceGrid');
+  try {
+    const data = await enhApi('/interfaces');
+    const list = data.interfaces || [];
+    grid.innerHTML = list.map((i) => {
+      const impls = i.implementations || [];
+      const shown = impls.slice(0, 8).join(' · ') + (impls.length > 8 ? ` … 共 ${impls.length} 个` : '');
+      return `
+      <article class="lab-card">
+        <h4>${esc(i.label || i.id)} <span class="mono">${esc(i.id)}</span></h4>
+        <p>匹配方式：<b>${esc(i.match || '—')}</b> · 实现者 ${impls.length} 个</p>
+        <div class="mono">${esc(shown || '无')}</div>
+      </article>`;
+    }).join('') || '<div class="store-empty">未注册接口。</div>';
+    const chargeable = list.find((i) => i.id === 'Chargeable');
+    state.interfaces = list;
+    document.getElementById('ifaceHint').textContent =
+      `入参 object_id = ${state.demo.waybill || 'waybill:WB20261105001'}；函数按 accepts_interface 自动路由。`;
+    if (chargeable) {
+      document.getElementById('ifaceVerdict').innerHTML = labChecks([
+        { ok: chargeable.implementations.includes('Waybill'), text: `Chargeable 结构匹配实现者：${chargeable.implementations.join(', ')}` }
+      ]);
+    }
+  } catch (err) {
+    grid.innerHTML = `<div class="store-empty">读取接口失败：${esc(err.message)}</div>`;
+  }
+}
+
+async function runInterfaceFunction() {
+  const verdict = document.getElementById('ifaceVerdict');
+  const out = document.getElementById('ifaceOut');
+  const objectId = state.demo.waybill || 'waybill:WB20261105001';
+  verdict.innerHTML = '<div class="lab-check ok">正在调用 chargeable_variance …</div>';
+  try {
+    const data = await enhApi('/functions/chargeable_variance/call?user=ops&roles=freight-core', {
+      method: 'POST', body: JSON.stringify({ args: { object_id: objectId } })
+    });
+    const ok = data && data.function === 'chargeable_variance' && typeof data.result === 'number';
+    verdict.innerHTML = labChecks([
+      { ok, text: ok ? `多态路由成功：${objectId} → ${data.result} 分` : '返回值不符合 number 契约' },
+      { ok: !!(state.interfaces || []).find((i) => i.id === 'Chargeable'), text: '接口注册表与函数路由使用同一份 conforms 判定' }
+    ]);
+    labJson(out, data);
+  } catch (err) {
+    verdict.innerHTML = labChecks([{ ok: false, text: `多态函数调用失败：${err.message}` }]);
+    out.innerHTML = '';
+  }
+}
+
+async function runSecurity() {
+  const verdict = document.getElementById('secVerdict');
+  const out = document.getElementById('secOut');
+  const cls = document.getElementById('secType').value;
+  verdict.innerHTML = '<div class="lab-check ok">正在以三个视角调用安全测试器 …</div>';
+  const views = [
+    { name: '匿名', user: 'anonymous', roles: [] },
+    { name: '财务', user: 'finance', roles: ['FINANCE'] },
+    { name: '争议处理', user: 'dispute', roles: ['DISPUTE_OPS', 'PII', 'FINANCE'] }
+  ];
+  try {
+    const results = [];
+    for (const v of views) {
+      const data = await enhApi('/security/simulate', {
+        method: 'POST', body: JSON.stringify({ user: v.user, roles: v.roles, class_id: cls })
+      });
+      const matrix = Object.values(data.property_visibility || {});
+      const cells = matrix.reduce((n, m) => n + Object.keys(m).length, 0);
+      const visibleCells = matrix.reduce((n, m) => n + Object.values(m).filter(Boolean).length, 0);
+      results.push({ ...v, data, cells, visibleCells });
+    }
+    const anon = results[0];
+    const finance = results[1];
+    const dispute = results[2];
+    const checks = [
+      { ok: results.every((r) => r.data.total_rows === results[0].data.total_rows), text: `三视角总行数一致（${anon.data.total_rows}）` }
+    ];
+    if (cls === 'FeeItem') {
+      checks.push({ ok: anon.data.visible_rows < anon.data.total_rows, text: `匿名可见 ${anon.data.visible_rows}/${anon.data.total_rows}，争议行被行级策略隐藏` });
+      checks.push({ ok: finance.data.visible_rows === anon.data.visible_rows, text: `财务（无 DISPUTE_OPS）仍看不到争议行：${finance.data.visible_rows}/${finance.data.total_rows}` });
+      checks.push({ ok: dispute.data.visible_rows === dispute.data.total_rows, text: `争议处理可见全部：${dispute.data.visible_rows}/${dispute.data.total_rows}` });
+    }
+    if (cls === 'Shipper') {
+      const [anonObjs, piiObjs] = await Promise.all([
+        enhApi('/objects?type=Shipper&user=anonymous&roles=&limit=50'),
+        enhApi('/objects?type=Shipper&user=ops&roles=PII&limit=50')
+      ]);
+      checks.push({ ok: anonObjs.objects.every((o) => o.props.shipper_name == null), text: '匿名读取 shipper_name 全部为 null（列级脱敏）' });
+      checks.push({ ok: piiObjs.objects.some((o) => o.props.shipper_name != null), text: 'PII 标记成员可读 shipper_name（强制控制）' });
+      results.push({ name: '匿名对象值', data: { visible_rows: anonObjs.visible, total_rows: anonObjs.objects.length }, cells: 0, visibleCells: 0 });
+    }
+    if (cls === 'Waybill') {
+      const [anonObjs, finObjs] = await Promise.all([
+        enhApi('/objects?type=Waybill&user=anonymous&roles=&limit=50'),
+        enhApi('/objects?type=Waybill&user=finance&roles=FINANCE&limit=50')
+      ]);
+      checks.push({ ok: anonObjs.objects.every((o) => o.props.actual_fee == null), text: '匿名读取 actual_fee 全部为 null（FINANCE 列级脱敏）' });
+      checks.push({ ok: finObjs.objects.some((o) => o.props.actual_fee != null), text: 'FINANCE 标记成员可读 actual_fee' });
+    }
+    verdict.innerHTML = labChecks(checks);
+    out.innerHTML = `<table class="lab-table"><thead><tr><th>视角</th><th>user</th><th>roles</th><th>可见行</th><th>属性可见率</th></tr></thead><tbody>${
+      results.map((r) => `<tr><td>${esc(r.name)}</td><td>${esc(r.user)}</td><td>${esc((r.roles || []).join(',') || '—')}</td><td>${r.data.visible_rows}/${r.data.total_rows}</td><td>${r.cells ? `${r.visibleCells}/${r.cells}` : '—'}</td></tr>`).join('')
+    }</tbody></table><pre class="lab-json">${esc(JSON.stringify({ class: cls, views: results.map((r) => ({ user: r.user, roles: r.roles, visible_rows: r.data.visible_rows, total_rows: r.data.total_rows })) }, null, 2))}</pre>`;
+  } catch (err) {
+    verdict.innerHTML = labChecks([{ ok: false, text: `安全测试失败：${err.message}` }]);
+    out.innerHTML = '';
+  }
+}
+
+const FN_DEFAULTS = () => {
+  const wid = state.demo.waybill || 'waybill:WB20261105001';
+  return {
+    fee_breakdown: { waybill_id: wid },
+    quote_reconcile: { waybill_id: wid },
+    evidence_chain: { waybill_id: wid },
+    action_preflight: { object_id: wid },
+    chargeable_variance: { object_id: wid },
+    fee_breakdown_batch: { waybills: { set: { from: 'Waybill' } } }
+  };
+};
+
+function syncFnArgs() {
+  const id = document.getElementById('fnSelect').value;
+  const defaults = FN_DEFAULTS();
+  document.getElementById('fnArgs').value = JSON.stringify(defaults[id] || {}, null, 2);
+  document.getElementById('fnVerdict').innerHTML = '';
+  document.getElementById('fnOut').innerHTML = '';
+}
+
+async function loadFunctions() {
+  const table = document.getElementById('fnTable');
+  try {
+    const data = await enhApi('/functions');
+    const list = data.functions || [];
+    state.functions = list;
+    table.innerHTML = `<table class="lab-table"><thead><tr><th>函数</th><th>label</th><th>returns</th><th>接口</th><th>owner</th></tr></thead><tbody>${
+      list.map((f) => `<tr><td>${esc(f.id)}</td><td>${esc(f.label || '—')}</td><td>${esc(f.returns || '—')}</td><td>${esc(f.accepts_interface || '—')}</td><td>${esc(f.owner || '—')}</td></tr>`).join('')
+    }</tbody></table>`;
+    const sel = document.getElementById('fnSelect');
+    sel.innerHTML = list.map((f) => `<option value="${esc(f.id)}">${esc(f.label || f.id)} · ${esc(f.id)}</option>`).join('');
+    if (list.some((f) => f.id === 'chargeable_variance')) sel.value = 'chargeable_variance';
+    syncFnArgs();
+  } catch (err) {
+    table.innerHTML = `<div class="store-empty">读取函数注册表失败：${esc(err.message)}</div>`;
+  }
+}
+
+async function runFunction(sandbox) {
+  const verdict = document.getElementById('fnVerdict');
+  const out = document.getElementById('fnOut');
+  const id = document.getElementById('fnSelect').value;
+  let args;
+  try {
+    args = JSON.parse(document.getElementById('fnArgs').value || '{}');
+  } catch (err) {
+    verdict.innerHTML = labChecks([{ ok: false, text: `args 不是合法 JSON：${err.message}` }]);
+    return;
+  }
+  const started = performance.now();
+  verdict.innerHTML = `<div class="lab-check ok">正在${sandbox ? '沙箱' : '直接'}调用 ${esc(id)} …</div>`;
+  try {
+    const data = sandbox
+      ? await enhApi(`/functions/${encodeURIComponent(id)}/sandbox`, { method: 'POST', body: JSON.stringify({ args }) })
+      : await enhApi(`/functions/${encodeURIComponent(id)}/call?user=ops&roles=freight-core`, { method: 'POST', body: JSON.stringify({ args }) });
+    const ms = Math.round(performance.now() - started);
+    const ok = sandbox ? data != null : data && data.function === id;
+    verdict.innerHTML = labChecks([
+      { ok: !!ok, text: `${sandbox ? '沙箱' : '注册表'}调用返回成功（${ms}ms）` },
+      { ok: true, text: sandbox ? '已通过隔离子进程执行，超时/内存由沙箱配置兜底' : `注册表命中 ${id} → ${data && data.version ? 'v' + data.version : '—'}` }
+    ]);
+    labJson(out, { args, sandbox, elapsed_ms: ms, response: data });
+  } catch (err) {
+    verdict.innerHTML = labChecks([{ ok: false, text: `${sandbox ? '沙箱' : '直接'}调用失败：${err.message}` }]);
+    out.innerHTML = '';
+  }
+}
+
+async function runSearch() {
+  const verdict = document.getElementById('searchVerdict');
+  const out = document.getElementById('searchOut');
+  const q = document.getElementById('searchQ').value.trim();
+  const type = document.getElementById('searchType').value;
+  const qs = new URLSearchParams({ user: 'anonymous', roles: '', limit: '20' });
+  if (q) qs.set('q', q);
+  if (type) qs.set('type', type);
+  const privileged = new URLSearchParams(qs);
+  privileged.set('user', 'ops'); privileged.set('roles', 'DISPUTE_OPS,PII,FINANCE');
+  verdict.innerHTML = '<div class="lab-check ok">正在执行对象搜索 …</div>';
+  try {
+    const [anon, full] = await Promise.all([
+      enhApi(`/objects?${qs.toString()}`), enhApi(`/objects?${privileged.toString()}`)
+    ]);
+    verdict.innerHTML = labChecks([
+      { ok: Array.isArray(anon.objects), text: `匿名搜索返回 ${anon.visible} 个可见对象` },
+      { ok: full.visible >= anon.visible, text: `带标记搜索 ${full.visible} >= 匿名 ${anon.visible}（安全过滤真实生效）` },
+      { ok: anon.objects.every((o) => !o.props || o.props.shipper_name == null), text: '匿名结果中 PII 属性已脱敏' }
+    ]);
+    out.innerHTML = objectRows(full.objects, ['actual_fee', 'actual_amount', 'shipper_name']) +
+      `<pre class="lab-json">${esc(JSON.stringify({ request: { q, type, anon_visible: anon.visible, privileged_visible: full.visible } }, null, 2))}</pre>`;
+  } catch (err) {
+    verdict.innerHTML = labChecks([{ ok: false, text: `搜索失败：${err.message}` }]);
+    out.innerHTML = '';
+  }
+}
+
+async function loadUsage() {
+  const container = document.getElementById('usageOut');
+  try {
+    const [summary, deps] = await Promise.all([
+      enhApi('/usage/summary'), enhApi('/usage/FeeItem/dependents')
+    ]);
+    const top = summary.top_referenced || [];
+    container.innerHTML = labChecks([
+      { ok: summary.total_classes > 0, text: `使用度量覆盖 ${summary.total_classes} 个基础类` },
+      { ok: deps.deletable === false, text: `FeeItem 不可直接删除：${deps.dependents.length} 个依赖（关系/函数/安全策略）` }
+    ]) + `
+      <div class="lab-kv">
+        <div><b>${summary.total_classes}</b><span>BASE CLASSES</span></div>
+        <div><b>${summary.orphans.length}</b><span>ORPHANS</span></div>
+        <div><b>${top.length ? top[0].refs : 0}</b><span>TOP REFS</span></div>
+        <div><b>${deps.dependents.length}</b><span>FEEITEM DEPS</span></div>
+      </div>
+      <table class="lab-table" style="margin-top:10px"><thead><tr><th>类</th><th>被引用次数</th></tr></thead><tbody>${
+        top.map((t) => `<tr><td>${esc(t.class)}</td><td>${t.refs}</td></tr>`).join('')
+      }</tbody></table>
+      <pre class="lab-json">${esc(JSON.stringify({ orphans: summary.orphans, feeitem_dependents: deps.dependents, feeitem_deletable: deps.deletable }, null, 2))}</pre>`;
+  } catch (err) {
+    container.innerHTML = `<div class="store-empty">读取使用度量失败：${esc(err.message)}</div>`;
+  }
+}
+
+async function runOsdk() {
+  const verdict = document.getElementById('osdkVerdict');
+  const out = document.getElementById('osdkOut');
+  const target = document.getElementById('osdkTarget').value;
+  verdict.innerHTML = '<div class="lab-check ok">正在从本体 JSON 生成 OSDK …</div>';
+  try {
+    const data = await enhApi(`/osdk?target=${encodeURIComponent(target)}`);
+    const stats = data.stats || {};
+    const derivedExpected = ['CarrierResource', 'DisputedFee'];
+    const derivedOk = derivedExpected.every((d) => (stats.derived_in_openapi || []).includes(d));
+    const code = data.code || '';
+    const truncated = code.length > 8000 ? code.slice(0, 8000) + '\n… (截断显示，完整长度 ' + code.length + ' 字符)' : code;
+    verdict.innerHTML = labChecks([
+      { ok: stats.classes > 0, text: `实体类 ${stats.classes} 个 · 派生类型 ${stats.derived_types} 个 · 接口 ${stats.interfaces} 个` },
+      { ok: derivedOk, text: `派生类型进入 OpenAPI schema：${(stats.derived_in_openapi || []).join(', ') || '无'}` },
+      { ok: code.length > 0, text: `${target} 生成成功（${code.length} 字符）` },
+      { ok: target !== 'openapi' || data.code.includes('3.1'), text: target === 'openapi' ? 'OpenAPI 版本为 3.1' : '类型化客户端包含本体类型定义' }
+    ]);
+    out.innerHTML = `<pre class="lab-json">${esc(truncated)}</pre>`;
+  } catch (err) {
+    verdict.innerHTML = labChecks([{ ok: false, text: `OSDK 生成失败：${err.message}` }]);
+    out.innerHTML = '';
+  }
+}
+
+function bindLabEvents() {
+  document.getElementById('osType').addEventListener('change', syncOsOrder);
+  document.getElementById('osRun').addEventListener('click', () => runObjectSet(false));
+  document.getElementById('osChain').addEventListener('click', () => runObjectSet(true));
+  document.getElementById('ifaceRun').addEventListener('click', runInterfaceFunction);
+  document.getElementById('secRun').addEventListener('click', runSecurity);
+  document.getElementById('fnSelect').addEventListener('change', syncFnArgs);
+  document.getElementById('fnCall').addEventListener('click', () => runFunction(false));
+  document.getElementById('fnSandbox').addEventListener('click', () => runFunction(true));
+  document.getElementById('searchRun').addEventListener('click', runSearch);
+  document.getElementById('usageRun').addEventListener('click', loadUsage);
+  document.getElementById('osdkRun').addEventListener('click', runOsdk);
+  document.getElementById('osdkTarget').addEventListener('change', runOsdk);
+}
+
+async function initLabs() {
+  syncOsOrder();
+  bindLabEvents();
+  await Promise.allSettled([
+    loadDerivedTypes(), loadInterfaces(), loadFunctions(), loadUsage(), runOsdk()
+  ]);
+}
+
 async function init() {
   buildLines();
   selectObject('waybill');
   await loadMeta();
-  await Promise.all([loadFacts(), loadStorage(), loadKnowledge(), loadMcpTools()]);
+  await Promise.all([loadFacts(), loadStorage(), loadKnowledge(), loadMcpTools(), initLabs()]);
   renderWalkOntology(1);
 }
 

@@ -12,12 +12,72 @@
 """
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
 import json
 import math
+import os
+import time
 from typing import Any
 
 from .object_set import object_set_id as _object_set_id, query_digest
 from .semantic import BusinessReject
+
+PAGE_TOKEN_VERSION = 1
+PAGE_TOKEN_TTL = int(os.environ.get("OBJECT_SET_PAGE_TTL", "3600"))
+PAGE_SECRET = os.environ.get(
+    "OBJECT_SET_PAGE_SECRET", "ontology-object-set-demo-secret").encode()
+
+
+def _b64e(raw: bytes) -> str:
+    return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
+
+
+def _b64d(text: str) -> bytes:
+    return base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
+
+
+def query_hash(query: dict) -> str:
+    """规范化查询指纹：token 本身不参与，其余查询体（含 limit）全部参与。"""
+    body = {k: v for k, v in query.items() if k != "page"}
+    page = dict(query.get("page") or {})
+    page.pop("token", None)
+    if page:
+        body["page"] = page
+    canonical = json.dumps(body, sort_keys=True, separators=(",", ":"),
+                           ensure_ascii=False)
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+def encode_page_token(payload: dict) -> str:
+    raw = json.dumps(payload, sort_keys=True, separators=(",", ":"),
+                     ensure_ascii=False).encode()
+    body = _b64e(raw)
+    sig = hmac.new(PAGE_SECRET, body.encode(), hashlib.sha256).hexdigest()
+    return f"{body}.{sig}"
+
+
+def decode_page_token(token: str) -> dict:
+    if not isinstance(token, str) or token.count(".") != 1:
+        raise QueryError("分页 token 损坏", "TOKEN_INVALID")
+    body, sig = token.split(".", 1)
+    expect = hmac.new(PAGE_SECRET, body.encode(), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(sig, expect):
+        raise QueryError("分页 token 签名不合法", "TOKEN_INVALID")
+    try:
+        payload = json.loads(_b64d(body).decode())
+    except (ValueError, UnicodeDecodeError) as exc:
+        raise QueryError("分页 token 内容损坏", "TOKEN_INVALID") from exc
+    if not isinstance(payload, dict):
+        raise QueryError("分页 token 结构不合法", "TOKEN_INVALID")
+    if payload.get("v") != PAGE_TOKEN_VERSION:
+        raise QueryError(
+            f"不支持的分页 token 版本: {payload.get('v')}",
+            "TOKEN_INVALID", {"supported": PAGE_TOKEN_VERSION})
+    if int(payload.get("exp", 0)) < int(time.time()):
+        raise QueryError("分页 token 已过期", "TOKEN_EXPIRED")
+    return payload
 
 OPS = {
     "eq", "neq", "gt", "gte", "lt", "lte",
@@ -336,9 +396,22 @@ class ObjectQueryEngine:
         page = query.get("page") or {}
         if not isinstance(page, dict):
             raise QueryError("page 必须是对象", "QUERY_INVALID")
+        unknown = set(page) - {"limit", "offset", "token"}
+        if unknown:
+            raise QueryError(
+                f"page 未知键: {', '.join(sorted(unknown))}", "QUERY_INVALID",
+                {"allowed": ["limit", "offset", "token"]},
+            )
         if "limit" in page and (not isinstance(page["limit"], int)
                                 or not 1 <= page["limit"] <= 500):
             raise QueryError("page.limit 必须在 1..500", "QUERY_INVALID")
+        if "offset" in page and (not isinstance(page["offset"], int)
+                                or page["offset"] < 0):
+            raise QueryError("page.offset 必须是非负整数", "QUERY_INVALID")
+        if "token" in page and not isinstance(page["token"], str):
+            raise QueryError("page.token 必须是字符串", "QUERY_INVALID")
+        if "token" in page and agg is not None:
+            raise QueryError("聚合查询不支持分页 token", "QUERY_INVALID")
 
     def _validate_aggregate(self, agg: Any, main_type: str) -> None:
         if not isinstance(agg, dict) or not agg:
@@ -505,6 +578,46 @@ class ObjectQueryEngine:
             "AND valid_to IS NULL LIMIT 1", (link, object_id))
         return r["subject_id"] if r else None
 
+    # -------------------------------------------------- 快照与游标
+    @staticmethod
+    def _snapshot_id(store) -> str:
+        """数据快照指纹：对象与关系全量规范化哈希。
+
+        分页期间快照变化 -> 旧 token 失效（TOKEN_EXPIRED），
+        保证「分页并集 = 同一快照一次性结果」。
+        """
+        digest = hashlib.sha256()
+        for table in ("objects", "relations"):
+            rows = [dict(r) for r in store.all(f"SELECT * FROM {table}")]
+            rows.sort(key=lambda r: json.dumps(
+                r, sort_keys=True, ensure_ascii=False, default=str))
+            digest.update(table.encode())
+            digest.update(json.dumps(
+                rows, sort_keys=True, ensure_ascii=False,
+                separators=(",", ":"), default=str).encode())
+        return digest.hexdigest()[:16]
+
+    @staticmethod
+    def _row_cursor(row: dict, order: list[dict]) -> dict:
+        """游标：排序键 + 对象 ID 兜底，保证 keyset 推进不重不漏。"""
+        return {
+            "id": row["object_id"],
+            "key": [row["props"].get(item["prop"]) for item in order],
+        }
+
+    @staticmethod
+    def _cursor_index(rows: list[dict], cursor: dict,
+                      order: list[dict]) -> int | None:
+        oid = cursor.get("id")
+        for index, row in enumerate(rows):
+            if row["object_id"] == oid:
+                if order:
+                    key = [row["props"].get(item["prop"]) for item in order]
+                    if key != cursor.get("key"):
+                        return None
+                return index
+        return None
+
     # -------------------------------------------------- 主执行
     def execute(self, query: dict, store, ctx: Any = None) -> dict:
         """校验 -> 求值 -> 安全过滤 -> 排序 -> 聚合/分页 -> 输出。"""
@@ -512,6 +625,7 @@ class ObjectQueryEngine:
         set_node = query["set"]
         main_type = self.validate_set(set_node)
         rows = self._resolve_set(set_node, store)
+        snapshot_id = self._snapshot_id(store)
 
         where = query.get("where")
         if where is not None:
@@ -541,9 +655,10 @@ class ObjectQueryEngine:
             non_null.sort(key=key, reverse=desc)
             rows = non_null + nulls
 
+        identity = {k: v for k, v in query.items() if k != "page"}
         set_id = _object_set_id(
-            {"q": query}, str(self.sem.raw.get("meta", {}).get("version", "0")),
-            query_digest({"query": query}),
+            {"q": identity}, str(self.sem.raw.get("meta", {}).get("version", "0")),
+            query_digest({"query": identity}),
         )
 
         agg = query.get("aggregate")
@@ -552,8 +667,26 @@ class ObjectQueryEngine:
 
         page = query.get("page") or {}
         limit = page.get("limit", 100)
-        offset = page.get("offset", 0)
-        page_rows = rows[offset: offset + limit]
+        start = page.get("offset", 0)
+        token = page.get("token")
+        qh = query_hash(query)
+        if token:
+            data = decode_page_token(token)
+            if data.get("qh") != qh:
+                raise QueryError(
+                    "分页 token 与当前查询不一致（filter/order/limit 不得修改）",
+                    "TOKEN_QUERY_MISMATCH")
+            if data.get("sid") != set_id:
+                raise QueryError("分页 token 不属于当前集合", "TOKEN_QUERY_MISMATCH")
+            if data.get("snap") != snapshot_id:
+                raise QueryError(
+                    "分页快照已失效，请重新发起查询", "TOKEN_EXPIRED",
+                    {"token_snapshot": data.get("snap"),
+                     "current_snapshot": snapshot_id})
+            index = self._cursor_index(rows, data.get("last") or {}, order)
+            start = index + 1 if index is not None else int(data.get("off", start))
+
+        page_rows = rows[start: start + limit]
         out_objects = []
         for r in page_rows:
             props = r["props"]
@@ -563,12 +696,30 @@ class ObjectQueryEngine:
                 "object_id": r["object_id"], "type": r["type"],
                 "name": r["name"], "status": r["status"], "props": props,
             })
+
+        next_page_token = None
+        next_offset = start + len(page_rows)
+        if page_rows and next_offset < len(rows):
+            next_page_token = encode_page_token({
+                "v": PAGE_TOKEN_VERSION,
+                "qh": qh,
+                "sid": set_id,
+                "snap": snapshot_id,
+                "last": self._row_cursor(page_rows[-1], order),
+                "off": next_offset,
+                "lim": limit,
+                "exp": int(time.time()) + PAGE_TOKEN_TTL,
+            })
         return {
             "set_id": set_id,
+            "object_set_id": set_id,
+            "snapshot_id": snapshot_id,
             "total": len(rows),
-            "offset": offset,
+            "offset": start,
             "limit": limit,
             "objects": out_objects,
+            "next_page_token": next_page_token,
+            "consistent": True,
         }
 
     @staticmethod

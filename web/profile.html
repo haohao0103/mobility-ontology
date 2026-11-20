@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
 <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <title>画像 AI 语义层 · 可视化</title>
@@ -548,13 +549,16 @@ function renderTabs() {
   }));
 }
 
+let tabSeq = 0;
 async function loadTab(tab) {
+  const seq = ++tabSeq;
   const pane = $('#pane');
   if (tab === 'ontology') { await loadOntology(); return; }
   if (!state.context) return;
   if (tab === 'graph') {
     pane.innerHTML = graphShell();
     try { await ensureDictionary(); } catch (e) { state.dictionary = null; }
+    if (seq !== tabSeq) return;
     drawContextGraph();
     return;
   }
@@ -563,6 +567,7 @@ async function loadTab(tab) {
   try {
     if (tab === 'correction') {
       state.corrections = await api('/corrections?limit=200');
+      if (seq !== tabSeq) return;
       state.caseContext = null;
       const items = state.corrections.items || [];
       if (!state.selectedCrowd || !items.some(i => i.crowd_id === state.selectedCrowd)) {
@@ -570,26 +575,32 @@ async function loadTab(tab) {
       }
       renderCorrection();
     } else if (tab === 'forensic') {
-      await loadForensics();
+      await loadForensics(seq);
     } else if (tab === 'validate') {
       state.validation = await api(`/assets/${encodeURIComponent(state.asset)}/validate`);
+      if (seq !== tabSeq) return;
       renderValidation();
     } else if (tab === 'impact') {
       state.impact = await api(`/assets/${encodeURIComponent(state.asset)}/impact?depth=3${atQuery()}`);
+      if (seq !== tabSeq) return;
       renderImpact();
     } else if (tab === 'lineage') {
       state.lineage = await api(`/assets/${encodeURIComponent(state.asset)}/lineage?depth=3${atQuery()}`);
+      if (seq !== tabSeq) return;
       renderLineage();
     } else if (tab === 'evidence') {
       state.evidence = await api(`/assets/${encodeURIComponent(state.asset)}/evidence?${atQuery().slice(1)}`);
+      if (seq !== tabSeq) return;
       renderEvidence();
     } else if (tab === 'metrics') {
       state.metrics = await api(`/metrics?asset_id=${encodeURIComponent(state.asset)}&limit=50`);
+      if (seq !== tabSeq) return;
       renderMetrics();
     } else if (tab === 'gate') {
       await loadGate();
     }
   } catch (e) {
+    if (seq !== tabSeq) return;
     pane.innerHTML = `<div class="err">${esc(e.message)}</div>`;
   }
 }
@@ -1333,11 +1344,12 @@ function renderCorrection() {
   }
 }
 
-async function loadForensics() {
+async function loadForensics(seq) {
   const pane = $('#pane');
   if (!state.corrections) {
     pane.innerHTML = '<div class="empty">加载纠错案例…</div>';
     state.corrections = await api('/corrections?limit=200');
+    if (seq !== tabSeq) return;
   }
   const items = state.corrections.items || [];
   if (!state.selectedCrowd || !items.some(i => i.crowd_id === state.selectedCrowd)) {

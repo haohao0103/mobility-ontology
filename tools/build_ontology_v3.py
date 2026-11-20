@@ -26,6 +26,23 @@ ONTOLOGY_JSON = os.path.join(ROOT, "freight", "semantic_layer.json")
 VERSION = "3.0.0"
 EFFECTIVE_FROM = "2026-11-20"
 
+# 旧手写关系（v2 时代 28 条）里缺 cardinality 的，按业务语义逐条补齐。
+# 不用「默认 many_to_one」糊过去：基数错会让写入校验放过真实违规。
+LEGACY_CARDINALITY = {
+    "shipper_places_order": "one_to_many",
+    "fee_supported_by_evidence": "many_to_many",
+    "settlement_supported_by_evidence": "many_to_many",
+    "invoice_supported_by_evidence": "many_to_many",
+    "exception_supported_by_evidence": "many_to_many",
+    "waybill_has_stop": "one_to_many",
+    "stop_handles_cargo": "many_to_many",
+    "stop_supported_by_evidence": "many_to_many",
+    "waybill_has_subcontract": "one_to_many",
+    "subcontract_awarded_to_carrier": "many_to_one",
+    "subcontract_allocates_fee": "one_to_many",
+    "subcontract_supported_by_evidence": "many_to_many",
+}
+
 # 旧本体里要保留的非类/关系字段
 PRESERVED_KEYS = ("meta", "catalog", "closure", "diagnosis", "pricing", "primitives",
                   "functions", "data_sources", "relation_source", "rules", "actions",
@@ -147,9 +164,15 @@ def main() -> int:
     # 保留旧本体里的手写关系（生成关系全部淘汰）。
     # 幂等：上一轮渲染写入的关系已在新 LINKS 里，按 id 去重时以新定义优先（带 cardinality）。
     new_rel_ids = {r["id"] for r in relations}
-    handwritten_rels = [r for r in old.get("relations", [])
-                        if not str(r.get("source", "")).startswith("generated")
-                        and r["id"] not in new_rel_ids]
+    handwritten_rels = []
+    for r in old.get("relations", []):
+        if str(r.get("source", "")).startswith("generated"):
+            continue
+        if r["id"] in new_rel_ids:
+            continue
+        if not r.get("cardinality") and r["id"] in LEGACY_CARDINALITY:
+            r = dict(r, cardinality=LEGACY_CARDINALITY[r["id"]])
+        handwritten_rels.append(r)
     relations = dedupe(relations + handwritten_rels, "relation")
 
     class_ids = {c["id"] for c in classes}

@@ -23601,7 +23601,8 @@
    "source": "handwritten",
    "version": "2.1.0",
    "iri": "https://w3id.org/mobility-ontology/freight#shipper_places_order",
-   "effective_from": "2025-01-01"
+   "effective_from": "2025-01-01",
+   "cardinality": "one_to_many"
   },
   {
    "id": "order_generates_waybill",
@@ -23717,7 +23718,8 @@
    "source": "handwritten",
    "version": "2.1.0",
    "iri": "https://w3id.org/mobility-ontology/freight#fee_supported_by_evidence",
-   "effective_from": "2025-01-01"
+   "effective_from": "2025-01-01",
+   "cardinality": "many_to_many"
   },
   {
    "id": "waybill_supported_by_evidence",
@@ -23742,7 +23744,8 @@
    "source": "handwritten",
    "version": "2.1.0",
    "iri": "https://w3id.org/mobility-ontology/freight#settlement_supported_by_evidence",
-   "effective_from": "2025-01-01"
+   "effective_from": "2025-01-01",
+   "cardinality": "many_to_many"
   },
   {
    "id": "invoice_supported_by_evidence",
@@ -23754,7 +23757,8 @@
    "source": "handwritten",
    "version": "2.1.0",
    "iri": "https://w3id.org/mobility-ontology/freight#invoice_supported_by_evidence",
-   "effective_from": "2025-01-01"
+   "effective_from": "2025-01-01",
+   "cardinality": "many_to_many"
   },
   {
    "id": "exception_supported_by_evidence",
@@ -23766,7 +23770,8 @@
    "source": "handwritten",
    "version": "2.1.0",
    "iri": "https://w3id.org/mobility-ontology/freight#exception_supported_by_evidence",
-   "effective_from": "2025-01-01"
+   "effective_from": "2025-01-01",
+   "cardinality": "many_to_many"
   },
   {
    "id": "order_has_quote",
@@ -23869,7 +23874,8 @@
    "source": "handwritten",
    "version": "2.1.0",
    "iri": "https://w3id.org/mobility-ontology/freight#waybill_has_stop",
-   "effective_from": "2025-01-01"
+   "effective_from": "2025-01-01",
+   "cardinality": "one_to_many"
   },
   {
    "id": "stop_handles_cargo",
@@ -23881,7 +23887,8 @@
    "source": "handwritten",
    "version": "2.1.0",
    "iri": "https://w3id.org/mobility-ontology/freight#stop_handles_cargo",
-   "effective_from": "2025-01-01"
+   "effective_from": "2025-01-01",
+   "cardinality": "many_to_many"
   },
   {
    "id": "stop_supported_by_evidence",
@@ -23893,7 +23900,8 @@
    "source": "handwritten",
    "version": "2.1.0",
    "iri": "https://w3id.org/mobility-ontology/freight#stop_supported_by_evidence",
-   "effective_from": "2025-01-01"
+   "effective_from": "2025-01-01",
+   "cardinality": "many_to_many"
   },
   {
    "id": "waybill_has_subcontract",
@@ -23905,7 +23913,8 @@
    "source": "handwritten",
    "version": "2.1.0",
    "iri": "https://w3id.org/mobility-ontology/freight#waybill_has_subcontract",
-   "effective_from": "2025-01-01"
+   "effective_from": "2025-01-01",
+   "cardinality": "one_to_many"
   },
   {
    "id": "subcontract_awarded_to_carrier",
@@ -23917,7 +23926,8 @@
    "source": "handwritten",
    "version": "2.1.0",
    "iri": "https://w3id.org/mobility-ontology/freight#subcontract_awarded_to_carrier",
-   "effective_from": "2025-01-01"
+   "effective_from": "2025-01-01",
+   "cardinality": "many_to_one"
   },
   {
    "id": "subcontract_allocates_fee",
@@ -23929,7 +23939,8 @@
    "source": "handwritten",
    "version": "2.1.0",
    "iri": "https://w3id.org/mobility-ontology/freight#subcontract_allocates_fee",
-   "effective_from": "2025-01-01"
+   "effective_from": "2025-01-01",
+   "cardinality": "one_to_many"
   },
   {
    "id": "subcontract_supported_by_evidence",
@@ -23941,7 +23952,8 @@
    "source": "handwritten",
    "version": "2.1.0",
    "iri": "https://w3id.org/mobility-ontology/freight#subcontract_supported_by_evidence",
-   "effective_from": "2025-01-01"
+   "effective_from": "2025-01-01",
+   "cardinality": "many_to_many"
   }
  ],
  "property_types": [

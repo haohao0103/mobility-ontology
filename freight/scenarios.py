@@ -217,3 +217,99 @@ def run_core_scenario(system) -> dict:
         "object_count": len(created),
         "relation_count": len(edges),
     }
+
+
+# ======================================================================
+# 缺口探针：故意构造四类来源缺口，证明「检测能力」真的在
+# ======================================================================
+#
+# 这四条费用是**人为构造的异常数据**，用途是验证检测链路真的会报警：
+#   GAP-UNRESOLVED  无人认领（source_system 没有对应连接器）
+#   GAP-TYPE        口径越界（TMS 不认领 highway，却挂了一条 highway 费用）
+#   GAP-STALE       数据过期（源数据时间远早于结算基准，超过 freshness_hours）
+#   GAP-NOEVIDENCE  证据缺失（waiting 要求证据，但一条证据都没有）
+#
+# **必须与主诊断剧本隔离**：主剧本的正常诊断里不应该出现这些告警。
+# 门禁第 28 项会同时断言「探针库报得出来」与「正常库不报」。
+
+GAP_PROBE_WAYBILL = "waybill:GAPPROBE"
+GAP_DELIVERED_AT = "2026-11-05T12:18:00+08:00"
+
+
+def build_gap_cases(system) -> dict:
+    """构造缺口探针运单与四条缺口费用；返回各缺口对应的费用 id。"""
+    system.add_object("Waybill", GAP_PROBE_WAYBILL, "缺口探针运单", "DELIVERED", {
+        "waybill_id": "GAPPROBE", "order_id": "GAPPROBE",
+        "driver_id": "D001", "vehicle_id": "V001",
+        "estimated_fee": 100.0, "actual_fee": 100.0, "variance": 0.0,
+        # 计价规则要读这些字段，缺一个就会在规则求值时报「AST 字段不存在」
+        "waiting_minutes": 10, "free_wait_minutes": 30,
+        "actual_distance_km": 12.0, "actual_duration_min": 90,
+        "loading_confirmed_at": "2026-11-05T10:35:00+08:00",
+        "delivered_at": GAP_DELIVERED_AT,
+    }, T0)
+    # 车型必须挂上：计价规则按 vehicle_type 选费率（base 规则要读
+    # params.base_fare_by_vehicle_type），车型为空会直接导致规则求值失败
+    system.add_relation("waybill_uses_vehicle", GAP_PROBE_WAYBILL, "vehicle:V001", T0)
+
+    # 金额取「规则应计值」，让探针只暴露来源缺口，不被金额差异的噪声淹没
+    cases = {
+        # 无人认领：来源系统没有任何连接器声明
+        "unresolved": ("fee:GAP-UNRESOLVED", "第三方GPS", "other", 10.0,
+                       "2026-11-05T11:00:00+08:00"),
+        # 口径越界：highway 归 ETC，不归 TMS
+        "type_undeclared": ("fee:GAP-TYPE", "TMS", "highway", 0.0,
+                            "2026-11-05T11:10:00+08:00"),
+        # 数据过期：源数据时间远早于结算基准（基准=delivered_at，窗口 24h）
+        "stale": ("fee:GAP-STALE", "TMS", "base", 380.0,
+                  "2026-10-01T08:00:00+08:00"),
+        # 证据缺失：waiting 要求证据，但一条都没有（时间取基准附近，避免同时报过期）
+        "no_evidence": ("fee:GAP-NOEVIDENCE", "TMS", "waiting", 0.0,
+                        "2026-11-05T12:00:00+08:00"),
+        # 正常被 ETC 认领的 highway：用于验证「把 ETC 的 highway 认领拿掉 →
+        # 这条费用立刻变成无人认领」（归属声明的承重）
+        "etc_highway": ("fee:GAP-ETC-HIGHWAY", "ETC", "highway", 0.0,
+                        "2026-11-05T11:20:00+08:00"),
+    }
+    # 每条探针费用必须挂上定价规则实例：规则求值从 PricingRule.params 取参数，
+    # 不挂规则就会在算费时抛「AST 字段不存在」（而不是产出告警）。
+    # 费用上的 pricing_rule_id 与关系两端都指向**规则实例**（PR-xxx）：
+    # 校验比较的是绑定实例与实际规则实例（R-PRICE-01 比的是生效期，不是 id）
+    rule_by_type = {
+        "base": ("R-BASE-01", "pricing_rule:PR-BASE-01"),
+        "mileage": ("R-MILEAGE-01", "pricing_rule:PR-MILEAGE-01"),
+        "waiting": ("R-WAIT-01", "pricing_rule:PR-WAIT-01"),
+        "highway": ("R-HIGHWAY-01", "pricing_rule:PR-HIGHWAY-01"),
+        "loading": ("R-LOADING-01", "pricing_rule:PR-LOADING-01"),
+        "insurance": ("R-INSURANCE-01", "pricing_rule:PR-INSURANCE-01"),
+        "other": ("R-OTHER-01", "pricing_rule:PR-OTHER-01"),
+    }
+    for _, (fee_id, system_name, fee_type, amount, occurred_at) in cases.items():
+        system.add_object("FeeItem", fee_id, f"缺口探针 {fee_id}", "NORMAL", {
+            "fee_id": fee_id.split(":", 1)[-1], "fee_type": fee_type,
+            "fee_label": f"缺口探针-{fee_type}", "quoted_amount": 0.0,
+            "expected_amount": 0.0, "actual_amount": amount, "waived_amount": 0.0,
+            "calc_basis": "缺口探针数据（人为构造）",
+            # 与 seed 同口径：写实例的短 id（PR-xxx），关系指向全 id
+            "pricing_rule_id": (rule_by_type.get(fee_type, ("", ""))[1]
+                                .split(":", 1)[-1]),
+            "pricing_rule_version": "2026.10",
+            "occurred_at": occurred_at, "source_system": system_name,
+        }, T0)
+        system.add_relation("waybill_produces_fee", GAP_PROBE_WAYBILL, fee_id, T0)
+        if rule_by_type.get(fee_type):
+            system.add_relation("fee_priced_by_rule", fee_id,
+                                rule_by_type[fee_type][1], T0)
+    # ETC highway 这条探针在正常状态下由 ETC 认领，给它补上 ETC 证据，
+    # 免得再叠加一条与主题无关的「缺证据」噪声
+    add_gap_evidence(system, "fee:GAP-ETC-HIGHWAY", "ETC")
+    return {k: v[0] for k, v in cases.items()}
+
+
+def add_gap_evidence(system, fee_id: str, source_system: str = "TMS") -> None:
+    """给某条费用补一条源系统证据（用于证明「数据修好 → 告警消失」）。"""
+    system.facts.add_evidence(
+        f"evidence:GAPFIX-{fee_id.split(':', 1)[-1]}", fee_id,
+        "LOAD_GATE_RECORD", source_system, "2026-11-05T12:00:00+08:00", "1.0",
+        "缺口探针补证据（人为构造）", {"note": "gap probe evidence"},
+        "gap-probe-checksum")

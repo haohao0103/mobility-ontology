@@ -294,6 +294,50 @@ def probe_source_contracts(root: str, args: dict) -> dict:
     return {"ok": not issues, "codes": sorted({i["code"] for i in issues})}
 
 
+
+def probe_gap_detection(root: str, args: dict) -> dict:
+    """来源缺口检测（门禁第 28 项）：缺口探针上的 findings 码集合。"""
+    import tempfile
+    from freight import scenarios
+    from freight.engine import FreightSystem
+
+    td = tempfile.mkdtemp(prefix="lb_gap_")
+    path = os.path.join(td, "facts.db")
+    system = FreightSystem(path, fresh=True, seed=True, with_scenario=True)
+    try:
+        scenarios.build_gap_cases(system)
+        system.conn.commit()
+        report = system.fee_analysis(scenarios.GAP_PROBE_WAYBILL)
+        codes = [f.get("code") for f in report.get("findings") or []]
+        return {"ok": True, "codes": sorted(codes),
+                "code_set": sorted(set(codes)),
+                "unresolved_count": codes.count("FEE_SOURCE_UNRESOLVED")}
+    finally:
+        system.conn.close()
+
+
+
+def probe_gap_detection(root: str, args: dict) -> dict:
+    """来源缺口检测（门禁第 28 项）：缺口探针上的 findings 码集合。"""
+    import tempfile
+    from freight import scenarios
+    from freight.engine import FreightSystem
+
+    td = tempfile.mkdtemp(prefix="lb_gap_")
+    path = os.path.join(td, "facts.db")
+    system = FreightSystem(path, fresh=True, seed=True, with_scenario=True)
+    try:
+        scenarios.build_gap_cases(system)
+        system.conn.commit()
+        report = system.fee_analysis(scenarios.GAP_PROBE_WAYBILL)
+        codes = [f.get("code") for f in report.get("findings") or []]
+        return {"ok": True, "codes": sorted(codes),
+                "code_set": sorted(set(codes)),
+                "unresolved_count": codes.count("FEE_SOURCE_UNRESOLVED")}
+    finally:
+        system.conn.close()
+
+
 PROBES = {
     "gate": probe_gate,
     "gate_full": probe_gate_full,
@@ -308,6 +352,7 @@ PROBES = {
     "action_param": probe_action_param,
     "abox": probe_abox,
     "source_contracts": probe_source_contracts,
+    "gap_detection": probe_gap_detection,
 }
 
 
@@ -488,6 +533,40 @@ def mut_double_fee_claim(raw):
     for ds in raw.get("data_sources") or []:
         if ds.get("system") == "TMS" and ds.get("fee_types"):
             ds["fee_types"] = list(ds["fee_types"]) + ["highway"]
+    return raw
+
+
+
+def mut_drop_require_evidence(raw):
+    """去掉 TMS 的 require_evidence 声明 -> 缺证据告警应随之消失（告警由本体驱动）。"""
+    for ds in raw.get("data_sources") or []:
+        if ds.get("system") == "TMS" and ds.get("fee_types"):
+            ds["require_evidence"] = []
+    return raw
+
+
+def mut_drop_etc_highway(raw):
+    """ETC 不再认领 highway -> highway 费用变成无人认领（归属唯一性的另一面）。"""
+    for ds in raw.get("data_sources") or []:
+        if ds.get("system") == "ETC" and ds.get("fee_types"):
+            ds["fee_types"] = [t for t in ds["fee_types"] if t != "highway"]
+    return raw
+
+
+
+def mut_drop_require_evidence(raw):
+    """去掉 TMS 的 require_evidence 声明 -> 缺证据告警应随之消失（告警由本体驱动）。"""
+    for ds in raw.get("data_sources") or []:
+        if ds.get("system") == "TMS" and ds.get("fee_types"):
+            ds["require_evidence"] = []
+    return raw
+
+
+def mut_drop_etc_highway(raw):
+    """ETC 不再认领 highway -> highway 费用变成无人认领（归属唯一性的另一面）。"""
+    for ds in raw.get("data_sources") or []:
+        if ds.get("system") == "ETC" and ds.get("fee_types"):
+            ds["fee_types"] = [t for t in ds["fee_types"] if t != "highway"]
     return raw
 
 
@@ -693,7 +772,25 @@ CASES = [
         "check": lambda b, m: b["ok"] and not m["ok"]
         and "FEE_TYPE_MULTI_OWNER" in m["codes"],
     },
+    {
+        "id": "L22", "gap": "P2-8 缺口告警由本体驱动",
+        "change": f"{LAYER} data_sources 里 TMS 去掉 require_evidence",
+        "file": LAYER, "mut": mut_drop_require_evidence,
+        "probe": ("gap_detection", {}),
+        "expect": "缺证据告警 FEE_EVIDENCE_MISSING 消失（要求是本体声明的）",
+        "check": lambda b, m: "FEE_EVIDENCE_MISSING" in b["code_set"]
+        and "FEE_EVIDENCE_MISSING" not in m["code_set"],
+    },
+    {
+        "id": "L23", "gap": "P2-8 归属唯一性",
+        "change": f"{LAYER} data_sources 里 ETC 去掉 highway 认领",
+        "file": LAYER, "mut": mut_drop_etc_highway,
+        "probe": ("gap_detection", {}),
+        "expect": "highway 费用变成无人认领（多一条 FEE_SOURCE_UNRESOLVED）",
+        "check": lambda b, m: m["unresolved_count"] > b["unresolved_count"],
+    },
 ]
+
 
 
 

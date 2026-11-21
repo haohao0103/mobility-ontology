@@ -6,6 +6,7 @@ Agent 只读：所有业务事实经 FactMCP 现查现用，不写入本体或�
 from __future__ import annotations
 
 import json
+import random
 import os
 import re
 import time
@@ -93,6 +94,15 @@ class LLMError(RuntimeError):
     pass
 
 
+class _TransientLLM(LLMError):
+    """可重试的网关故障（限流 / 5xx / 网络抖动 / 空响应）。
+
+    区分它与 LLMError 的意义：认证失败、参数错误这类**重试也没用**的错误
+    必须立刻抛出，不能靠重试掩盖；只有瞬时故障才值得退避重试。
+    """
+    pass
+
+
 class LLMClient:
     """OpenAI 兼容网关客户端，STG 环境变量与 nl2sql 模板保持一致。"""
 
@@ -108,11 +118,44 @@ class LLMClient:
         self.step_thinking = os.environ.get("OPENAI_CHAT_STEP_THINKING", "0") == "1"
         self.final_thinking = os.environ.get("OPENAI_CHAT_FINAL_THINKING", "1") == "1"
         self.thinking_budget = int(os.environ.get("OPENAI_CHAT_THINKING_BUDGET", "256"))
+        # 退避重试：实测推理链偶发 503（网关瞬时故障），重跑即恢复。
+        # 没有重试时，一次抖动就会让整个诊断链 503 失败。
+        self.retry_attempts = int(os.environ.get("OPENAI_CHAT_RETRY_ATTEMPTS", "3"))
+        self.retry_base = float(os.environ.get("OPENAI_CHAT_RETRY_BASE", "1.5"))
+        self.retry_max = float(os.environ.get("OPENAI_CHAT_RETRY_MAX", "8"))
         if not self.key:
             raise LLMError("未配置 OPENAI_CHAT_API_KEY，无法启动 Agent")
 
-    def chat(self, messages: list[dict], thinking: bool | None = None) -> str:
+    # 可重试的 HTTP 状态码：限流与网关侧瞬时故障
+    RETRYABLE_HTTP = {429, 500, 502, 503, 504}
+
+    def chat(self, messages: list[dict], thinking: bool | None = None,
+             attempts: int | None = None) -> str:
+        """调用网关；瞬时故障按指数退避重试。
+
+        重试只针对「重试有意义」的故障：429 / 5xx / 网络抖动 / 空响应。
+        认证失败（401/403）与参数错误（400）立即抛出，不浪费额度。
+        """
         thinking = self.step_thinking if thinking is None else thinking
+        budget = attempts if attempts is not None else self.retry_attempts
+        if thinking and attempts is None:
+            # 长推理单次耗时高，总时长敏感：默认少给一次重试
+            budget = max(1, self.retry_attempts - 1)
+        last: Exception | None = None
+        for attempt in range(1, max(1, budget) + 1):
+            try:
+                return self._chat_once(messages, thinking)
+            except _TransientLLM as exc:
+                last = exc
+                if attempt >= budget:
+                    break
+                delay = min(self.retry_base * (2 ** (attempt - 1)), self.retry_max)
+                # 加抖动：多个并发请求别踩在同一秒重试
+                delay *= 0.8 + random.random() * 0.4
+                time.sleep(delay)
+        raise LLMError(str(last) if last else "大模型网关不可用")
+
+    def _chat_once(self, messages: list[dict], thinking: bool) -> str:
         payload = {
             "model": self.model,
             "messages": messages,
@@ -140,14 +183,19 @@ class LLMClient:
                 content, reasoning = self._read_response(resp)
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", "replace")[:400]
-            raise LLMError(f"大模型网关 HTTP {exc.code}: {detail}") from exc
+            message = f"大模型网关 HTTP {exc.code}: {detail}"
+            if exc.code in self.RETRYABLE_HTTP:
+                raise _TransientLLM(message) from exc
+            raise LLMError(message) from exc
+        except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as exc:
+            raise _TransientLLM(f"大模型网关不可用: {exc}") from exc
         except Exception as exc:
             raise LLMError(f"大模型网关不可用: {exc}") from exc
         content = (content or "").strip()
         if not content:
             content = (reasoning or "").strip()
         if not content:
-            raise LLMError("大模型返回为空")
+            raise _TransientLLM("大模型返回为空")
         return content
 
     @staticmethod

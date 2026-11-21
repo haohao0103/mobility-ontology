@@ -24,7 +24,7 @@ python scripts/semantic_gate.py
 python scripts/freight_acceptance.py
 
 # 承重实验：只改本体 JSON、代码零改动，18 条用例逐条证明行为翻转
-python scripts/load_bearing_demo.py   # 22 条承重用例
+python scripts/load_bearing_demo.py   # 24 条承重用例
 
 # 根层验证（36 项断言）
 python verify.py
@@ -79,7 +79,7 @@ verify.py         # 根层 36 项验证
 
 1. 金额整数分、规则确定性，LLM 不碰金额与原因选择。
 2. 每个能力必须能"只改本体 JSON、代码零改动"地启用/改变（承重测试）。
-3. CI 必过 semantic_gate（27 项，含扩展层 schema / 策略口径 / 展示层 / 破坏性变更 / 状态机完备性 / ABox 深度校验 / 来源契约）。
+3. CI 必过 semantic_gate（28 项，含扩展层 schema / 策略口径 / 展示层 / 破坏性变更 / 状态机完备性 / ABox 深度校验 / 来源契约 / 缺口检测）。
 4. 事实不入本体库（persisted_by_ontology=false）。
 5. **注册表必须执行**：属性类型、函数签名、返回结构、标记传播，光登记不算。
 6. **物化层必须可验真**：投影不新鲜就回退全表，绝不让索引静默少行。
@@ -90,6 +90,9 @@ verify.py         # 根层 36 项验证
    每个迁移动作要有 APPROVED 审计（门禁第 26 项）。门槛只约束深水区，不逼全量覆盖。
 10. **来源必须唯一且齐全**：每个 `fee_type` 恰好被一个连接器认领，且在
     FeeItem / PricingRule / QuoteItem 三方齐全（门禁第 27 项）。
+11. **缺口必须报得出来，且修好必须消失**：四类来源缺口（无人认领 / 口径越界 /
+    数据过期 / 证据缺失）要有可触发的探针数据，且数据修好后告警必须随之消失
+    （门禁第 28 项）——恒真断言等于没有断言。
 
 ## 部署
 

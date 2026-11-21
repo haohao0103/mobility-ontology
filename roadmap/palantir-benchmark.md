@@ -128,6 +128,10 @@ Palantir 模式的本体之所以有价值，不在于定义得多，而在于**
 21 条迁移边与声明一致、16 条规则分支全部被真实判定；覆盖度由 `freight/scenarios.py`
 的核心剧本产生（真实执行 15 个动作），不是靠声明凑数。
 
+**v3.5 又加了一道缺口检测门禁**（第 28 项 `check_gap_detection`）：四类来源缺口
+（无人认领 / 口径越界 / 数据过期 / 证据缺失）用**可触发的探针数据**证明检测能力在，
+并断言「数据修好后告警消失」——恒真断言等于没有断言。
+
 **v3.4 又加了一道来源契约门禁**（第 27 项 `check_source_contracts`）：
 7 个 `fee_type` 恰好各被一个连接器认领（漏认领 `FEE_TYPE_NO_OWNER` / 双认领
 `FEE_TYPE_MULTI_OWNER`），且在 FeeItem / PricingRule / QuoteItem 三方齐全——

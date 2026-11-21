@@ -9,6 +9,7 @@ import json
 import math
 import os
 import sys
+import tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
@@ -1227,6 +1228,108 @@ def check_source_contracts(root: str) -> dict:
     return item
 
 
+
+def check_gap_detection(root: str) -> dict:
+    """P2-8：来源缺口的检测能力——四类缺口必须报得出来，且数据修好必须消失。
+
+    检测机制在 `d046ae1` 就有了（FEE_SOURCE_UNRESOLVED / FEE_SOURCE_TYPE_UNDECLARED /
+    FEE_SOURCE_STALE / FEE_EVIDENCE_MISSING），但一直没有**可触发的数据**来证明它
+    真的会报警。这里用 `freight/scenarios.py::build_gap_cases` 构造探针数据，并断言：
+    ① 探针运单报出四类缺口；
+    ② 主诊断运单**不报**这四类（探针与正常数据隔离干净）；
+    ③ **数据修好后告警消失**（补证据 / 改成合法认领）——证明告警是数据驱动的，
+       不是恒真断言。
+    """
+    target = "freight/semantic_layer.json#data_sources"
+    item: dict = {"target": target, "ok": True, "issues": []}
+    import sqlite3
+    from freight import scenarios
+    from freight.engine import FreightSystem
+
+    required = {
+        "FEE_SOURCE_UNRESOLVED", "FEE_SOURCE_TYPE_UNDECLARED",
+        "FEE_SOURCE_STALE", "FEE_EVIDENCE_MISSING",
+    }
+
+    def build(with_gaps: bool):
+        td = tempfile.mkdtemp(prefix="gap_gate_")
+        path = os.path.join(td, "facts.db")
+        system = FreightSystem(path, fresh=True, seed=True, with_scenario=True)
+        if with_gaps:
+            scenarios.build_gap_cases(system)
+            system.conn.commit()
+        return path, system
+
+    # ① 探针报四类
+    path, system = build(True)
+    try:
+        codes = {f.get("code") for f in
+                 system.fee_analysis(scenarios.GAP_PROBE_WAYBILL).get("findings") or []}
+        missing = sorted(required - codes)
+        if missing:
+            item["ok"] = False
+            item["issues"].append({
+                "code": "GAP_NOT_DETECTED", "path": target,
+                "message": f"来源缺口没有被检出: {missing}"})
+        # ② 主诊断不报这四类（隔离干净）
+        clean_codes = {f.get("code") for f in
+                       system.fee_analysis("waybill:WB20261105001").get("findings") or []}
+        leaked = sorted(required & clean_codes)
+        if leaked:
+            item["ok"] = False
+            item["issues"].append({
+                "code": "GAP_FALSE_POSITIVE", "path": target,
+                "message": f"正常诊断数据上出现了缺口告警: {leaked}"})
+    finally:
+        system.conn.close()
+        if os.path.exists(path):
+            os.remove(path)
+
+    # ③ 数据修好 -> 告警消失（两条负向）
+    fixes = [
+        ("补上源系统证据", "fee:GAP-NOEVIDENCE", "FEE_EVIDENCE_MISSING"),
+        ("改成合法认领的来源", "fee:GAP-UNRESOLVED", "FEE_SOURCE_UNRESOLVED"),
+    ]
+    for label, fee_id, expect in fixes:
+        path, system = build(True)
+        try:
+            conn = sqlite3.connect(path)
+            if label.startswith("补上源系统证据"):
+                scenarios.add_gap_evidence(system, fee_id)
+            else:
+                row = conn.execute("SELECT props FROM objects WHERE object_id=?",
+                                   (fee_id,)).fetchone()
+                if row:
+                    props = json.loads(row[0])
+                    # 只改来源系统：TMS 认领 other（规则仍是 PR-OTHER-01）。
+                    # 顺手改 fee_type 会让费用类型与绑定的定价规则对不上，
+                    # 规则求值会直接崩——那不是我们要验证的东西。
+                    props["source_system"] = "TMS"
+                    conn.execute("UPDATE objects SET props=? WHERE object_id=?",
+                                 (json.dumps(props, ensure_ascii=False), fee_id))
+                    conn.commit()
+            conn.close()
+            # 按**费用粒度**判断：别的费用仍可能报同一个码（例如 highway 费用
+            # 同样无人认领），只看集合会把"这条修好了"误判成"没修好"。
+            findings = system.fee_analysis(
+                scenarios.GAP_PROBE_WAYBILL).get("findings") or []
+            # finding 里的 fee_id 是短 id（不带类型前缀），比较时按同一口径归一
+            still = [f for f in findings
+                     if f.get("code") == expect
+                     and str(f.get("fee_id") or "").split(":")[-1]
+                     == fee_id.split(":")[-1]]
+            if still:
+                item["ok"] = False
+                item["issues"].append({
+                    "code": "GAP_NEGATIVE_LEAKED", "path": target,
+                    "message": f"数据已修复但告警仍在（{expect} / {fee_id}）: {label}"})
+        finally:
+            system.conn.close()
+            if os.path.exists(path):
+                os.remove(path)
+    return item
+
+
 def main() -> int:
     results = [check_schema(CURRENT, "freight/semantic_layer.json")]
     results.append(check_metadata(CURRENT, "freight/semantic_layer.json"))
@@ -1246,6 +1349,7 @@ def main() -> int:
     results.append(check_state_machines(ROOT))
     results.append(check_abox_coverage(ROOT))
     results.append(check_source_contracts(ROOT))
+    results.append(check_gap_detection(ROOT))
     results.append(check_query_schema(ROOT))
     for manifest in list_manifests():
         version = manifest["version"]
@@ -1304,6 +1408,7 @@ def main() -> int:
         "state_machines": "freight/semantic_layer.json#state_machines",
         "abox_coverage": "freight/semantic_layer.json#abox_targets",
         "source_contracts": "freight/semantic_layer.json#data_sources",
+        "gap_detection": "freight/semantic_layer.json#data_sources",
     }
     coverage = {
         name: {"target": target, "ok": bool(by_target.get(target))}

@@ -32,14 +32,6 @@ def _runtime():
 
 def main() -> int:
     payload = json.loads(sys.argv[1])
-    # 子进程自设内存限制（受限环境不支持父进程 preexec_fn）
-    memory_mb = payload.get("memory_mb")
-    if memory_mb:
-        try:
-            limit = memory_mb * 1024 * 1024
-            resource.setrlimit(resource.RLIMIT_AS, (limit, limit))
-        except (ValueError, OSError):
-            pass  # 限制失败不阻塞执行，timeout 仍然兜底
     sem = SemanticLayer()
     # 注册表定义随 payload 传入时（运行时变异的本体），写临时扩展文件加载
     fn_def = payload.get("fn_definition")
@@ -57,6 +49,16 @@ def main() -> int:
         ext = ExtensionRegistry(base_classes=sem.classes)
     registry = FunctionRegistry(ext)
     runtime = _runtime()
+    # 内存限制只约束「函数执行」，不约束解释器与本体加载：
+    # 受限环境（如 miniconda venv）仅加载本体就可能超过 128MB，
+    # 若提前设限会把正常的超时用例误判为 MemoryError。
+    memory_mb = payload.get("memory_mb")
+    if memory_mb:
+        try:
+            limit = memory_mb * 1024 * 1024
+            resource.setrlimit(resource.RLIMIT_AS, (limit, limit))
+        except (ValueError, OSError):
+            pass  # 限制失败不阻塞执行，timeout 仍然兜底
     out = registry.call(payload["function_id"], payload["args"], runtime=runtime)
     json.dump(out, sys.stdout, ensure_ascii=False, default=str)
     return 0

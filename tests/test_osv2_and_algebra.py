@@ -8,11 +8,14 @@
 from __future__ import annotations
 
 import json
+import os
 
 import pytest
 
 from freight import projection_v2
 from freight.object_query import ObjectQueryEngine
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 @pytest.fixture()
@@ -60,7 +63,7 @@ class TestOSv2Materialization:
         assert projection_v2.view_rows(enh.store.conn, "waybill_fee_view") == []
         # 恢复，避免污染同会话后续用例
         enh.ext.raw = json.load(open(
-            "/Users/mac/Desktop/code/mobility-ontology/enhancements/ontology_extension.json",
+            os.path.join(ROOT, "enhancements", "ontology_extension.json"),
             encoding="utf-8"))
         projection_v2.sync_all(enh.store.conn, enh.ext)
 

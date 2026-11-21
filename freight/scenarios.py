@@ -205,7 +205,17 @@ def run_actions(system) -> list[dict]:
 
 
 def run_core_scenario(system) -> dict:
-    """完整核心剧本：建对象 → 接关系 → 走动作。返回摘要。"""
+    """完整核心剧本：建对象 → 接关系 → 走动作。返回摘要。
+
+    幂等：存量库上已有剧本对象时直接跳过，避免重复建对象或重复走动作。
+    """
+    if system.facts.scalar("SELECT COUNT(*) FROM objects WHERE object_id = ?",
+                           ("waybill:SCN01",)):
+        return {
+            "objects": [], "relations": [], "actions": [],
+            "action_count": 0, "object_count": 0, "relation_count": 0,
+            "skipped": True,
+        }
     created = build_objects(system)
     edges = build_relations(system)
     executed = run_actions(system)

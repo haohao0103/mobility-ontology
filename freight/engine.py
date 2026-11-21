@@ -65,11 +65,12 @@ class FreightSystem:
         self.observability = ToolObservability(self.conn, self.sem)
         self.effect_hook = None  # EnhancedSystem 挂载本体声明的副作用派发器
         self.conn.commit()
-        if seed and not self.facts.scalar("SELECT COUNT(*) FROM objects"):
-            self.seed()
+        if seed:
+            if not self.facts.scalar("SELECT COUNT(*) FROM objects"):
+                self.seed()
             if with_scenario:
                 # 核心业务剧本：让跑起来的服务本身就是"被业务证明过"的深水区，
-                # 而不是只有一条诊断主链路的浅数据。空库才建，已有库不动（幂等）。
+                # 而不是只有一条诊断主链路的浅数据。已有库也补齐（剧本内部幂等）。
                 from freight import scenarios
 
                 scenarios.run_core_scenario(self)

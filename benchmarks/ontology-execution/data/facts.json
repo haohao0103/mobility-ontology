@@ -1,0 +1,367 @@
+{
+ "_comment": "中立事实快照：2 张运单 + 8 条费用 + 7 条报价明细 + 证据 + 结算单。第二张运单 WB20261105002 的车型 7.6米厢货 在初始声明里**没有费率**——用于 C2 用例：新增该车型费率后，它的应计金额才可算。自包含，不依赖任何私有库。",
+ "waybill": {
+  "waybill_id": "WB20261105001",
+  "order_id": "HL20261105001",
+  "vehicle_id": "V001",
+  "vehicle_type": "4.2米厢货",
+  "waiting_minutes": 53,
+  "estimated_fee": 480.0,
+  "actual_fee": 518.0,
+  "loading_confirmed_at": "2026-11-05T10:05:00+08:00",
+  "delivered_at": "2026-11-05T12:18:00+08:00",
+  "status": "DELIVERED"
+ },
+ "fees": [
+  {
+   "fee_id": "F001",
+   "fee_type": "base",
+   "quoted_amount": 380.0,
+   "actual_amount": 380.0,
+   "expected_amount": 380.0,
+   "status": "NORMAL",
+   "source_system": "TMS",
+   "pricing_rule_id": "PR-BASE-01",
+   "pricing_rule_version": "2026.10",
+   "waybill_id": "WB20261105001"
+  },
+  {
+   "fee_id": "F002",
+   "fee_type": "mileage",
+   "quoted_amount": 60.0,
+   "actual_amount": 60.0,
+   "expected_amount": 60.0,
+   "status": "NORMAL",
+   "source_system": "TMS",
+   "pricing_rule_id": "PR-MILEAGE-01",
+   "pricing_rule_version": "2026.10",
+   "waybill_id": "WB20261105001"
+  },
+  {
+   "fee_id": "F003",
+   "fee_type": "waiting",
+   "quoted_amount": 0.0,
+   "actual_amount": 25.0,
+   "expected_amount": 12.0,
+   "status": "DISPUTED",
+   "source_system": "TMS",
+   "pricing_rule_id": "PR-WAIT-01",
+   "pricing_rule_version": "2026.10",
+   "waybill_id": "WB20261105001"
+  },
+  {
+   "fee_id": "F004",
+   "fee_type": "highway",
+   "quoted_amount": 0.0,
+   "actual_amount": 13.0,
+   "expected_amount": 13.0,
+   "status": "NORMAL",
+   "source_system": "ETC",
+   "pricing_rule_id": "PR-HIGHWAY-01",
+   "pricing_rule_version": "2026.10",
+   "waybill_id": "WB20261105001"
+  },
+  {
+   "fee_id": "F005",
+   "fee_type": "loading",
+   "quoted_amount": 20.0,
+   "actual_amount": 20.0,
+   "expected_amount": 20.0,
+   "status": "NORMAL",
+   "source_system": "TMS",
+   "pricing_rule_id": "PR-LOADING-01",
+   "pricing_rule_version": "2026.10",
+   "waybill_id": "WB20261105001"
+  },
+  {
+   "fee_id": "F006",
+   "fee_type": "insurance",
+   "quoted_amount": 10.0,
+   "actual_amount": 10.0,
+   "expected_amount": 10.0,
+   "status": "NORMAL",
+   "source_system": "TMS",
+   "pricing_rule_id": "PR-INSURANCE-01",
+   "pricing_rule_version": "2026.10",
+   "waybill_id": "WB20261105001"
+  },
+  {
+   "fee_id": "F007",
+   "fee_type": "other",
+   "quoted_amount": 10.0,
+   "actual_amount": 10.0,
+   "expected_amount": 10.0,
+   "status": "NORMAL",
+   "source_system": "TMS",
+   "pricing_rule_id": "PR-OTHER-01",
+   "pricing_rule_version": "2026.10",
+   "waybill_id": "WB20261105001"
+  },
+  {
+   "fee_id": "F008",
+   "fee_type": "waiting",
+   "quoted_amount": 0.0,
+   "actual_amount": 25.0,
+   "expected_amount": null,
+   "status": "DISPUTED",
+   "source_system": "TMS",
+   "pricing_rule_id": "PR-WAIT-01",
+   "pricing_rule_version": "2026.10",
+   "waybill_id": "WB20261105002"
+  }
+ ],
+ "quote_items": [
+  {
+   "quote_item_id": "QI001",
+   "fee_type": "base",
+   "amount": 380.0
+  },
+  {
+   "quote_item_id": "QI002",
+   "fee_type": "mileage",
+   "amount": 60.0
+  },
+  {
+   "quote_item_id": "QI003",
+   "fee_type": "waiting",
+   "amount": 0.0
+  },
+  {
+   "quote_item_id": "QI004",
+   "fee_type": "highway",
+   "amount": 0.0
+  },
+  {
+   "quote_item_id": "QI005",
+   "fee_type": "loading",
+   "amount": 20.0
+  },
+  {
+   "quote_item_id": "QI006",
+   "fee_type": "insurance",
+   "amount": 10.0
+  },
+  {
+   "quote_item_id": "QI007",
+   "fee_type": "other",
+   "amount": 10.0
+  }
+ ],
+ "evidence": [
+  {
+   "evidence_id": "evidence:ACT-02bc62497b1f",
+   "object_id": "SCN02",
+   "evidence_type": "ACTION_REASSIGN_WAYBILL",
+   "source_system": "ONTOLOGY_ACTION",
+   "occurred_at": "2026-11-21T20:59:35+08:00",
+   "summary": "改派：waybill:SCN02 ACCEPTED → REASSIGNED"
+  },
+  {
+   "evidence_id": "evidence:ACT-1a785f346574",
+   "object_id": "SCN02",
+   "evidence_type": "ACTION_REVERSE_ENTRY",
+   "source_system": "ONTOLOGY_ACTION",
+   "occurred_at": "2026-11-21T20:59:35+08:00",
+   "summary": "冲正：settlement:SCN02 POSTED → REVERSED"
+  },
+  {
+   "evidence_id": "evidence:ACT-277388e8b266",
+   "object_id": "SCN01",
+   "evidence_type": "ACTION_DISPUTE_CHARGE",
+   "source_system": "ONTOLOGY_ACTION",
+   "occurred_at": "2026-11-21T20:59:35+08:00",
+   "summary": "发起费用申诉：fee:SCN01 NORMAL → DISPUTED"
+  },
+  {
+   "evidence_id": "evidence:ACT-47467f69384f",
+   "object_id": "SCN01",
+   "evidence_type": "ACTION_VOID_INVOICE",
+   "source_system": "ONTOLOGY_ACTION",
+   "occurred_at": "2026-11-21T20:59:35+08:00",
+   "summary": "发票红冲：invoice:SCN01 ISSUED → VOIDED"
+  },
+  {
+   "evidence_id": "evidence:ACT-645f7b2f8566",
+   "object_id": "SCN02",
+   "evidence_type": "ACTION_ACCEPT_ORDER",
+   "source_system": "ONTOLOGY_ACTION",
+   "occurred_at": "2026-11-21T20:59:35+08:00",
+   "summary": "接单：waybill:SCN02 CREATED → ACCEPTED"
+  },
+  {
+   "evidence_id": "evidence:ACT-6bd5ddf32bfa",
+   "object_id": "SCN02",
+   "evidence_type": "ACTION_DEPART_STOP",
+   "source_system": "ONTOLOGY_ACTION",
+   "occurred_at": "2026-11-21T20:59:35+08:00",
+   "summary": "离站：stop:SCN02 ARRIVED → COMPLETED"
+  },
+  {
+   "evidence_id": "evidence:ACT-6ce929c15905",
+   "object_id": "SCN02",
+   "evidence_type": "ACTION_WAIVE_CHARGE",
+   "source_system": "ONTOLOGY_ACTION",
+   "occurred_at": "2026-11-21T20:59:35+08:00",
+   "summary": "减免费用：fee:SCN02 DISPUTED → WAIVED"
+  },
+  {
+   "evidence_id": "evidence:ACT-75f1f5ec0607",
+   "object_id": "SCN01",
+   "evidence_type": "ACTION_HOLD_SETTLEMENT",
+   "source_system": "ONTOLOGY_ACTION",
+   "occurred_at": "2026-11-21T20:59:35+08:00",
+   "summary": "挂起结算：settlement:SCN01 DRAFT → ON_HOLD"
+  },
+  {
+   "evidence_id": "evidence:ACT-83ac67db882f",
+   "object_id": "SCN02",
+   "evidence_type": "ACTION_ARRIVE_STOP",
+   "source_system": "ONTOLOGY_ACTION",
+   "occurred_at": "2026-11-21T20:59:35+08:00",
+   "summary": "到站：stop:SCN02 PLANNED → ARRIVED"
+  },
+  {
+   "evidence_id": "evidence:ACT-a88fd6dc8327",
+   "object_id": "SCN01",
+   "evidence_type": "ACTION_CONFIRM_LOADING",
+   "source_system": "ONTOLOGY_ACTION",
+   "occurred_at": "2026-11-21T20:59:35+08:00",
+   "summary": "装货确认：waybill:SCN01 ACCEPTED → LOADED"
+  },
+  {
+   "evidence_id": "evidence:ACT-abb6dcc81c83",
+   "object_id": "SCN01",
+   "evidence_type": "ACTION_CONFIRM_SUBCONTRACT",
+   "source_system": "ONTOLOGY_ACTION",
+   "occurred_at": "2026-11-21T20:59:35+08:00",
+   "summary": "确认分包：subcontract:SCN01 DRAFT → CONFIRMED"
+  },
+  {
+   "evidence_id": "evidence:ACT-c6dd3e7b0910",
+   "object_id": "SCN01",
+   "evidence_type": "ACTION_COMPLETE",
+   "source_system": "ONTOLOGY_ACTION",
+   "occurred_at": "2026-11-21T20:59:35+08:00",
+   "summary": "送达：waybill:SCN01 LOADED → DELIVERED"
+  },
+  {
+   "evidence_id": "evidence:ACT-d1a304e098aa",
+   "object_id": "SCN01",
+   "evidence_type": "ACTION_ACCEPT_ORDER",
+   "source_system": "ONTOLOGY_ACTION",
+   "occurred_at": "2026-11-21T20:59:35+08:00",
+   "summary": "接单：waybill:SCN01 CREATED → ACCEPTED"
+  },
+  {
+   "evidence_id": "evidence:ACT-df6ea5a1537b",
+   "object_id": "SCN01",
+   "evidence_type": "ACTION_ARRIVE_STOP",
+   "source_system": "ONTOLOGY_ACTION",
+   "occurred_at": "2026-11-21T20:59:35+08:00",
+   "summary": "到站：stop:SCN01 PLANNED → ARRIVED"
+  },
+  {
+   "evidence_id": "evidence:ACT-ecbc52a055f4",
+   "object_id": "SCN02",
+   "evidence_type": "ACTION_DISPUTE_CHARGE",
+   "source_system": "ONTOLOGY_ACTION",
+   "occurred_at": "2026-11-21T20:59:35+08:00",
+   "summary": "发起费用申诉：fee:SCN02 NORMAL → DISPUTED"
+  },
+  {
+   "evidence_id": "evidence:ACT-f3ec59c73a02",
+   "object_id": "SCN01",
+   "evidence_type": "ACTION_CLOSE_EXCEPTION",
+   "source_system": "ONTOLOGY_ACTION",
+   "occurred_at": "2026-11-21T20:59:35+08:00",
+   "summary": "关闭异常工单：ticket:SCN01 OPEN → CLOSED"
+  },
+  {
+   "evidence_id": "evidence:E001",
+   "object_id": "WB20261105001",
+   "evidence_type": "DRIVER_ARRIVAL",
+   "source_system": "TMS",
+   "occurred_at": "2026-11-05T09:12:00+08:00",
+   "summary": "司机到达装货点"
+  },
+  {
+   "evidence_id": "evidence:E002",
+   "object_id": "WB20261105001",
+   "evidence_type": "LOADING_CONFIRMED",
+   "source_system": "TMS",
+   "occurred_at": "2026-11-05T10:05:00+08:00",
+   "summary": "装货完成，系统记录等候 53 分钟"
+  },
+  {
+   "evidence_id": "evidence:E003",
+   "object_id": "F003",
+   "evidence_type": "PRICING_RULE",
+   "source_system": "BILLING",
+   "occurred_at": "2026-11-05T12:18:00+08:00",
+   "summary": "等候费规则：30 分钟免费，每 5 分钟 2.4 元"
+  },
+  {
+   "evidence_id": "evidence:E004",
+   "object_id": "F004",
+   "evidence_type": "ETC_TOLL",
+   "source_system": "ETC",
+   "occurred_at": "2026-11-05T11:45:00+08:00",
+   "summary": "ETC 实际扣费 13 元"
+  },
+  {
+   "evidence_id": "evidence:E005",
+   "object_id": "ST20261105001",
+   "evidence_type": "SETTLEMENT_POSTED",
+   "source_system": "ERP",
+   "occurred_at": "2026-11-15T10:00:00+08:00",
+   "summary": "结算单已入账 518 元"
+  },
+  {
+   "evidence_id": "evidence:E006",
+   "object_id": "INV20261105001",
+   "evidence_type": "INVOICE_ISSUED",
+   "source_system": "TAX",
+   "occurred_at": "2026-11-15T10:30:00+08:00",
+   "summary": "发票已开具 518 元"
+  },
+  {
+   "evidence_id": "evidence:E007",
+   "object_id": "EX20261105001",
+   "evidence_type": "FEE_DISPUTE",
+   "source_system": "CRM",
+   "occurred_at": "2026-11-16T09:30:00+08:00",
+   "summary": "货主对等候费提出异议"
+  }
+ ],
+ "settlement": {
+  "settlement_id": "ST20261105001",
+  "status": "POSTED",
+  "total_amount": null
+ },
+ "waybills": [
+  {
+   "waybill_id": "WB20261105001",
+   "order_id": "HL20261105001",
+   "vehicle_id": "V001",
+   "vehicle_type": "4.2米厢货",
+   "waiting_minutes": 53,
+   "estimated_fee": 480.0,
+   "actual_fee": 518.0,
+   "loading_confirmed_at": "2026-11-05T10:05:00+08:00",
+   "delivered_at": "2026-11-05T12:18:00+08:00",
+   "status": "DELIVERED"
+  },
+  {
+   "waybill_id": "WB20261105002",
+   "order_id": "HL20261105002",
+   "vehicle_id": "V002",
+   "vehicle_type": "7.6米厢货",
+   "waiting_minutes": 53,
+   "estimated_fee": 480.0,
+   "actual_fee": 518.0,
+   "loading_confirmed_at": "2026-11-05T10:05:00+08:00",
+   "delivered_at": "2026-11-05T12:18:00+08:00",
+   "status": "DELIVERED"
+  }
+ ]
+}

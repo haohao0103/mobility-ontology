@@ -1,0 +1,120 @@
+{
+ "_comment": "中立本体声明：最小可执行本体（微型货运域）。只有声明，没有代码——所有行为由实现方按声明解释。",
+ "version": "bench-1.0.0",
+ "ontology_version": "3.0.0",
+ "fee_types": [
+  "base",
+  "mileage",
+  "waiting",
+  "highway",
+  "loading",
+  "insurance",
+  "other"
+ ],
+ "pricing": {
+  "waiting": {
+   "free_minutes": 30,
+   "block_minutes": 5,
+   "per_block": 2.4,
+   "by_vehicle_type": {
+    "4.2米厢货": {
+     "free_minutes": 30,
+     "block_minutes": 5,
+     "per_block": 2.4
+    },
+    "面包车": {
+     "free_minutes": 20,
+     "block_minutes": 5,
+     "per_block": 1.8
+    }
+   }
+  }
+ },
+ "rules": {
+  "R-WAIT-01": {
+   "name": "等候费计算规则",
+   "domain": "FeeItem",
+   "fee_type": "waiting",
+   "formula": "ceil(max(0, waiting_minutes - free_minutes) / block_minutes) * per_block",
+   "version": "2026.10",
+   "effective_from": "2026-10-01",
+   "effective_to": "2026-12-31",
+   "free_minutes": 30,
+   "block_minutes": 5,
+   "per_block": 2.4
+  }
+ },
+ "actions": {
+  "waive_charge": {
+   "label": "减免费用",
+   "target": "FeeItem",
+   "roles": [
+    "finance",
+    "supervisor"
+   ],
+   "from_status": [
+    "DISPUTED"
+   ],
+   "to_status": "WAIVED",
+   "amount_cap": "actual",
+   "rule_id": "R-SETTLE-01",
+   "rule_text": "减免金额不得超过费用实收金额；结算已入账时须先冲正"
+  }
+ },
+ "state_machines": {
+  "FeeItem": {
+   "initial": [
+    "NORMAL"
+   ],
+   "terminal": [
+    "WAIVED"
+   ],
+   "transitions": [
+    {
+     "action": "dispute_charge",
+     "from": [
+      "NORMAL"
+     ],
+     "to": "DISPUTED"
+    },
+    {
+     "action": "waive_charge",
+     "from": [
+      "DISPUTED"
+     ],
+     "to": "WAIVED"
+    }
+   ]
+  }
+ },
+ "sources": {
+  "TMS": {
+   "fee_types": [
+    "base",
+    "mileage",
+    "waiting",
+    "loading",
+    "insurance",
+    "other"
+   ],
+   "require_evidence": [],
+   "freshness_hours": 24
+  },
+  "ETC": {
+   "fee_types": [
+    "highway"
+   ],
+   "require_evidence": [
+    "ETC_TOLL"
+   ],
+   "freshness_hours": 24
+  }
+ },
+ "audit_elements": [
+  "version",
+  "rule_id",
+  "effective_from",
+  "evidence_ids",
+  "checksum"
+ ]
+}

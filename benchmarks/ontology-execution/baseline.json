@@ -1,0 +1,26 @@
+{
+ "benchmark": "ontology-execution",
+ "version": "0.1.0",
+ "generated_at": "run_20261121_214245.json",
+ "summary": [
+  {
+   "implementation": "ontology_ref",
+   "passed": 6,
+   "total": 6,
+   "M1_changed_files": 3,
+   "M1_restarts_required": 0,
+   "M2_audit_elements": 5,
+   "M3_duplicate_copies": 0
+  },
+  {
+   "implementation": "property_graph_ref",
+   "passed": 5,
+   "total": 6,
+   "M1_changed_files": 3,
+   "M1_restarts_required": 3,
+   "M2_audit_elements": 0,
+   "M3_duplicate_copies": 3
+  }
+ ],
+ "note": "基线由内置两个参考实现跑出。任何指标变化都会被 --check-baseline 判为漂移。"
+}

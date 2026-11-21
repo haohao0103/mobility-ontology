@@ -1,0 +1,37 @@
+{
+ "_comment": "变更卡：每次变更后评测方必须重跑全部用例，考察结论是否正确翻转、以及是否需要重启。",
+ "cards": [
+  {
+   "id": "C1",
+   "name": "免费等候 30→20 分钟",
+   "kind": "pricing_param",
+   "change": "pricing.waiting.by_vehicle_type[\"4.2米厢货\"].free_minutes: 30 -> 20",
+   "expect": {
+    "waiting_expected_after": 16.8,
+    "waiting_over_after": 8.2
+   },
+   "note": "把 4.2米厢货 的免费等候从 30 改成 20 分钟：ceil((53-20)/5)*2.4=16.8，实收 25 → 超收 8.2。两条路线都从各自的参数来源取值，因此**都能算对**——差异不在算得对不对，而在改完要不要重启、答案有没有审计要素、参数是不是只有一份。"
+  },
+  {
+   "id": "C2",
+   "name": "新增 7.6米厢货 费率",
+   "kind": "pricing_param",
+   "change": "pricing.waiting.by_vehicle_type.add: 7.6米厢货 {free 30, block 5, per_block 3.0}",
+   "expect": {
+    "waiting_expected_after": 15.0,
+    "waiting_over_after": 10.0
+   },
+   "note": "新增 7.6米厢货费率后，数据里那张 WB20261105002（7.6米厢货 / 53 分钟等候）才可按规则算：ceil((53-30)/5)*3.0=15.0，实收 25 → 超收 10.0。初始声明里没有该车型费率，因此这一步真正检验『新增车型后能不能按新费率算钱』。"
+  },
+  {
+   "id": "C3",
+   "name": "金额上限副本漂移",
+   "kind": "drift_probe",
+   "change": "actions.waive_charge.amount_cap: actual -> none",
+   "expect": {
+    "blocked_after": false
+   },
+   "note": "同一语义（减免上限口径）在属性图路线里被写了两遍——代码常量与配置项。只改配置不改代码 → 结论仍是旧口径 → 与期望不符即判定为漂移。本体路线只有一处声明 → 立即生效。"
+  }
+ ]
+}

@@ -1,0 +1,93 @@
+{
+  "benchmark": "ontology-execution",
+  "version": "0.1.0",
+  "title": "可执行本体 vs 属性图：同题同数据的执行基准",
+  "_comment": "用例清单与期望结果。期望值是**客观可判定**的（数值+容差 / 布尔 / 码值），不看实现的解释文字。判定规则见 PROTOCOL.md §3。",
+  "dataset": {
+    "ontology": "data/ontology.json",
+    "facts": "data/facts.json",
+    "change_cards": "data/change_cards.json"
+  },
+  "tolerance": 0.01,
+  "audit_elements": ["version", "rule_id", "effective_from", "evidence_ids", "checksum"],
+  "cases": [
+    {
+      "id": "Q1",
+      "name": "差异归因：报价 480 / 实收 518 / 差 38，其中等候费应计 12、超收 13",
+      "kind": "query",
+      "method": "q1_diff",
+      "expects": {
+        "quoted_total": 480.0,
+        "actual_total": 518.0,
+        "diff_total": 38.0,
+        "waiting_expected": 12.0,
+        "waiting_over": 13.0
+      }
+    },
+    {
+      "id": "Q2",
+      "name": "等候费按规则应收多少 / 超收多少",
+      "kind": "query",
+      "method": "q2_waiting",
+      "expects": {"waiting_expected": 12.0, "waiting_over": 13.0}
+    },
+    {
+      "id": "Q3",
+      "name": "减免 40 元会被哪一步挡住",
+      "kind": "query",
+      "method": "q3_roadblock",
+      "args": {"amount": 40.0},
+      "expects": {"blocked": true, "reason_code": "AMOUNT_EXCEEDS_ACTUAL"}
+    },
+    {
+      "id": "C1",
+      "name": "变更：免费等候 30→20 分钟后，同一笔等候费应计多少",
+      "kind": "change",
+      "card": "C1",
+      "method": "q2_waiting",
+      "expects": {"waiting_expected": 16.8, "waiting_over": 8.2},
+      "measures": ["M1"]
+    },
+    {
+      "id": "C2",
+      "name": "变更：新增 7.6米厢货费率，并新增一张该车型的运单（53 分钟等候）",
+      "kind": "change",
+      "card": "C2",
+      "method": "q2_waiting",
+      "waybill": "WB20261105002",
+      "expects": {"waiting_expected": 15.0, "waiting_over": 10.0},
+      "measures": ["M1"]
+    },
+    {
+      "id": "C3",
+      "name": "漂移探针：把减免上限口径从 actual 改为 none，改完减免 40 元应当**不再**被金额门禁挡住",
+      "kind": "change",
+      "card": "C3",
+      "method": "q3_roadblock",
+      "args": {"amount": 40.0},
+      "expects": {"blocked": false},
+      "measures": ["M3"],
+      "_note": "这是**同一语义被写两遍**的典型形态：属性图路线把上限口径同时写在代码与配置里，改配置不改代码 → 结论仍是旧的 → 与期望不符即被判定为漂移。本体路线只有一处声明 → 立即生效且一致。"
+    }
+  ],
+  "metrics": [
+    {
+      "id": "M1",
+      "name": "变更成本",
+      "unit": "changed_files + restart_required",
+      "definition": "变更一次需要改几个文件、是否必须重启才生效。声明在代码之外 → 改声明即生效；规则在代码里 → 改代码 + 重启。"
+    },
+    {
+      "id": "M2",
+      "name": "可审计性",
+      "unit": "audit_elements_present (0-5)",
+      "definition": "答案里携带的审计要素个数：version / rule_id / effective_from / evidence_ids / checksum。缺这些，三个月后无法复核结论。"
+    },
+    {
+      "id": "M3",
+      "name": "一致性风险",
+      "unit": "duplicate_rule_copies",
+      "definition": "同一业务语义在实现里被写了几遍（静态计数）。>1 即存在『改一处漏一处』的漂移风险。"
+    }
+  ]
+}

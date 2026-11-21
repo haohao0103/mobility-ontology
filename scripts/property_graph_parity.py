@@ -484,7 +484,7 @@ def main() -> int:
     print(f"  属性图: 诊断说 {d['property_graph']['diagnosis']} 元 / 预检说 "
           f"{d['property_graph']['preflight']} 元 -> 一致？{d['property_graph']['consistent']}"
           f"（无任何机制能发现）")
-    print(f"  本体  : 诊断与预检都读同一份声明 -> 一致？{d['ontology']['consistent']}"
+    print(f"  本体  : 诊断与预检都读同一份声明 -> 同一来源？{d['ontology']['same_source']}"
           f"（{d['ontology']['note']}）")
     print("\n【完整对齐估算】属性图方案要硬编码我们这套本体的全部声明，约需：")
     est = report["full_alignment_estimate"]

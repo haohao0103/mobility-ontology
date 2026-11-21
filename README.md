@@ -26,6 +26,18 @@ python scripts/freight_acceptance.py
 # 演示自检：上台前 5 分钟跑一遍，确认所有演示路径可用并给出耗时基线
 DEMO_BASE=http://127.0.0.1:8765 python scripts/demo_gate.py
 
+# 事前保证实证：非法输入在写入/执行那一刻就被拒（5/5 类当场拒绝）
+python scripts/prevention_demo.py
+
+# 事前保证实证：非法输入在写入/执行那一刻就被拒（5/5 类当场拒绝）
+python scripts/prevention_demo.py
+
+# 诚实性扫描：禁止「宣称做了校验、背后却没有计算」的字段（已进 semantic_gate 第 29 项）
+python scripts/honesty_scan.py
+
+# 诚实性扫描：禁止「宣称做了校验、背后却没有计算」的字段（已进 semantic_gate 第 29 项）
+python scripts/honesty_scan.py
+
 # 承重实验：只改本体 JSON、代码零改动，24 条用例逐条证明行为翻转
 python scripts/load_bearing_demo.py   # 24 条承重用例
 
@@ -99,7 +111,7 @@ verify.py         # 根层 36 项验证
 
 1. 金额整数分、规则确定性，LLM 不碰金额与原因选择。
 2. 每个能力必须能"只改本体 JSON、代码零改动"地启用/改变（承重测试）。
-3. CI 必过 semantic_gate（28 项，含扩展层 schema / 策略口径 / 展示层 / 破坏性变更 / 状态机完备性 / ABox 深度校验 / 来源契约 / 缺口检测）。
+3. CI 必过 semantic_gate（29 项，含扩展层 schema / 策略口径 / 展示层 / 破坏性变更 / 状态机完备性 / ABox 深度校验 / 来源契约 / 缺口检测 / 诚实性扫描）。
 4. 事实不入本体库（persisted_by_ontology=false）。
 5. **注册表必须执行**：属性类型、函数签名、返回结构、标记传播，光登记不算。
 6. **物化层必须可验真**：投影不新鲜就回退全表，绝不让索引静默少行。

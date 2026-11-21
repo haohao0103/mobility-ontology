@@ -1330,6 +1330,37 @@ def check_gap_detection(root: str) -> dict:
     return item
 
 
+
+def check_honesty(root: str) -> dict:
+    """P2-9 诚实性扫描：不允许出现「宣称做了校验、背后却没有计算」的字段。
+
+    起因：`object_query` 曾返回硬编码的 `"consistent": True`，前端还把它讲成
+    「派生查询遵守快照一致性」——给领导看的说法建立在恒真字段上。
+    这类问题读代码完全看不出来（看起来很正常），所以只能机器扫。
+    """
+    target = "scripts/honesty_scan.py"
+    item: dict = {"target": target, "ok": True, "issues": []}
+    sys.path.insert(0, os.path.join(root, "scripts"))
+    try:
+        import honesty_scan
+
+        hits = honesty_scan.scan_claims(root)
+    except Exception as exc:  # noqa: BLE001
+        item["ok"] = False
+        item["issues"].append({"code": "HONESTY_SCAN_FAILED", "path": target,
+                               "message": f"诚实性扫描执行失败: {exc}"})
+        return item
+    for h in hits:
+        item["ok"] = False
+        item["issues"].append({
+            "code": "DECORATIVE_CLAIM_FIELD", "path": f"{h['file']}:{h['line']}",
+            "message": (f"字段 {h['field']} 宣称做了校验/保证，但赋值是常量 "
+                        f"{h['value']}，背后没有计算 —— 要么补上计算，要么改名为不宣称"),
+        })
+    item["scanned_constant_fields"] = len(honesty_scan.scan_constant_fields(root))
+    return item
+
+
 def main() -> int:
     results = [check_schema(CURRENT, "freight/semantic_layer.json")]
     results.append(check_metadata(CURRENT, "freight/semantic_layer.json"))
@@ -1350,6 +1381,7 @@ def main() -> int:
     results.append(check_abox_coverage(ROOT))
     results.append(check_source_contracts(ROOT))
     results.append(check_gap_detection(ROOT))
+    results.append(check_honesty(ROOT))
     results.append(check_query_schema(ROOT))
     for manifest in list_manifests():
         version = manifest["version"]
@@ -1409,6 +1441,7 @@ def main() -> int:
         "abox_coverage": "freight/semantic_layer.json#abox_targets",
         "source_contracts": "freight/semantic_layer.json#data_sources",
         "gap_detection": "freight/semantic_layer.json#data_sources",
+        "honesty": "scripts/honesty_scan.py",
     }
     coverage = {
         name: {"target": target, "ok": bool(by_target.get(target))}

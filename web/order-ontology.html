@@ -987,7 +987,99 @@
   .trace-capability.action{border-color:#c9d7f0;color:#1f3f9c}
   .trace-capability.function{border-color:#d8cfbc;color:#6b5426}
 
+  /* 核心组件追问 */
+  .comp-questions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:20px}
+  .comp-q{
+    position:relative;display:flex;flex-direction:column;gap:6px;text-align:left;
+    background:var(--card);border:1px solid var(--line);border-radius:8px;padding:15px 15px 13px;
+    cursor:pointer;transition:.18s;overflow:hidden;
+  }
+  .comp-q:hover{border-color:var(--line-strong);background:#fff}
+  .comp-q.on{border-color:var(--orange);background:#fff;box-shadow:0 0 0 3px var(--orange-soft)}
+  .comp-q .qtag{font-family:var(--mono);font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--orange)}
+  .comp-q b{font-size:14px;line-height:1.45;padding-right:14px}
+  .comp-q small{font-size:11.5px;color:var(--muted);line-height:1.55}
+  .comp-q .qmeta{margin-top:auto;padding-top:8px;font-family:var(--mono);font-size:9.5px;color:#9a9185}
+  .comp-q .qdot{position:absolute;right:12px;top:13px;width:7px;height:7px;border-radius:50%;background:#d8d2c7}
+  .comp-q.on .qdot{background:var(--orange)}
+  .comp-runner{display:grid;grid-template-columns:300px minmax(0,1fr);gap:14px;margin-top:14px}
+  .comp-side{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px;align-self:start;position:sticky;top:74px}
+  .comp-side h3{margin:0 0 3px;font-size:13px}
+  .comp-side p{margin:0 0 10px;font-size:11px;color:var(--muted);line-height:1.55}
+  .comp-steps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+  .comp-step{display:grid;grid-template-columns:22px minmax(0,1fr);gap:9px;padding:9px 8px;border-radius:6px;border:1px solid transparent;cursor:pointer;align-items:start}
+  .comp-step:hover{background:#faf8f3}
+  .comp-step.active{background:#fff4ea;border-color:#f3d3bd}
+  .comp-step.locked{opacity:.42;cursor:not-allowed}
+  .comp-step.locked:hover{background:transparent}
+  .comp-step .cno{
+    width:22px;height:22px;border-radius:50%;border:1px solid var(--line-strong);display:flex;
+    align-items:center;justify-content:center;font-family:var(--mono);font-size:10px;
+    color:var(--muted);background:#fff;flex:0 0 auto;
+  }
+  .comp-step.done .cno{background:var(--green);border-color:var(--green);color:#fff}
+  .comp-step.active .cno{background:var(--orange);border-color:var(--orange);color:#fff}
+  .comp-step .cbody b{display:block;font-size:11.5px;line-height:1.45;font-weight:600}
+  .comp-step .cbody span{display:block;font-family:var(--mono);font-size:8.5px;color:#9a9185;margin-top:2px;letter-spacing:.03em;text-transform:uppercase}
+  .comp-detail{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:18px;min-height:360px}
+  .comp-detail-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;padding-bottom:12px;border-bottom:1px solid var(--line)}
+  .comp-detail-head .kicker{display:block;font-family:var(--mono);font-size:9px;letter-spacing:.14em;color:var(--orange);margin-bottom:4px}
+  .comp-detail-head h3{margin:0;font-size:17px;line-height:1.4}
+  .comp-detail-head p{margin:4px 0 0;font-size:12px;color:var(--muted)}
+  .comp-component{
+    font-family:var(--mono);font-size:9px;letter-spacing:.08em;border:1px solid #d9e3f5;
+    background:#f4f8ff;color:#315a9e;border-radius:999px;padding:4px 9px;white-space:nowrap;
+  }
+  .comp-io{margin-top:14px;border:1px solid #e4ded3;border-radius:6px;background:#fffdf9;overflow:hidden}
+  .comp-io-head{display:flex;align-items:center;gap:8px;padding:8px 11px;border-bottom:1px solid #eee8de;background:#fbf8f2;font-size:11px;color:#6c6358}
+  .comp-io-tag{font-family:var(--mono);font-size:8.5px;letter-spacing:.1em;border-radius:3px;padding:2px 6px}
+  .comp-io-tag.input{background:#eef3ff;color:#315a9e;border:1px solid #d7e2fb}
+  .comp-io-tag.output{background:#edf8f0;color:#14713a;border:1px solid #cfe8d8}
+  .comp-req{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;padding:10px 12px;border-bottom:1px dashed #eee8de;font-family:var(--mono);font-size:10.5px}
+  .comp-req .method{font-weight:700;color:#14713a;background:#edf8f0;border:1px solid #cfe8d8;border-radius:3px;padding:1px 5px;font-size:9px;font-family:var(--mono)}
+  .comp-req .path{color:#1f3f9c;word-break:break-all}
+  .comp-req .note{font-family:inherit;font-size:10px;color:#9a9185}
+  .comp-kv{width:100%;border-collapse:collapse;font-size:11.5px}
+  .comp-kv th,.comp-kv td{padding:6px 12px;border-bottom:1px solid #f1ece3;text-align:left;vertical-align:top}
+  .comp-kv th{width:190px;font-weight:500;color:#857c70;background:#fdfbf7}
+  .comp-kv td{font-family:var(--mono);font-size:10.5px;color:#2f2a24;word-break:break-all}
+  .comp-kv tr:last-child th,.comp-kv tr:last-child td{border-bottom:0}
+  .comp-verdict{padding:10px 12px;font-size:12px;line-height:1.65;background:#fff8ee;border-top:1px solid #f0e2d0;color:#6b4a1d}
+  .comp-verdict b{color:#a24800}
+  .comp-verdict.ok{background:#f2fbf5;border-color:#d5ebdc;color:#175c32}
+  .comp-verdict.ok b{color:#12833b}
+  .comp-list{margin:0;padding:10px 12px 10px 30px;font-size:11.5px;color:#3f382f;display:flex;flex-direction:column;gap:5px}
+  .comp-list li::marker{color:#b3a99a}
+  .comp-list code{font-family:var(--mono);font-size:10px;background:#f5f1ea;border:1px solid #e7e0d5;border-radius:2px;padding:0 3px;color:#3b352d}
+  .comp-table{width:100%;border-collapse:collapse;font-size:10.5px}
+  .comp-table th,.comp-table td{padding:6px 10px;border-bottom:1px solid #f1ece3;text-align:left;vertical-align:top;word-break:break-all}
+  .comp-table th{font-family:var(--mono);font-size:9px;letter-spacing:.04em;color:#857c70;background:#fdfbf7;white-space:nowrap}
+  .comp-table tr:last-child td{border-bottom:0}
+  .comp-table code{font-family:var(--mono);font-size:9.5px;color:#1f3f9c}
+  .comp-table .num{text-align:right;font-family:var(--mono);white-space:nowrap}
+  .comp-table .bad{color:#b1321b;font-weight:600}
+  .comp-table .good{color:#12833b}
+  .comp-raw{border-top:1px solid #eee8de}
+  .comp-raw summary{padding:8px 12px;font-family:var(--mono);font-size:9.5px;color:#857c70;cursor:pointer;background:#fdfbf7}
+  .comp-raw pre{
+    margin:0;max-height:330px;overflow:auto;padding:11px 12px;background:#fbf9f5;
+    font-family:var(--mono);font-size:10px;line-height:1.55;color:#3b352d;
+    white-space:pre-wrap;word-break:break-word;
+  }
+  .comp-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:14px}
+  .comp-actions .spacer{flex:1}
+  .comp-actions .btn.primary{min-width:110px;justify-content:center}
+  .comp-actions .btn:disabled{opacity:.45;cursor:not-allowed}
+  .comp-pending{padding:18px 12px;font-size:12px;color:#857c70;line-height:1.65}
+  .comp-error{padding:12px;background:#fff5f2;color:#a3321e;font-size:12px;border-top:1px solid #f0d1c8;line-height:1.6}
+  .comp-empty{padding:14px 12px;font-size:11.5px;color:#9a9185}
+  .comp-spin{display:inline-block;width:11px;height:11px;border:2px solid #f3d3bd;border-top-color:var(--orange);border-radius:50%;animation:spin .7s linear infinite;vertical-align:-2px;margin-right:5px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
   @media (max-width:1100px){
+    .comp-runner{grid-template-columns:1fr}
+    .comp-side{position:static}
+    .comp-questions{grid-template-columns:1fr}
     .store-dual,.kb-dual{grid-template-columns:1fr}
     .store-record{max-height:none}
   }
@@ -1063,6 +1155,7 @@
       <a href="#functions">14 函数沙箱</a>
       <a href="#search">15 搜索度量</a>
       <a href="#osdk">16 OSDK</a>
+      <a href="#components">17 状态机与追问</a>
     </nav>
     <div class="top-actions">
       <div class="version-switch" title="切换本体发布版本，当前演示库不需要重建">
@@ -1685,6 +1778,29 @@
         <div class="lab-verdict" id="osdkVerdict"></div>
         <div class="lab-out" id="osdkOut"><div class="store-empty">正在生成 OSDK…</div></div>
       </div>
+    </div>
+  </section>
+
+  <section class="block" id="components">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="sec-no">17</div>
+        <h2>同一单货，六个追问<small>状态机 · 动作执行 · 接口多态 · 安全策略 · 影响面 · 证据链</small></h2>
+      </div>
+      <p class="sec-lead">
+        本体不是一个静态目录，而是能陪着业务问题逐步往下算的执行面。
+        下面六个问题都围绕运单 <code>waybill:WB20261105001</code>，每一步只做一件事：
+        先看这一步吃什么输入、调了哪个接口，再看它吐出什么、为什么能进入下一步。
+        所有数据都来自 STG 实时接口，点击一次才执行一次。
+      </p>
+      <p class="sec-lead" style="margin-top:-6px">
+        <b>状态机在哪里？</b>第 1 个问题「送达之后，还能改派吗？」的第 2 步直接请求
+        <code>GET /freight/ontology/state-machines/Waybill</code>，页面会把迁移边、角色和终态原样摊开；
+        第 4 个问题「动作按钮真的按下去，会发生什么？」会真正调用动作执行引擎，
+        展示状态门禁、拒绝留痕、幂等重放和审计回读。
+      </p>
+      <div class="comp-questions" id="compQuestions"></div>
+      <div class="comp-runner" id="compRunner"></div>
     </div>
   </section>
 </main>
@@ -5140,8 +5256,16 @@ async function enhApi(path, options = {}) {
   if (!response.ok) {
     const d = body && body.detail;
     const message = d && (d.message || d);
-    const error = new Error(typeof message === 'string' ? message : JSON.stringify(message || body));
+    const text = typeof message === 'string' ? message : JSON.stringify(message || body);
+    const error = new Error(text);
     error.status = response.status;
+    error.code = d && d.code;
+    if (!error.code && typeof text === 'string') {
+      const prefix = text.match(/^([A-Z][A-Z0-9_]+):/);
+      if (prefix) error.code = prefix[1];
+    }
+    error.details = d && d.details;
+    error.body = body;
     throw error;
   }
   return body;
@@ -5588,11 +5712,1059 @@ async function initLabs() {
   ]);
 }
 
+/* ── 17 核心组件追问：状态机 / 影响面 / 证据链 ── */
+const COMP_WAYBILL = 'waybill:WB20261105001';
+
+function compKV(rows) {
+  return `<table class="comp-kv">${rows.map(([k, v]) =>
+    `<tr><th>${esc(k)}</th><td>${v == null || v === '' ? '—' : esc(String(v))}</td></tr>`
+  ).join('')}</table>`;
+}
+
+function compTable(headers, rows) {
+  return `<div style="overflow:auto"><table class="comp-table"><thead><tr>${
+    headers.map((h) => `<th>${esc(h)}</th>`).join('')
+  }</tr></thead><tbody>${
+    rows.map((row) => `<tr>${row.map((cell) =>
+      `<td>${cell == null || cell === '' ? '—' : esc(String(cell))}</td>`
+    ).join('')}</tr>`).join('')
+  }</tbody></table></div>`;
+}
+
+function compList(items) {
+  return `<ul class="comp-list">${items.map((item) => `<li>${esc(item)}</li>`).join('')}</ul>`;
+}
+
+function compVerdict(html, ok = false) {
+  return `<div class="comp-verdict ${ok ? 'ok' : ''}">${html}</div>`;
+}
+
+async function compTry(fn) {
+  try {
+    const data = await fn();
+    return { http_status: 200, ok: true, data };
+  } catch (err) {
+    return {
+      http_status: err.status || 0,
+      ok: false,
+      code: err.code || 'ERROR',
+      message: err.message,
+      details: err.details || null,
+      body: err.body || null
+    };
+  }
+}
+
+function compRaw(data) {
+  return `<details class="comp-raw"><summary>查看原始返回 JSON</summary><pre>${esc(JSON.stringify(data, null, 2))}</pre></details>`;
+}
+
+function compStatus(status) {
+  const labels = {
+    CREATED: '已创建', ACCEPTED: '已接单', REASSIGNED: '已改派',
+    LOADED: '已装货', DELIVERED: '已送达'
+  };
+  return labels[status] ? `${status} · ${labels[status]}` : status;
+}
+
+function compRequestHtml(req) {
+  const paths = req.paths || (req.path ? [req.path] : []);
+  const shown = paths.map((p) => `<span class="path">${req.local ? '' : '/freight'}${esc(p)}</span>`).join('<span class="note">·</span>');
+  return `
+    <div class="comp-req">
+      <span class="method">${esc(req.method || 'GET')}</span>
+      ${shown}
+      ${req.params ? `<span class="note">参数</span><span class="path">${esc(JSON.stringify(req.params))}</span>` : ''}
+      ${req.body ? `<span class="note">body</span><span class="path">${esc(JSON.stringify(req.body))}</span>` : ''}
+      ${req.note ? `<span class="note">${esc(req.note)}</span>` : ''}
+    </div>`;
+}
+
+const COMP_SCENARIOS = [
+  {
+    id: 'state',
+    tag: 'State Machine · Action · Rule',
+    title: '送达之后，还能改派吗？',
+    summary: '对象状态 → 状态机声明 → 改派准入 → 剩余动作 → 轨迹回放',
+    meta: '5 步 · 3 次实时接口',
+    steps: [
+      {
+        title: '先看这单现在是什么状态',
+        question: '对象系统里，它到底停在哪一步？',
+        note: '不拿页面文案当答案，直接读对象实例。',
+        component: 'Object',
+        request: (ctx) => ({ method: 'GET', path: `/objects/${ctx.waybillId}` }),
+        render: (d) => compKV([
+          ['object_id', d.object_id], ['类型', `${d.type} · ${d.type_label || ''}`],
+          ['当前状态', compStatus(d.status)], ['状态集合', (d.statuses || []).join(' → ')],
+          ['司机', (d.properties || {}).driver_id], ['车辆', (d.properties || {}).vehicle_id],
+          ['最后更新', d.updated_at]
+        ]) + compVerdict(`对象系统返回当前状态 <b>${esc(d.status)}</b>。后面所有准入判断，都从这个真实状态出发。`)
+      },
+      {
+        title: '再读 Waybill 状态机声明',
+        question: '哪些状态合法，迁移边怎么连？',
+        note: '状态机不是画在文档里的图，而是后端可查询的声明。',
+        component: 'State Machine',
+        request: () => ({ method: 'GET', path: '/ontology/state-machines/Waybill' }),
+        render: (d, ctx) => {
+          const m = d.machine || {};
+          const transitions = m.transitions || [];
+          const current = ctx.data(0) ? ctx.data(0).status : '';
+          const outEdges = transitions.filter((t) => (t.from || []).includes(current));
+          return compKV([
+            ['对象类型', m.object_type], ['合法状态', (m.statuses || []).join(' → ')],
+            ['初始状态', (m.initial || []).join(', ')], ['终态', (m.terminal || []).join(', ')],
+            ['可达状态', (m.reachable || []).join(', ')],
+            ['死胡同', (m.dead_ends || []).join(', ') || '无']
+          ]) + compTable(
+            ['动作', '允许从', '迁移到', '允许角色'],
+            transitions.map((t) => [t.label, (t.from || []).join(', '), t.to, (t.roles || []).join(' / ')])
+          ) + compVerdict(
+            `当前 <b>${esc(current)}</b> 只有 <b>${outEdges.length}</b> 条出边${outEdges.length ? `：${outEdges.map((t) => esc(t.label)).join('、')}` : '，已经是终态'}。状态机的边不是建议，是动作能不能执行的第一道门。`
+          );
+        }
+      },
+      {
+        title: '用当前状态过滤「改派」动作',
+        question: '为什么这次改派被挡住？',
+        note: '输入来自第 1 步真实返回的 blocked_actions，不再发请求。',
+        component: 'Action + Rule',
+        request: (ctx) => ({
+          method: 'LOCAL', local: true, path: '第 1 步输出 → blocked_actions → action_id = reassign_waybill',
+          params: { object_id: ctx.waybillId, action_id: 'reassign_waybill' }
+        }),
+        run: (ctx) => {
+          const obj = ctx.data(0) || {};
+          return (obj.blocked_actions || []).find((a) => a.id === 'reassign_waybill') || null;
+        },
+        render: (a) => {
+          if (!a) return `<div class="comp-empty">当前对象的 blocked_actions 中没有 reassign_waybill。</div>`;
+          const blockers = (a.blockers || []).map((b) =>
+            `${b.code}${b.rule_id ? ` · ${b.rule_id}` : ''}：${b.message}`);
+          return compKV([
+            ['动作', `${a.label} · ${a.id}`], ['允许执行', a.allowed ? '是' : '否'],
+            ['从状态', (a.from_status || []).join(', ')], ['目标状态', a.to_status],
+            ['允许角色', (a.roles || []).join(' / ')],
+            ['阻断原因', a.blocked_reason]
+          ]) + (blockers.length ? compList(blockers) : '') + compVerdict(
+            `改派不可执行：<b>${esc((a.blockers || []).map((b) => b.code).join(' + ') || 'BLOCKED')}</b>。状态机先挡住，业务规则再补一刀；不是靠前端按钮灰掉来“假装拦住”。`
+          );
+        }
+      },
+      {
+        title: '看这单还剩哪些动作',
+        question: '状态机走到这里，还能做什么？',
+        note: '输入来自第 1 步的 available/blocked actions，以及第 2 步的状态机终态。',
+        component: 'Action Catalog',
+        request: (ctx) => ({
+          method: 'LOCAL', local: true, path: '第 1 步 available_actions + blocked_actions / 第 2 步 machine.terminal',
+          params: { object_id: ctx.waybillId }
+        }),
+        run: (ctx) => {
+          const obj = ctx.data(0) || {};
+          const machine = (ctx.data(1) || {}).machine || {};
+          return {
+            status: obj.status,
+            available: obj.available_actions || [],
+            blocked: obj.blocked_actions || [],
+            terminal: (machine.terminal || []).includes(obj.status)
+          };
+        },
+        render: (d) => {
+          const availableRows = (d.available || []).map((a) => [
+            `${a.label} · ${a.id}`, (a.from_status || []).join(', '), a.to_status,
+            (a.roles || []).join(' / '),
+            (a.params || []).map((p) => `${p.label}(${p.type}${p.required ? ', 必填' : ''})`).join('; ') || '无参数'
+          ]);
+          const blockedRows = (d.blocked || []).map((a) => [
+            `${a.label} · ${a.id}`, (a.from_status || []).join(', '), a.to_status, a.blocked_reason
+          ]);
+          return compKV([
+            ['当前状态', compStatus(d.status)], ['是否终态', d.terminal ? '是' : '否'],
+            ['可用动作数', (d.available || []).length], ['被拦动作数', (d.blocked || []).length]
+          ]) + (availableRows.length
+            ? compTable(['可用动作', '允许从', '到', '角色', '参数'], availableRows)
+            : `<div class="comp-empty">available_actions 为空：当前状态没有任何可执行的出边动作。</div>`
+          ) + (blockedRows.length
+            ? compTable(['被拦动作', '允许从', '到', '原因'], blockedRows)
+            : ''
+          ) + compVerdict(
+            d.terminal
+              ? `<b>${esc(d.status)} 是终态</b>，0 个可用动作。不是权限被收回，是状态机根本没有出边；要动它只能新建异常/冲正类动作。`
+              : `当前还有 <b>${(d.available || []).length}</b> 个动作可执行；每个动作都带着角色要求和必填参数。`
+          );
+        }
+      },
+      {
+        title: '最后回放状态轨迹',
+        question: '这条状态是怎么走到现在的？',
+        note: '读状态历史，核对轨迹末状态是否等于对象当前状态。',
+        component: 'State History',
+        request: (ctx) => ({ method: 'GET', path: `/objects/${ctx.waybillId}/state-history` }),
+        render: (d) => {
+          const steps = d.steps || [];
+          const last = steps[steps.length - 1];
+          const match = last && last.status === d.current_status;
+          return compKV([
+            ['object_id', d.object_id], ['current_status', compStatus(d.current_status)],
+            ['step_count', d.step_count], ['轨迹末状态 = 当前状态', match ? '是' : '否']
+          ]) + compTable(
+            ['时间', '状态', '操作人', 'payload'],
+            steps.map((s) => [s.at, s.status, s.actor, JSON.stringify(s.payload || {})])
+          ) + compVerdict(
+            match
+              ? `轨迹最后落到 <b>${esc(d.current_status)}</b>，和对象当前状态一致。状态不是猜出来的，是一条条带时间、操作人、payload 的记录。`
+              : `轨迹末状态与当前状态不一致，说明对象被绕过状态机改过，应该追审计。`
+          , Boolean(match));
+        }
+      }
+    ]
+  },
+  {
+    id: 'impact',
+    tag: 'Relation · Object Graph · Impact',
+    title: '退这 38 块，会波及谁？',
+    summary: '费用差异 → 深度 2 对象图 → 影响面 → 结算/发票回读',
+    meta: '5 步 · 3 次实时接口',
+    steps: [
+      {
+        title: '先把 38 块差异定位到费用项',
+        question: '钱差在哪几项上？',
+        note: '读费用诊断结果，只看差异，不先做推断。',
+        component: 'Function · FeeBreakdown',
+        request: (ctx) => ({ method: 'GET', path: `/waybills/${ctx.waybillId}/fee-analysis` }),
+        render: (d) => {
+          const diffs = (d.breakdown || []).filter((b) => Number(b.actual_amount) !== Number(b.quoted_amount));
+          return compKV([
+            ['报价合计', fmtMoney(d.quoted_total)], ['实际合计', fmtMoney(d.actual_total)],
+            ['有效合计', fmtMoney(d.effective_total)], ['差异', `${fmtMoney(d.variance)} 元`],
+            ['等候分钟', `${d.waiting_minutes} 分钟（免费 ${d.free_wait_minutes}）`],
+            ['费用源覆盖', `${d.source_coverage?.resolved}/${d.source_coverage?.fee_count} 项`]
+          ]) + compTable(
+            ['费用项', '费用类型', '报价', '规则应计', '实际', '相对报价', '相对规则', '状态'],
+            (d.breakdown || []).map((b) => [
+              `${b.fee_id} ${b.label}`, b.fee_type, fmtMoney(b.quoted_amount),
+              fmtMoney(b.expected_amount), fmtMoney(b.actual_amount),
+              fmtMoney(b.quote_delta), fmtMoney(b.rule_delta), b.status
+            ])
+          ) + compVerdict(
+            `差异 <b>${fmtMoney(d.variance)} 元</b>，落在 ${diffs.map((b) => `${esc(b.label)} ${fmtMoney(b.quote_delta)}`).join('、') || '无差异项'}。先定位到费用项，才谈得上影响面。`
+          );
+        }
+      },
+      {
+        title: '沿关系展开深度 2 的对象图',
+        question: '这一单在图中连着哪些东西？',
+        note: '从运单对象出发，按本体关系展开，而不是手写 JOIN。',
+        component: 'Object Graph',
+        request: (ctx) => ({ method: 'GET', path: `/objects/${ctx.waybillId}/graph?depth=2`, params: { depth: 2 } }),
+        render: (d) => {
+          const nodes = d.nodes || [];
+          const edges = d.edges || [];
+          const groups = {};
+          nodes.forEach((n) => {
+            const key = n.type_label || n.type || '未知类型';
+            (groups[key] = groups[key] || []).push(n);
+          });
+          const labelCounts = {};
+          edges.forEach((e) => { labelCounts[e.label] = (labelCounts[e.label] || 0) + 1; });
+          return compKV([
+            ['根对象', d.root], ['深度', d.depth], ['节点数', nodes.length], ['关系边数', edges.length]
+          ]) + compTable(
+            ['类型', '节点数', '代表对象'],
+            Object.entries(groups).map(([k, v]) => [
+              k, v.length, v.slice(0, 3).map((n) => n.name).join('、') + (v.length > 3 ? ` 等 ${v.length} 个` : '')
+            ])
+          ) + compTable(
+            ['关系', '边数'],
+            Object.entries(labelCounts).sort((a, b) => b[1] - a[1]).map(([k, v]) => [k, v])
+          ) + compVerdict(
+            `从 <b>${esc(d.root)}</b> 出发，2 跳内拿到 <b>${nodes.length}</b> 个节点、<b>${edges.length}</b> 条边。影响面不是查出来的表，是沿关系走出来的图。`
+          );
+        }
+      },
+      {
+        title: '让本体直接算影响面',
+        question: '动这笔费用，下游谁会被波及？',
+        note: '对象图负责展开，影响面负责收敛成“会被改到的对象清单”。',
+        component: 'Impact',
+        request: (ctx) => ({ method: 'GET', path: `/objects/${ctx.waybillId}/impact` }),
+        render: (d) => {
+          const groups = {};
+          (d.affected || []).forEach((o) => {
+            const key = o.type_label || o.type || '未知类型';
+            (groups[key] = groups[key] || []).push(o);
+          });
+          return compKV([
+            ['根对象', d.root], ['影响对象数', d.affected_count],
+            ['摘要', d.summary]
+          ]) + compTable(
+            ['类型', '数量', '状态', '金额'],
+            Object.entries(groups).map(([k, v]) => {
+              const amounts = v.filter((x) => x.amount != null);
+              const total = amounts.reduce((sum, x) => sum + Number(x.amount || 0), 0);
+              return [k, v.length, [...new Set(v.map((x) => x.status))].join(' / '), amounts.length ? fmtMoney(total) : '—'];
+            })
+          ) + compVerdict(
+            `若调整 <b>${esc(d.root)}</b>，会波及 <b>${d.affected_count}</b> 个下游对象。其中结算与发票不是“相关对象”，是必须一起处理的账务对象。`
+          );
+        }
+      },
+      {
+        title: '把结算单和发票单独拎出来',
+        question: '账务侧到底停在哪一步？',
+        note: '输入来自第 3 步影响面，按类型过滤，不额外发请求。',
+        component: 'Settlement · Invoice',
+        request: (ctx) => ({
+          method: 'LOCAL', local: true, path: '第 3 步 impact.affected → 过滤 Settlement / Invoice',
+          params: { root: ctx.waybillId }
+        }),
+        run: (ctx) => {
+          const affected = ((ctx.data(2) || {}).affected) || [];
+          return {
+            settlement: affected.find((o) => o.type === 'Settlement') || null,
+            invoice: affected.find((o) => o.type === 'Invoice') || null
+          };
+        },
+        render: (d) => {
+          const rows = [];
+          if (d.settlement) rows.push(['结算单', d.settlement.object_id, d.settlement.status, fmtMoney(d.settlement.amount), d.settlement.depth, d.settlement.via]);
+          if (d.invoice) rows.push(['发票', d.invoice.object_id, d.invoice.status, fmtMoney(d.invoice.amount), d.invoice.depth, d.invoice.via]);
+          return (rows.length
+            ? compTable(['对象', 'object_id', '状态', '金额', '深度', '通过关系'], rows)
+            : `<div class="comp-empty">影响面里没有结算单或发票。</div>`
+          ) + compVerdict(
+            d.settlement || d.invoice
+              ? `结算单 ${esc(d.settlement ? `${d.settlement.object_id} · ${d.settlement.status}` : '无')}；发票 ${esc(d.invoice ? `${d.invoice.object_id} · ${d.invoice.status}` : '无')}。退款只改费用项，不改这两张，账面一定对不上。`
+              : `当前影响面没有账务对象。`
+          );
+        }
+      },
+      {
+        title: '收敛成一条可执行的处置顺序',
+        question: '谁先动、谁后动？',
+        note: '把前四步的真实输出收成一条动作顺序，不引入新数据。',
+        component: 'Decision',
+        request: () => ({
+          method: 'LOCAL', local: true, path: '第 1~4 步输出 → 处置顺序',
+        }),
+        run: (ctx) => {
+          const impact = ctx.data(2) || {};
+          const affected = impact.affected || [];
+          const settlement = affected.find((o) => o.type === 'Settlement') || null;
+          const invoice = affected.find((o) => o.type === 'Invoice') || null;
+          return { impact, settlement, invoice, analysis: ctx.data(0) };
+        },
+        render: (d) => {
+          const maxDepth = Math.max(...((d.impact.affected || []).map((o) => o.depth || 0)), 0);
+          return compList([
+            `费用差异 ${fmtMoney(d.analysis?.variance)} 元，先定位到费用项，再决定申诉、减免还是驳回`,
+            `影响面 ${d.impact.affected_count || 0} 个对象，最远 ${maxDepth} 跳`,
+            `结算单 ${d.settlement ? `${d.settlement.object_id}（${d.settlement.status}，${fmtMoney(d.settlement.amount)} 元）` : '不在影响面'}`,
+            `发票 ${d.invoice ? `${d.invoice.object_id}（${d.invoice.status}，${fmtMoney(d.invoice.amount)} 元）` : '不在影响面'}`,
+            '处置顺序：费用申诉/减免 → 结算冲正 → 发票红冲或重开 → 关闭异常工单'
+          ]) + compVerdict(
+            `这条顺序不是模型编的，是从费用项、关系图、影响面和账务状态里一步步收出来的。<b>先改明细、再改账、最后留痕</b>，顺序反了就会产生二次差异。`
+          , true);
+        }
+      }
+    ]
+  },
+  {
+    id: 'evidence',
+    tag: 'Evidence · Data Source · Trace',
+    title: '这 53 分钟等候费凭什么收？',
+    summary: '计费事实 → 费用项关系 → 规则版本 → 4 条证据 → 可回查轨迹',
+    meta: '5 步 · 5 次实时接口',
+    steps: [
+      {
+        title: '先把计费事实摊开',
+        question: '53 分钟、30 分钟免费、5 个计费块，分别是多少？',
+        note: '直接读费用诊断的计算结果和规则参数。',
+        component: 'Function · Rule',
+        request: (ctx) => ({ method: 'GET', path: `/waybills/${ctx.waybillId}/fee-analysis` }),
+        render: (d) => {
+          const rule = d.waiting_rule || {};
+          const waiting = (d.breakdown || []).find((b) => b.fee_type === 'waiting') || {};
+          return compKV([
+            ['费用项', `${waiting.fee_id || 'F003'} ${waiting.label || '等候费'}`],
+            ['等候分钟', `${d.waiting_minutes} 分钟`], ['免费分钟', `${d.free_wait_minutes} 分钟`],
+            ['计费块数', rule.blocks], ['每块金额', `${rule.per_block} 元`],
+            ['规则公式', rule.formula], ['规则应计', `${fmtMoney(rule.expected)} 元`],
+            ['实际金额', `${fmtMoney(waiting.actual_amount)} 元`],
+            ['超收', `${fmtMoney((waiting.actual_amount || 0) - (rule.expected || 0))} 元`],
+            ['数据源覆盖', `${d.source_coverage?.resolved}/${d.source_coverage?.fee_count} 项 · ${(d.source_coverage?.sources || []).map((s) => `${s.system} ${s.fee_count} 项`).join(' / ')}`]
+          ]) + compTable(
+            ['车型', '免费分钟', '计费块', '每块', '应计', '本次选中'],
+            (rule.tariffs || []).map((t) => [
+              t.vehicle_type, t.free_minutes, t.blocks, t.per_block, fmtMoney(t.expected), t.selected ? '是' : '否'
+            ])
+          ) + compVerdict(
+            `计算链是 <b>53 − 30 = 23 分钟 → 5 个 5 分钟块 × 2.4 元 = 12 元</b>；实际记了 25 元，所以超收 13 元。每一步都能对上，不是拍脑袋。`
+          );
+        }
+      },
+      {
+        title: '看费用项在关系图里连着什么',
+        question: 'F003 不是孤立数字，它挂在谁身上？',
+        note: '读费用项对象，展开它的出边关系。',
+        component: 'FeeItem · Relation',
+        request: () => ({ method: 'GET', path: '/objects/fee:F003' }),
+        render: (d) => {
+          const p = d.properties || {};
+          return compKV([
+            ['object_id', d.object_id], ['状态', d.status], ['来源系统', p.source_system],
+            ['计费依据', p.calc_basis], ['定价规则', `${p.pricing_rule_id} · ${p.pricing_rule_version}`],
+            ['报价金额', fmtMoney(p.quoted_amount)], ['规则应计', fmtMoney(p.expected_amount)],
+            ['实际金额', fmtMoney(p.actual_amount)]
+          ]) + compTable(
+            ['关系', '目标类型', '目标对象', '状态'],
+            (d.relations_out || []).map((r) => [r.label, r.type, r.object_id, r.status])
+          ) + compVerdict(
+            `费用项向上连报价明细，向下汇总进结算单，横向连计价规则和证据。要解释一笔钱，必须顺着这四条边走。`
+          );
+        }
+      },
+      {
+        title: '把计价规则版本调出来',
+        question: '2.4 元一块、30 分钟免费，是哪版规则？',
+        note: '读规则对象本身，不只看诊断结果里的摘要。',
+        component: 'PricingRule',
+        request: () => ({ method: 'GET', path: '/objects/pricing_rule:PR-WAIT-01' }),
+        render: (d, ctx) => {
+          const p = d.properties || {};
+          const params = p.params || {};
+          const selected = (ctx.data(0) || {}).waiting_rule || {};
+          const vehicle = selected.vehicle_type || '4.2米厢货';
+          const tariff = (params.by_vehicle_type || {})[vehicle] || {};
+          return compKV([
+            ['object_id', d.object_id], ['状态', d.status], ['费用类型', p.fee_type],
+            ['城市', p.city], ['版本', p.version], ['生效期', `${p.effective_from} ~ ${p.effective_to}`],
+            ['来源系统', p.source_system]
+          ]) + compTable(
+            ['车型', '免费分钟', '计费块（分钟）', '每块金额'],
+            Object.entries(params.by_vehicle_type || {}).map(([k, v]) => [k, v.free_minutes, v.block_minutes, v.per_block])
+          ) + compVerdict(
+            `这单车型是 <b>${esc(vehicle)}</b>，选中参数为免费 <b>${esc(tariff.free_minutes)}</b> 分钟、每 <b>${esc(tariff.block_minutes)}</b> 分钟 <b>${esc(tariff.per_block)}</b> 元；规则版本 <b>${esc(p.version)}</b> 在 ${esc(p.effective_from)} ~ ${esc(p.effective_to)} 有效期内。`
+          );
+        }
+      },
+      {
+        title: '把 4 条证据对象逐条取出来',
+        question: '哪些系统在证明这 53 分钟？',
+        note: '并行读取 4 个证据对象，核对来源、时间、版本和 checksum。',
+        component: 'Evidence',
+        request: () => ({
+          method: 'GET',
+          paths: ['/objects/evidence:E001', '/objects/evidence:E002', '/objects/evidence:E003', '/objects/evidence:E004'],
+          note: '并行读取 4 个证据对象'
+        }),
+        run: async (ctx, req) => Promise.all(req.paths.map((path) => api(path))),
+        render: (list) => compTable(
+          ['证据', '类型', '来源系统', '发生时间', '版本', 'checksum', '摘要'],
+          (list || []).map((o) => {
+            const p = o.properties || {};
+            return [p.evidence_id, p.evidence_type, p.source_system, p.occurred_at, p.version, p.checksum, p.summary];
+          })
+        ) + compVerdict(
+          `4 条证据分别来自 TMS（到达、装货）、BILLING（规则）和 ETC（扣费），每条都有时间、版本和 checksum。`+
+          `证据不是一句“系统里就是这么记的”，而是可回查的源记录。`
+        )
+      },
+      {
+        title: '最后看本体给出的可回查轨迹',
+        question: '结论是怎么从事实走到钱的？',
+        note: '读费用诊断的 traceability，逐步核对每一步的来源。',
+        component: 'Traceability',
+        request: (ctx) => ({ method: 'GET', path: `/waybills/${ctx.waybillId}/fee-analysis`, note: '复用第 1 步返回的 traceability' }),
+        render: (d) => {
+          const trace = d.traceability || {};
+          return compKV([
+            ['结论', d.conclusion], ['本体版本', `${trace.version || '—'} · ${trace.version_source || '—'}`],
+            ['轨迹步数', (trace.steps || []).length]
+          ]) + compTable(
+            ['步骤', '值', '来源'],
+            (trace.steps || []).map((s) => [s.label, s.value, s.source])
+          ) + compVerdict(
+            `轨迹从报价明细走到 TMS/ETC 明细、规则、计算和证据，每一步都标了 <b>source</b>。这就是本体的可解释性：不是给一个结论，而是把结论的来路摊开。`
+          , true);
+        }
+      }
+    ]
+  },
+  {
+    id: 'gate',
+    tag: 'Action Engine · Idempotency · Audit',
+    title: '动作按钮真的按下去，会发生什么？',
+    summary: '读取对象 → 状态机声明 → 真实执行被拒 → 幂等重放 → 审计回读',
+    meta: '5 步 · 6 次实时接口',
+    steps: [
+      {
+        title: '先锁定这单和它的动作面',
+        question: 'DELIVERED 的运单，还有哪些动作可执行？',
+        note: '读对象实例，直接拿到 available/blocked actions 和每个动作的阻断理由。',
+        component: 'Object · Action',
+        request: (ctx) => ({ method: 'GET', path: `/objects/${ctx.waybillId}` }),
+        render: (d) => {
+          const avail = d.available_actions || [];
+          const blocked = d.blocked_actions || [];
+          return compKV([
+            ['object_id', d.object_id], ['当前状态', compStatus(d.status)],
+            ['可用动作', avail.length ? avail.map((a) => a.label).join('、') : '0 个'],
+            ['被拦动作', blocked.length],
+            ['司机 / 车辆', `${(d.properties || {}).driver_id || '—'} / ${(d.properties || {}).vehicle_id || '—'}`]
+          ]) + compTable(
+            ['被拦动作', '阻断码', '原因'],
+            blocked.map((a) => [a.label, (a.blockers || []).map((b) => b.code).join(' + ') || '—', a.blocked_reason])
+          ) + compVerdict(
+            `对象系统给出 <b>${avail.length}</b> 个可用动作、<b>${blocked.length}</b> 个被拦动作。接下来不靠前端灰按钮，直接把这个请求打到后端。`
+          );
+        }
+      },
+      {
+        title: '把状态机的迁移边调出来',
+        question: '为什么 DELIVERED 之后没有出边？',
+        note: '状态机是后端声明，不是前端文案；这里读的是和动作引擎同一份 machine。',
+        component: 'State Machine',
+        request: () => ({ method: 'GET', path: '/ontology/state-machines/Waybill' }),
+        render: (d) => {
+          const m = d.machine || {};
+          return compKV([
+            ['对象类型', m.object_type], ['状态集合', (m.statuses || []).join(' → ')],
+            ['初始状态', (m.initial || []).join(', ')],
+            ['终态', (m.terminal || []).join(', ')],
+            ['死胡同', (m.dead_ends || []).join(', ') || '无']
+          ]) + compTable(
+            ['动作', '允许从', '迁移到', '角色'],
+            (m.transitions || []).map((t) => [t.label, (t.from || []).join(', '), t.to, (t.roles || []).join(' / ')])
+          ) + compVerdict(
+            `改派只允许从 <b>CREATED / ACCEPTED</b> 出发；<b>DELIVERED</b> 是终态，没有任何出边。这不是权限问题，是状态机在设计上就不允许。`
+          );
+        }
+      },
+      {
+        title: '带着合法角色，真的执行一次改派',
+        question: '后端会先拦角色，还是先拦状态？',
+        note: '角色用合法的 dispatcher，观察执行引擎返回的阻断码和审计号。',
+        component: 'Action Engine',
+        request: (ctx) => ({
+          method: 'POST', path: '/actions/reassign_waybill',
+          body: { object_id: ctx.waybillId, actor: '演示调度', role: 'dispatcher', payload: { new_driver_id: 'D002' }, idempotency_key: ctx.gateKey }
+        }),
+        run: (ctx, req) => compTry(() => api(req.path, { method: 'POST', body: JSON.stringify(req.body) })),
+        render: (d) => {
+          const blockers = (d.details && d.details.blockers) || [];
+          return compKV([
+            ['HTTP', `${d.http_status}`], ['结果', d.ok ? '已执行' : '被拒绝'],
+            ['错误码', d.code], ['错误信息', d.message],
+            ['audit_id', d.details && d.details.audit_id]
+          ]) + compTable(
+            ['阻断码', '规则', '说明'],
+            blockers.map((b) => [b.code, b.rule_id || '—', b.message])
+          ) + compVerdict(
+            `执行引擎返回 <b>${esc(d.code)}</b>，并给出 <b>${blockers.length}</b> 条阻断原因。注意：请求已经进入审计，被拒绝也要留痕。`
+          );
+        }
+      },
+      {
+        title: '用同一个幂等键再打一次',
+        question: '重复提交会不会再执行一遍、再记一条审计？',
+        note: '同一个 idempotency_key 原样重放，观察 replayed 标记和 audit_id 是否复用。',
+        component: 'Idempotency',
+        request: (ctx) => ({
+          method: 'POST', path: '/actions/reassign_waybill',
+          body: { object_id: ctx.waybillId, actor: '演示调度', role: 'dispatcher', payload: { new_driver_id: 'D002' }, idempotency_key: ctx.gateKey },
+          note: '与第 3 步完全相同的 idempotency_key'
+        }),
+        run: (ctx, req) => compTry(() => api(req.path, { method: 'POST', body: JSON.stringify(req.body) })),
+        render: (d, ctx) => {
+          const first = (ctx.data(2) && ctx.data(2).details) || {};
+          const now = d.details || {};
+          const sameId = Boolean(first.audit_id && first.audit_id === now.audit_id);
+          return compKV([
+            ['HTTP', `${d.http_status}`], ['错误码', d.code],
+            ['replayed', now.replayed ? 'true' : 'false'],
+            ['本次 audit_id', now.audit_id], ['第 3 步 audit_id', first.audit_id],
+            ['audit_id 复用', sameId ? '是' : '否']
+          ]) + compVerdict(
+            `同一个键重放，返回 <b>replayed=true</b>，audit_id 仍然是 <b>${esc(String(now.audit_id))}</b>。执行引擎没有重新跑动作，也没有新增第二条审计。`
+          , Boolean(now.replayed && sameId));
+        }
+      },
+      {
+        title: '最后回读审计，确认状态没被改',
+        question: '两次请求，最后留下几条记录？对象动了吗？',
+        note: '并行读审计列表和对象实例，用 idempotency_key 过滤出本次请求。',
+        component: 'Audit · State',
+        request: (ctx) => ({
+          method: 'GET',
+          paths: [`/audit?object_id=${encodeURIComponent(ctx.waybillId)}&limit=50`, `/objects/${ctx.waybillId}`]
+        }),
+        run: (ctx, req) => Promise.all(req.paths.map((path) => api(path))),
+        render: (list, ctx) => {
+          const audit = (list[0] && list[0].audit) || [];
+          const obj = list[1] || {};
+          const mine = audit.filter((a) => a.idempotency_key === ctx.gateKey);
+          const before = (ctx.data(0) || {}).status;
+          return compKV([
+            ['本次键的审计条数', mine.length],
+            ['审计决策', mine.map((a) => a.decision).join(' / ') || '—'],
+            ['audit_id', mine.map((a) => a.id).join(', ') || '—'],
+            ['对象当前状态', compStatus(obj.status)],
+            ['执行前后状态一致', before && before === obj.status ? '是' : '否']
+          ]) + compTable(
+            ['id', '时间', '动作', '角色', '决策', '错误码'],
+            mine.map((a) => [a.id, a.occurred_at, a.action_id, a.role, a.decision, (a.result || {}).code || '—'])
+          ) + compVerdict(
+            `两次 HTTP 请求只留下 <b>${mine.length}</b> 条审计，对象仍是 <b>${esc(obj.status)}</b>。被拒绝的动作不会偷偷改状态；审计把“谁、何时、以什么角色、为什么被拒”完整记下来了。`
+          , mine.length === 1 && before === obj.status);
+        }
+      }
+    ]
+  },
+  {
+    id: 'iface',
+    tag: 'Interface · Function · Type Contract',
+    title: '一个函数，为什么能同时算运单和费用项？',
+    summary: '接口注册 → 函数契约 → 运单调用 → 费用项调用 → 反例拦截',
+    meta: '5 步 · 5 次实时接口',
+    steps: [
+      {
+        title: '先看 Chargeable 接口由谁实现',
+        question: '接口不是抽象名词，它到底挂了哪些类？',
+        note: '读接口注册表，拿到接口 id、匹配方式和实现者列表。',
+        component: 'Interface',
+        request: () => ({ local: true, method: 'GET', path: '/interfaces' }),
+        run: (ctx, req) => enhApi(req.path),
+        render: (d) => {
+          const list = d.interfaces || [];
+          const chargeable = list.find((i) => i.id === 'Chargeable') || {};
+          return compKV([
+            ['接口', `${chargeable.label || '—'} · ${chargeable.id || '—'}`],
+            ['匹配方式', chargeable.match || '—'],
+            ['实现者', (chargeable.implementations || []).join(', ') || '—'],
+            ['接口总数', list.length]
+          ]) + compTable(
+            ['接口', '匹配方式', '实现者'],
+            list.map((i) => [i.id, i.match, (i.implementations || []).join(', ')])
+          ) + compVerdict(
+            `<b>Chargeable</b> 当前由 <b>${esc((chargeable.implementations || []).join(' / '))}</b> 实现。函数路由不是按类名写死的，而是按这份注册表判定。`
+          );
+        }
+      },
+      {
+        title: '再看函数声明的入参契约',
+        question: 'chargeable_variance 凭什么接受两类对象？',
+        note: '读函数注册表，重点看 accepts_interface 和 returns。',
+        component: 'Function',
+        request: () => ({ local: true, method: 'GET', path: '/functions' }),
+        run: (ctx, req) => enhApi(req.path),
+        render: (d) => {
+          const fns = d.functions || [];
+          const fn = fns.find((f) => f.id === 'chargeable_variance') || {};
+          return compKV([
+            ['函数', `${fn.label || '—'} · ${fn.id || '—'}`],
+            ['版本', fn.version], ['owner', fn.owner],
+            ['接受接口', fn.accepts_interface], ['返回类型', fn.returns],
+            ['函数总数', fns.length]
+          ]) + compTable(
+            ['函数', '接受接口', '返回'],
+            fns.map((f) => [f.id, f.accepts_interface || '—', f.returns || '—'])
+          ) + compVerdict(
+            `函数契约写的是 <b>accepts_interface = ${esc(fn.accepts_interface || '—')}</b>、<b>returns = ${esc(fn.returns || '—')}</b>。第 1 步的实现者列表，就是它能接受的实参范围。`
+          );
+        }
+      },
+      {
+        title: '用运单实参调用一次',
+        question: '同一个函数，对 Waybill 返回什么？',
+        note: 'object_id 用运单，观察函数真实返回和版本。',
+        component: 'Function Call',
+        request: (ctx) => ({
+          local: true, method: 'POST',
+          path: '/functions/chargeable_variance/call?user=ops&roles=freight-core',
+          body: { args: { object_id: ctx.waybillId } }
+        }),
+        run: (ctx, req) => enhApi(req.path, { method: 'POST', body: JSON.stringify(req.body) }),
+        render: (d, ctx) => compKV([
+          ['function', d.function], ['version', d.version], ['result', d.result],
+          ['实参类', 'Waybill'], ['输入 object_id', ctx.waybillId]
+        ]) + compVerdict(
+          `运单实参通过接口校验，函数返回 <b>${esc(String(d.result))}</b>。注意返回类型是 number，不是字符串或对象。`
+        , typeof d.result === 'number')
+      },
+      {
+        title: '换成费用项实参，再调同一个函数',
+        question: '不写第二个函数，怎么算费用项？',
+        note: 'object_id 换成 fee:F003，函数名和版本完全不变。',
+        component: 'Function Call',
+        request: () => ({
+          local: true, method: 'POST',
+          path: '/functions/chargeable_variance/call?user=ops&roles=freight-core',
+          body: { args: { object_id: 'fee:F003' } }
+        }),
+        run: (ctx, req) => enhApi(req.path, { method: 'POST', body: JSON.stringify(req.body) }),
+        render: (d, ctx) => {
+          const first = ctx.data(2) || {};
+          return compKV([
+            ['function', d.function], ['version', d.version], ['result', d.result],
+            ['实参类', 'FeeItem'], ['输入 object_id', 'fee:F003'],
+            ['与运单调用同一函数', first.function === d.function ? '是' : '否'],
+            ['返回都是 number', typeof first.result === 'number' && typeof d.result === 'number' ? '是' : '否']
+          ]) + compVerdict(
+            `同一个 <b>${esc(d.function)}@${esc(d.version)}</b>，运单返回 <b>${esc(String(first.result))}</b>，费用项返回 <b>${esc(String(d.result))}</b>。多态不是复制函数，而是接口把两类对象收敛到同一个契约。`
+          , first.function === d.function && typeof d.result === 'number');
+        }
+      },
+      {
+        title: '最后故意传一个不符合接口的对象',
+        question: '路由会不会“什么对象都收”？',
+        note: '传入 Driver，预期被接口契约挡住；把失败响应也当输出展示。',
+        component: 'Type Contract',
+        request: () => ({
+          local: true, method: 'POST',
+          path: '/functions/chargeable_variance/call?user=ops&roles=freight-core',
+          body: { args: { object_id: 'driver:D001' } },
+          note: '反例：Driver 不在 Chargeable 实现者列表'
+        }),
+        run: (ctx, req) => compTry(() => enhApi(req.path, { method: 'POST', body: JSON.stringify(req.body) })),
+        render: (d) => compKV([
+          ['HTTP', `${d.http_status}`], ['结果', d.ok ? '意外通过' : '被拒绝'],
+          ['错误码', d.code], ['错误信息', d.message]
+        ]) + compVerdict(
+          `Driver 实参返回 <b>${d.http_status}</b>：<b>${esc(d.message)}</b>。接口多态不是无脑放行，实参类必须出现在 <b>Chargeable</b> 的实现者列表里。`
+        , !d.ok)
+      }
+    ]
+  },
+  {
+    id: 'security',
+    tag: 'Row Policy · Column Masking · Marking',
+    title: '同一张费用单，为什么客服看不到？',
+    summary: '行级策略 → 匿名视角 → 争议视角 → 列级脱敏 → 多视角对比',
+    meta: '4 步 · 4 次实时接口',
+    steps: [
+      {
+        title: '先以匿名视角看费用项',
+        question: '7 条费用，匿名能看到几条？',
+        note: '调用安全模拟器，返回行级可见数和逐行属性矩阵。',
+        component: 'Row Policy',
+        request: () => ({
+          local: true, method: 'POST', path: '/security/simulate',
+          body: { user: 'anonymous', roles: [], class_id: 'FeeItem' }
+        }),
+        run: (ctx, req) => enhApi(req.path, { method: 'POST', body: JSON.stringify(req.body) }),
+        render: (d) => {
+          const rows = Object.keys(d.property_visibility || {});
+          return compKV([
+            ['user', d.user], ['class', d.class],
+            ['总行数', d.total_rows], ['可见行数', d.visible_rows],
+            ['被行级策略隐藏', d.total_rows - d.visible_rows],
+            ['矩阵中的可见对象', rows.join(', ')]
+          ]) + compVerdict(
+            `匿名视角只看到 <b>${esc(String(d.visible_rows))}/${esc(String(d.total_rows))}</b> 行，有 <b>${d.total_rows - d.visible_rows}</b> 行根本没进入结果集。行级策略发生在查询阶段，不是前端过滤。`
+          );
+        }
+      },
+      {
+        title: '再换成争议处理视角',
+        question: '同一条查询，换角色后多了什么？',
+        note: '只改 roles，不改 class 和查询条件，对比两次可见对象。',
+        component: 'Row Policy',
+        request: () => ({
+          local: true, method: 'POST', path: '/security/simulate',
+          body: { user: 'dispute', roles: ['DISPUTE_OPS', 'PII', 'FINANCE'], class_id: 'FeeItem' }
+        }),
+        run: (ctx, req) => enhApi(req.path, { method: 'POST', body: JSON.stringify(req.body) }),
+        render: (d, ctx) => {
+          const anon = ctx.data(0) || {};
+          const anonIds = Object.keys(anon.property_visibility || {});
+          const nowIds = Object.keys(d.property_visibility || {});
+          const added = nowIds.filter((id) => !anonIds.includes(id));
+          return compKV([
+            ['user', d.user], ['roles', 'DISPUTE_OPS / PII / FINANCE'],
+            ['总行数', d.total_rows], ['可见行数', d.visible_rows],
+            ['新增可见对象', added.join(', ') || '无'],
+            ['是同一 class 吗', anon.class === d.class ? '是' : '否']
+          ]) + compTable(
+            ['视角', '可见行', '新增可见'],
+            [['匿名', `${anon.visible_rows}/${anon.total_rows}`, '—'],
+             ['争议处理', `${d.visible_rows}/${d.total_rows}`, added.join(', ') || '无']]
+          ) + compVerdict(
+            `同一个 <b>${esc(d.class)}</b>，争议处理视角看到 <b>${esc(String(d.visible_rows))}/${esc(String(d.total_rows))}</b> 行，新增 <b>${esc(added.join(', ') || '无')}</b>。差异只来自 roles，不来自换表或前端过滤。`
+          , added.length > 0);
+        }
+      },
+      {
+        title: '看列级脱敏：匿名读运单金额',
+        question: '就算对象行可见，金额字段会原样返回吗？',
+        note: '读匿名视角下的 Waybill 对象，检查 actual_fee 的实际值。',
+        component: 'Column Masking',
+        request: () => ({
+          local: true, method: 'GET', path: '/objects?type=Waybill&user=anonymous&roles=&limit=50'
+        }),
+        run: (ctx, req) => enhApi(req.path),
+        render: (d) => compTable(
+          ['object_id', '状态', 'actual_fee', '脱敏'],
+          (d.objects || []).map((o) => [
+            o.object_id, o.props.status,
+            o.props.actual_fee == null ? 'null' : fmtMoney(o.props.actual_fee),
+            o.props.actual_fee == null ? '已脱敏' : '明文'
+          ])
+        ) + compVerdict(
+          `匿名可读对象行，但 <b>actual_fee 全部返回 null</b>。行级策略管“能不能看到这条”，列级策略管“看到这条后哪些字段能看”。`
+        , (d.objects || []).every((o) => o.props.actual_fee == null))
+      },
+      {
+        title: '最后换成 FINANCE 视角回读同一批运单',
+        question: '同一批对象，换标记载荷后金额回来了吗？',
+        note: '只改 roles=FINANCE，对比第 3 步的 null 和第 4 步的真实金额。',
+        component: 'Marking',
+        request: () => ({
+          local: true, method: 'GET', path: '/objects?type=Waybill&user=finance&roles=FINANCE&limit=50'
+        }),
+        run: (ctx, req) => enhApi(req.path),
+        render: (d, ctx) => {
+          const anon = ctx.data(2) || {};
+          const anonMap = Object.fromEntries((anon.objects || []).map((o) => [o.object_id, o.props.actual_fee]));
+          const rows = (d.objects || []).map((o) => [
+            o.object_id, o.props.status,
+            anonMap[o.object_id] == null ? 'null' : fmtMoney(anonMap[o.object_id]),
+            o.props.actual_fee == null ? 'null' : fmtMoney(o.props.actual_fee),
+            anonMap[o.object_id] == null && o.props.actual_fee != null ? '已解锁' : '—'
+          ]);
+          const unlocked = rows.filter((r) => r[4] === '已解锁').length;
+          return compTable(['object_id', '状态', '匿名 actual_fee', 'FINANCE actual_fee', '对比'], rows) + compVerdict(
+            `同一批 <b>${rows.length}</b> 条运单，FINANCE 视角解锁了 <b>${unlocked}</b> 条金额字段。安全策略不是复制一份脱敏表，而是在同一个对象上按角色实时求值。`
+          , unlocked > 0);
+        }
+      }
+    ]
+  }
+];
+
+const compState = { scenarioId: 'state', index: 0, outputs: {}, running: false };
+
+function compScenario() {
+  return COMP_SCENARIOS.find((s) => s.id === compState.scenarioId) || COMP_SCENARIOS[0];
+}
+
+function compCtx() {
+  return {
+    waybillId: COMP_WAYBILL,
+    gateKey: compState.gateKey,
+    outputs: compState.outputs,
+    data(index) {
+      const item = compState.outputs[index];
+      return item && !item.error ? item.data : null;
+    }
+  };
+}
+
+function compMaxUnlocked() {
+  const steps = compScenario().steps;
+  const index = steps.findIndex((_, i) => {
+    const item = compState.outputs[i];
+    return !item || item.error;
+  });
+  return index === -1 ? steps.length - 1 : index;
+}
+
+function renderCompQuestions() {
+  const host = document.getElementById('compQuestions');
+  if (!host) return;
+  host.innerHTML = COMP_SCENARIOS.map((s) => `
+    <button class="comp-q ${s.id === compState.scenarioId ? 'on' : ''}" type="button" data-comp-scenario="${s.id}">
+      <span class="qdot"></span>
+      <span class="qtag">${esc(s.tag)}</span>
+      <b>${esc(s.title)}</b>
+      <small>${esc(s.summary)}</small>
+      <span class="qmeta">${esc(s.meta)}</span>
+    </button>`).join('');
+}
+
+function renderCompStepList(scenario) {
+  const max = compMaxUnlocked();
+  return `<ol class="comp-steps">${scenario.steps.map((step, i) => {
+    const item = compState.outputs[i];
+    const done = item && !item.error;
+    const failed = item && item.error;
+    const active = i === compState.index;
+    const locked = i > max;
+    const status = done ? '已完成' : failed ? '失败 · 可重试' : active ? '待执行' : '未解锁';
+    return `<li class="comp-step ${done ? 'done' : ''} ${active ? 'active' : ''} ${locked ? 'locked' : ''}" data-comp-step="${i}" ${locked ? 'aria-disabled="true"' : ''}>
+      <span class="cno">${done ? '✓' : i + 1}</span>
+      <span class="cbody"><b>${esc(step.title)}</b><span>${esc(step.component)} · ${status}</span></span>
+    </li>`;
+  }).join('')}</ol>`;
+}
+
+function renderCompDetail(scenario) {
+  const step = scenario.steps[compState.index];
+  if (!step) return '';
+  const ctx = compCtx();
+  const req = step.request(ctx);
+  const item = compState.outputs[compState.index];
+  const done = item && !item.error;
+  const failed = item && item.error;
+  const last = compState.index >= scenario.steps.length - 1;
+  const canRun = !done && !compState.running;
+
+  const outputHtml = done
+    ? `<div class="comp-io">
+        <div class="comp-io-head"><span class="comp-io-tag output">OUTPUT</span>这一步真实返回</div>
+        ${step.render(item.data, ctx)}
+        ${compRaw(item.data)}
+      </div>`
+    : failed
+      ? `<div class="comp-io">
+          <div class="comp-io-head"><span class="comp-io-tag output">OUTPUT</span>执行失败</div>
+          <div class="comp-error"><b>${esc(item.code || 'ERROR')}</b> · ${esc(item.error)}</div>
+        </div>`
+      : `<div class="comp-pending">这一步还没有执行。点击右下角「执行本步」，页面才会发请求；不会预先跑后面的步骤。</div>`;
+
+  return `
+    <div class="comp-detail">
+      <div class="comp-detail-head">
+        <div>
+          <span class="kicker">STEP ${String(compState.index + 1).padStart(2, '0')} / ${String(scenario.steps.length).padStart(2, '0')}</span>
+          <h3>${esc(step.title)}</h3>
+          <p>${esc(step.question)}</p>
+        </div>
+        <span class="comp-component">${esc(step.component)}</span>
+      </div>
+      <div class="comp-io">
+        <div class="comp-io-head"><span class="comp-io-tag input">INPUT</span>这一步吃什么</div>
+        ${compRequestHtml(req)}
+        <div class="comp-pending" style="padding-top:9px;padding-bottom:9px">${esc(step.note)}</div>
+      </div>
+      ${outputHtml}
+      <div class="comp-actions">
+        ${compState.index > 0 ? `<button class="btn" type="button" data-comp-action="prev">上一步</button>` : ''}
+        <button class="btn" type="button" data-comp-action="reset">重置本问题</button>
+        <span class="spacer"></span>
+        ${failed
+          ? `<button class="btn primary" type="button" data-comp-action="run">重试本步</button>`
+          : done
+            ? (last
+              ? `<span class="comp-verdict ok" style="padding:6px 10px;border:1px solid #d5ebdc;border-radius:5px">本问题已完成 · ${scenario.steps.length} 步全部来自实时接口</span>
+                 <button class="btn" type="button" data-comp-action="reset">再走一遍</button>`
+              : `<button class="btn primary" type="button" data-comp-action="next">下一步：${esc(scenario.steps[compState.index + 1].title)}</button>`)
+            : `<button class="btn primary" type="button" data-comp-action="run" ${canRun ? '' : 'disabled'}>${compState.running ? '<span class="comp-spin"></span>执行中…' : '执行本步'}</button>`
+        }
+      </div>
+    </div>`;
+}
+
+function renderCompRunner() {
+  const host = document.getElementById('compRunner');
+  if (!host) return;
+  const scenario = compScenario();
+  const max = compMaxUnlocked();
+  if (compState.index > max) compState.index = max;
+  if (compState.index < 0) compState.index = 0;
+  const doneCount = scenario.steps.filter((_, i) => compState.outputs[i] && !compState.outputs[i].error).length;
+  host.innerHTML = `
+    <aside class="comp-side">
+      <h3>${esc(scenario.title)}</h3>
+      <p>${esc(scenario.summary)}</p>
+      ${renderCompStepList(scenario)}
+      <div class="qmeta" style="font-family:var(--mono);font-size:9.5px;color:#9a9185;margin-top:10px;padding-top:8px;border-top:1px solid var(--line)">
+        ${doneCount}/${scenario.steps.length} 步完成 · ${esc(scenario.meta)}
+      </div>
+    </aside>
+    ${renderCompDetail(scenario)}`;
+}
+
+async function runCompStep() {
+  if (compState.running) return;
+  const scenario = compScenario();
+  const index = compState.index;
+  const step = scenario.steps[index];
+  const existing = compState.outputs[index];
+  if (existing && !existing.error) return;
+  compState.running = true;
+  renderCompRunner();
+  let req = null;
+  try {
+    const ctx = compCtx();
+    req = step.request(ctx);
+    const data = step.run ? await step.run(ctx, req) : await api(req.path);
+    compState.outputs[index] = { req, data };
+  } catch (err) {
+    compState.outputs[index] = {
+      req: req || step.request(compCtx()),
+      error: err.message,
+      code: err.code
+    };
+  } finally {
+    compState.running = false;
+    renderCompRunner();
+  }
+}
+
+function selectCompScenario(id) {
+  if (!COMP_SCENARIOS.some((s) => s.id === id)) return;
+  compState.scenarioId = id;
+  compState.index = 0;
+  compState.outputs = {};
+  compState.running = false;
+  if (id === 'gate') compState.gateKey = `page-gate-${Date.now()}`;
+  renderCompQuestions();
+  renderCompRunner();
+}
+
+function bindCompEvents() {
+  const questions = document.getElementById('compQuestions');
+  const runner = document.getElementById('compRunner');
+  if (!questions || !runner) return;
+  questions.addEventListener('click', (event) => {
+    const card = event.target.closest('[data-comp-scenario]');
+    if (card) selectCompScenario(card.getAttribute('data-comp-scenario'));
+  });
+  runner.addEventListener('click', (event) => {
+    const stepEl = event.target.closest('[data-comp-step]');
+    const actionEl = event.target.closest('[data-comp-action]');
+    if (stepEl) {
+      const index = Number(stepEl.getAttribute('data-comp-step'));
+      if (!stepEl.classList.contains('locked') && index <= compMaxUnlocked()) {
+        compState.index = index;
+        renderCompRunner();
+      }
+      return;
+    }
+    if (!actionEl) return;
+    const action = actionEl.getAttribute('data-comp-action');
+    if (action === 'run') runCompStep();
+    else if (action === 'next') {
+      const scenario = compScenario();
+      const item = compState.outputs[compState.index];
+      if (item && !item.error && compState.index < scenario.steps.length - 1) {
+        compState.index += 1;
+        renderCompRunner();
+      }
+    } else if (action === 'prev') {
+      compState.index = Math.max(0, compState.index - 1);
+      renderCompRunner();
+    } else if (action === 'reset') {
+      selectCompScenario(compState.scenarioId);
+    }
+  });
+}
+
+function initComp() {
+  bindCompEvents();
+  renderCompQuestions();
+  renderCompRunner();
+}
+
 async function init() {
   buildLines();
   selectObject('waybill');
   await loadMeta();
   await Promise.all([loadFacts(), loadStorage(), loadKnowledge(), loadMcpTools(), initLabs()]);
+  initComp();
   renderWalkOntology(1);
 }
 

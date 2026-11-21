@@ -6,7 +6,7 @@
 
 - **语义层制品** `freight/semantic_layer.json`：500 类 / 503 链接 / 1961 属性（注册表）/ 16 规则 / 15 动作 / 4 函数，覆盖 35 个业务域（订单、运单、计价、结算、证据等）。
 - **确定性引擎** `freight/engine.py`：报价复算、账单对账、差异归因——金额全部整数分、规则走 AST，LLM 不参与金额计算。
-- **语义门禁** `scripts/semantic_gate.py`：CI 强制入口，**24 项检查 / 13 个覆盖目标**（schema/domain_range/ast/rule_cases/references/shacl/shacl_cases/model_tools/query_dsl/extension_schema/property_policy/display_metadata/breaking_changes）+ 负样本控制。
+- **语义门禁** `scripts/semantic_gate.py`：CI 强制入口，**25 项检查 / 14 个覆盖目标**（schema/domain_range/ast/rule_cases/references/shacl/shacl_cases/model_tools/query_dsl/extension_schema/property_policy/display_metadata/breaking_changes/state_machines）+ 负样本控制。
 - **REST/MCP 接口**：`api.py` 挂 `/freight/*` 与 `/profile/*` 路由；LLM agent 经 MCP 工具白名单访问。
 
 存储策略：本体只持久化类、关系、规则、动作与数据源映射；业务事实经 MCP/API 按需查询，不写入本体库（`persisted_by_ontology: false`）。
@@ -58,6 +58,23 @@ python cli.py serve --port 8765
 | `freight/change_gate` | Ontology change management | 破坏性变更分类 + 引用影响回溯 + 逐条签字 |
 | `tools/gen_osdk.py` | OSDK | 从本体生成 TS/Python 类型化客户端（decimal→Decimal，不再退化成 str） |
 | `tools/proposal.py` | Global Branching / proposal | 分支评审 + breaking 字段，未签字的破坏项不得 merge |
+
+## 平台件补齐（2026-11-21）
+
+| 模块 | 对标能力 | 说明 |
+|------|---------|------|
+| `freight/projection_v2` | OSv2 平台件 | 跨表物化视图 / 地理索引 / 聚合预计算 / 自适应查询计划（声明在扩展 JSON） |
+| `freight/object_query` | 完整 Object Set 代数 | symmetric_difference / product / pivot / join / fromView / geo |
+| `freight/lineage` | Lineage | 数据源→对象→属性→规则/动作/函数/证据的系统级血缘，支持正反追溯 |
+| `freight/change_set` | 对象数据分支 | 变更集（预览/apply/一键回滚）+ 命名分支快照与恢复 |
+| `freight/batch` | batch apply | savepoint 原子批量动作 + 跨对象 edits |
+| `freight/simulation` | what-if 仿真 | 事务内执行、前后差异、生产零写入 |
+| `freight/observability` | 工具评测与可观测 | 调用日志/耗时/成功率 + 回归评测集 |
+| `enhancements/effects` | Action 副作用 | 本体声明驱动的 webhook / 通知 / 触发器 |
+| `enhancements/workflow` | Workshop / Workflows | Worksheet 渲染 + workflow（含人工审批断点） |
+| `enhancements/authz` | 授权引擎骨架 | 内置 policy + OpenFGA / OPA / Cedar 适配器 |
+| `tools/gen_osdk.py` | OSDK 扩展 | Java POJO 客户端 + GraphQL SDL |
+| `web/ontology-manager.html` | Ontology Manager | 图形化本体工作台（由统一入口链接） |
 
 两个 JSON Schema 分别管两层，缺一不可：
 - `schema/semantic_layer.schema.json` —— 基础本体（类/链接/属性注册表/规则/函数）

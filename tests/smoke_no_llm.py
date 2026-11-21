@@ -64,31 +64,57 @@ def main() -> int:
         f"status={r2.status_code} variance={d2.get('result')} version={d2.get('version')}",
     )
 
-    # 3. 交互式诊断 start：无 key 时 fail fast（构造即报错，不静默降级）
+    # 3. 交互式诊断 start：不碰 LLM，只建会话；网关问题交给 preflight 提前暴露
     r3 = client.post(
         f"/freight/waybills/{wb}/reasoning-chain/start",
         params={"question": "为什么这单贵38", "max_steps": 4},
     )
     d3 = r3.json()
-    fail_fast = r3.status_code in (500, 503) and "OPENAI_CHAT_API_KEY" in str(d3)
     check(
-        "诊断会话无LLM时 fail fast",
-        fail_fast,
-        f"status={r3.status_code} detail={str(d3.get('detail'))[:100]}",
+        "诊断会话 start 不调 LLM",
+        r3.status_code == 200 and bool(d3.get("session_id")),
+        f"status={r3.status_code} session={bool(d3.get('session_id'))}",
     )
 
-    # 4. engine.py:1902 设计声明：交互式诊断只走真实 Agent，不提供降级替身
+    # 4. 第一次真正需要 LLM 的那一步必须可见失败，不静默降级
+    session = d3.get("session_id")
+    llm_failed = False
+    detail = ""
+    if session:
+        for _ in range(8):
+            rn = client.post(f"/freight/reasoning-chain/{session}/next")
+            body = rn.json()
+            if rn.status_code == 503 and body.get("detail", {}).get("code") == "LLM_UNAVAILABLE":
+                llm_failed = True
+                detail = str(body.get("detail"))[:100]
+                break
+            if rn.status_code != 200:
+                detail = f"意外状态 {rn.status_code}: {str(body)[:100]}"
+                break
+    check("首次触 LLM 时可见失败", llm_failed, detail or "未观察到 LLM 失败")
+
+    # 5. 演示前预检如实报告网关不可用（不是替身，是提前暴露）
+    rp = client.get("/freight/agent/preflight")
+    dp = rp.json()
+    check(
+        "网关预检如实报不可用",
+        rp.status_code == 200 and dp.get("available") is False
+        and "OPENAI_CHAT_API_KEY" in str(dp.get("error", "")),
+        f"status={rp.status_code} available={dp.get('available')} error={str(dp.get('error'))[:80]}",
+    )
+
+    # 6. 设计声明：只走真实 Agent，无降级替身
     check(
         "无降级替身(设计声明)",
         True,
-        "reasoning_chain 只走真实 Agent（engine.py:1902），无 LLM 时整体不可用而非降级，"
-        "确定性诊断路径不受影响",
+        "交互式诊断只走真实 Agent；无 LLM 时首次调用可见失败，"
+        "preflight 提前暴露，确定性诊断路径不受影响",
     )
 
     print()
     print(f"结论: {len(PASS)} 项通过 / {len(FAIL)} 项失败")
     print("本体核心（费用拆解/差异归因/函数）无 LLM 全部可用；")
-    print("交互式自然语言推理链依赖 LLM，无 key 时会话创建即 fail fast 报错（可见、不降级）。")
+    print("交互式诊断 start 不碰 LLM，首次真正调用时报可见错误，preflight 可提前暴露网关问题。")
     return 0 if not FAIL else 1
 
 

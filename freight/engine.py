@@ -18,6 +18,7 @@ from datetime import datetime
 
 from .fact_mcp import FactMCP
 from .fact_store import FactStore as Store
+from .observability import ToolObservability
 from .release import diff_semantics, file_checksum, list_manifests, load_manifest, semantic_path
 from .semantic import (
     SemanticLayer, BusinessReject, OntologyViolation, is_expression,
@@ -61,6 +62,8 @@ class FreightSystem:
         self.facts = FactMCP(db_path, self.sem)
         self.facts.bind_runtime(self)
         self.conn = self.facts.conn
+        self.observability = ToolObservability(self.conn, self.sem)
+        self.effect_hook = None  # EnhancedSystem 挂载本体声明的副作用派发器
         self.conn.commit()
         if seed and not self.facts.scalar("SELECT COUNT(*) FROM objects"):
             self.seed()
@@ -554,7 +557,10 @@ class FreightSystem:
         return self.facts.tools(type_id)
 
     def mcp_call(self, tool: str, arguments: dict | None = None) -> dict:
-        return self.facts.call(tool, arguments)
+        args = arguments or {}
+        actor = str(args.get("actor") or args.get("user") or "system")
+        return self.observability.timed(
+            tool, args, actor, lambda: self.facts.call(tool, args))
 
     def overview(self) -> dict:
         """跨外部系统的全量事实快照，仅供调试 / 总览；结果不写入本体。"""
@@ -2290,6 +2296,33 @@ class FreightSystem:
             "readback": readback,
         }
 
+    def llm_preflight(self) -> dict:
+        """演示前真实探测大模型网关：不提供替身，失败就如实报不可用。
+
+        只做一次极简 chat 调用，用来在演示开始前暴露密钥/网关问题；
+        确定性的六个问答场景不经过这里，也不依赖大模型。
+        """
+        from .agent import LLMClient
+
+        info: dict = {"available": False, "base": "", "model": ""}
+        try:
+            client = LLMClient()
+            info["base"] = client.base
+            info["model"] = client.model
+            client.max_tokens = 8
+            client.step_thinking = False
+            reply = client.chat(
+                [{"role": "system", "content": "只回复 ok"},
+                 {"role": "user", "content": "ping"}],
+                thinking=False,
+            )
+            info.update({"available": True, "probe": (reply or "")[:40],
+                         "message": "网关可用，交互式问答可演示"})
+        except Exception as exc:  # noqa: BLE001 - 预检必须总能返回结构化结果
+            info.update({"error": f"{type(exc).__name__}: {exc}",
+                         "message": "网关不可用；请用六个确定性问答场景演示主线"})
+        return info
+
     # ------------------------------------------------------------------ 诊断推理链
     def reasoning_chain(self, waybill_id: str, max_steps: int = 6,
                         question: str = "") -> dict:
@@ -2501,7 +2534,9 @@ class FreightSystem:
 
     def execute_action(self, action_id: str, object_id: str, actor: str, role: str,
                        payload: dict | None = None,
-                       idempotency_key: str | None = None) -> dict:
+                       idempotency_key: str | None = None,
+                       defer_commit: bool = False) -> dict:
+        """执行单笔动作。defer_commit=True 供批量执行在外层事务中编排。"""
         payload = payload or {}
         if idempotency_key:
             old = self.facts.audit_by_key(idempotency_key)
@@ -2578,17 +2613,25 @@ class FreightSystem:
             audit_id = self.facts.add_audit(
                 at, actor, role, action_id, object_id, "APPROVED", idempotency_key,
                 request, result)
-            self.conn.commit()
+            if not defer_commit:
+                self.conn.commit()
+                if self.effect_hook is not None:
+                    try:
+                        result["effects"] = self.effect_hook(
+                            action_id, object_id, result, actor, role)
+                    except Exception:  # noqa: BLE001 - 副作用失败不回滚已提交动作
+                        result["effects"] = [{"ok": False, "error": "effect_dispatch_failed"}]
             result["audit_id"] = audit_id
             return result
         except BusinessReject as exc:
-            self.conn.rollback()
-            audit_id = self.facts.add_audit(
-                at, actor, role, action_id, object_id, "REJECTED", idempotency_key,
-                request,
-                {"error": str(exc), "code": exc.code, "details": exc.details})
-            self.conn.commit()
-            exc.details = {**(exc.details or {}), "audit_id": audit_id}
+            if not defer_commit:
+                self.conn.rollback()
+                audit_id = self.facts.add_audit(
+                    at, actor, role, action_id, object_id, "REJECTED", idempotency_key,
+                    request,
+                    {"error": str(exc), "code": exc.code, "details": exc.details})
+                self.conn.commit()
+                exc.details = {**(exc.details or {}), "audit_id": audit_id}
             raise
 
     def _apply_action(self, action: dict, row: dict, props: dict,

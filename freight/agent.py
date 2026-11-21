@@ -269,7 +269,9 @@ class ReasoningAgent:
             (question or "").strip()
             or f"诊断运单 {self.waybill_id} 的费用构成与差异原因"
         )
-        self.client = LLMClient()
+        # LLM 客户端延迟到第一次真正调用才构造。start()/catalog/tbox 这些
+        # 确定性步骤不该被网关或密钥问题挡住；演示前另走 /agent/preflight 预检。
+        self._client: "LLMClient | None" = None
         # 对象级能力集：只暴露当前对象可用的通用原语、确定性函数和动作预检。
         self.catalog = {
             t["name"]: t for t in self.facts.tools_for(self.object_type)["tools"]
@@ -285,6 +287,23 @@ class ReasoningAgent:
         self.catalog_group_ids: list[str] = []
         self.catalog_anchor_ids: list[str] = []
         self.catalog_context = ""
+
+    @property
+    def client(self) -> "LLMClient":
+        if self._client is None:
+            self._client = LLMClient()
+        return self._client
+
+    @property
+    def model_label(self) -> str:
+        """result() 用的模型名：绝不触发 LLM 客户端构造。"""
+        return self._client.model if self._client is not None else model_name()
+
+    @property
+    def endpoint_label(self) -> str:
+        base = (self._client.base if self._client is not None
+                else (os.environ.get("OPENAI_CHAT_API_BASE") or DEFAULT_BASE).rstrip("/"))
+        return f"{base}/chat/completions"
 
     # ------------------------------------------------------------------ 主循环
     def _reset(self) -> None:
@@ -1930,7 +1949,7 @@ class ReasoningAgent:
             "waybill_id": self.object_id,
             "generated_at": now_iso(),
             "mode": "agent",
-            "model": self.client.model,
+            "model": self.model_label,
             "finished": self.finished,
             "pending": None if self.finished else self.pending,
             "next_label": None if self.finished else self._next_label(),
@@ -1948,8 +1967,8 @@ class ReasoningAgent:
                 "ok": self.error is None,
                 "degraded": bool(self.degraded),
                 "running": not self.finished,
-                "model": self.client.model,
-                "endpoint": f"{self.client.base}/chat/completions",
+                "model": self.model_label,
+                "endpoint": self.endpoint_label,
                 "tool_calls": len(self.observations),
                 "tools_used": tools_used,
                 "steps": len(self.steps),

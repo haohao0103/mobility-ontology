@@ -21,7 +21,7 @@ import os
 import time
 from typing import Any
 
-from . import projection
+from . import projection, projection_v2
 from .object_set import object_set_id as _object_set_id, query_digest
 from .semantic import BusinessReject
 
@@ -243,7 +243,15 @@ def eval_predicate(props: dict, pred: dict) -> bool:
 
 # ---------------------------------------------------------------- E2 集合代数
 
-SET_KEYS = {"from", "ids", "followLink", "union", "intersect", "subtract", "where"}
+def _ids_sql(ids: set[str]) -> str:
+    return ",".join("?" for _ in ids) if ids else "NULL"
+
+
+SET_KEYS = {
+    "from", "ids", "followLink", "union", "intersect", "subtract", "where",
+    # E2+ 完整代数与平台算子
+    "symmetric_difference", "product", "pivot", "join", "fromView", "geo",
+}
 
 
 class ObjectQueryEngine:
@@ -261,8 +269,8 @@ class ObjectQueryEngine:
         self.last_projection_hit = False
         # 投影不新鲜导致回退（可观测性：出现说明写入口被绕过或库没回填）
         self.last_projection_stale = False
-        # 投影不新鲜导致回退（可观测性：出现说明写入口被绕过或库没回填）
-        self.last_projection_stale = False
+        # OSv2 自适应计划选路结果（可观测性）
+        self.last_plan = projection_v2.PLAN_FULL_SCAN
 
     def _derived_of(self, type_id: str, stack: tuple = ()) -> dict | None:
         """取派生类型定义；带循环检测（派生链不得指回自身）。"""
@@ -369,7 +377,47 @@ class ObjectQueryEngine:
             self.validate_set(spec["left"], depth + 1)
             self.validate_set(spec["right"], depth + 1)
             return "*"
-        raise QueryError("集合表达式缺 from/ids/followLink/union/intersect/subtract", "SET_INVALID")
+        for algebra in ("symmetric_difference", "product"):
+            if algebra in node:
+                operands = node[algebra]
+                if not isinstance(operands, list) or len(operands) != 2:
+                    raise QueryError(f"{algebra} 需要两个集合", "SET_INVALID")
+                for sub in operands:
+                    self.validate_set(sub, depth + 1)
+                return "*"
+        if "pivot" in node:
+            spec = node["pivot"]
+            if not isinstance(spec, dict) or "set" not in spec or "byLink" not in spec:
+                raise QueryError("pivot 需要 set 与 byLink", "SET_INVALID")
+            link = self.sem.relations.get(spec["byLink"])
+            if link is None:
+                raise QueryError(f"pivot 引用未定义关系: {spec['byLink']}", "LINK_UNKNOWN")
+            self.validate_set(spec["set"], depth + 1)
+            return link["range"] if spec.get("direction", "out") == "out" else link["domain"]
+        if "join" in node:
+            spec = node["join"]
+            if not isinstance(spec, dict) or "left" not in spec or "right" not in spec:
+                raise QueryError("join 需要 left 与 right", "SET_INVALID")
+            if not isinstance(spec.get("on"), list) or not spec["on"]:
+                raise QueryError("join.on 必须是非空数组", "SET_INVALID")
+            if spec.get("type", "inner") not in ("inner", "left"):
+                raise QueryError("join.type 只能是 inner/left", "SET_INVALID")
+            self.validate_set(spec["left"], depth + 1)
+            self.validate_set(spec["right"], depth + 1)
+            return "*"
+        if "fromView" in node:
+            view_id = node["fromView"]
+            if not isinstance(view_id, str) or not view_id:
+                raise QueryError("fromView 必须是视图 ID 字符串", "SET_INVALID")
+            return "*"
+        if "geo" in node:
+            spec = node["geo"]
+            if not isinstance(spec, dict) or not {"lat0", "lon0", "lat1", "lon1"} <= set(spec):
+                raise QueryError("geo 需要 lat0/lon0/lat1/lon1", "SET_INVALID")
+            return "*"
+        raise QueryError(
+            "集合表达式缺 from/ids/followLink/union/intersect/subtract/"
+            "symmetric_difference/product/pivot/join/fromView/geo", "SET_INVALID")
 
     def validate(self, query: dict) -> None:
         """校验完整查询体（集合 + 顶层谓词 + 排序 + 聚合 + 分页）。"""
@@ -555,8 +603,99 @@ class ObjectQueryEngine:
             right = {r["object_id"]
                      for r in self._resolve_set(node["subtract"]["right"], store, depth + 1)}
             rows = [r for r in left if r["object_id"] not in right]
+        elif "symmetric_difference" in node:
+            first, second = (
+                self._resolve_set(sub, store, depth + 1)
+                for sub in node["symmetric_difference"])
+            a = {r["object_id"]: r for r in first}
+            b = {r["object_id"]: r for r in second}
+            rows = [r for oid, r in a.items() if oid not in b] \
+                + [r for oid, r in b.items() if oid not in a]
+        elif "product" in node:
+            first, second = (
+                self._resolve_set(sub, store, depth + 1)
+                for sub in node["product"])
+            rows = []
+            for l in first:
+                for r in second:
+                    if l["object_id"] == r["object_id"]:
+                        continue
+                    merged = dict(l)
+                    merged["object_id"] = f"{l['object_id']}~{r['object_id']}"
+                    merged["props"] = {
+                        **{f"left.{k}": v for k, v in l["props"].items()},
+                        **{f"right.{k}": v for k, v in r["props"].items()},
+                    }
+                    rows.append(merged)
+        elif "pivot" in node:
+            spec = node["pivot"]
+            start = self._resolve_set(spec["set"], store, depth + 1)
+            link, direction = spec["byLink"], spec.get("direction", "out")
+            ids = {r["object_id"] for r in start}
+            if direction == "out":
+                linked = store.all(
+                    "SELECT object_id FROM relations WHERE predicate=? "
+                    "AND subject_id IN (%s) AND valid_to IS NULL" % _ids_sql(ids),
+                    (link, *ids))
+            else:
+                linked = store.all(
+                    "SELECT subject_id FROM relations WHERE predicate=? "
+                    "AND object_id IN (%s) AND valid_to IS NULL" % _ids_sql(ids),
+                    (link, *ids))
+            rows = []
+            id_key = "object_id" if direction == "out" else "subject_id"
+            for item in linked:
+                r = self._row(store, item[id_key])
+                if r is not None:
+                    rows.append(r)
+            dedup = {}
+            for r in rows:
+                dedup.setdefault(r["object_id"], r)
+            rows = list(dedup.values())
+        elif "join" in node:
+            spec = node["join"]
+            left = self._resolve_set(spec["left"], store, depth + 1)
+            right = self._resolve_set(spec["right"], store, depth + 1)
+            pairs = spec["on"]
+            rows = []
+            for l in left:
+                matched = [r for r in right if all(
+                    l["props"].get(p["left"]) == r["props"].get(p["right"])
+                    for p in pairs)]
+                if not matched:
+                    if spec.get("type", "inner") == "left":
+                        merged = dict(l)
+                        merged["props"] = {
+                            **{f"left.{k}": v for k, v in l["props"].items()},
+                        }
+                        rows.append(merged)
+                    continue
+                for r in matched:
+                    merged = dict(l)
+                    merged["object_id"] = f"{l['object_id']}~{r['object_id']}"
+                    merged["props"] = {
+                        **{f"left.{k}": v for k, v in l["props"].items()},
+                        **{f"right.{k}": v for k, v in r["props"].items()},
+                    }
+                    rows.append(merged)
+        elif "fromView" in node:
+            rows = [
+                {"object_id": v["object_id"], "type": v.get("type", ""),
+                 "name": v.get("name", ""), "status": v.get("status"),
+                 "props": v.get("props", {}), "view": v}
+                for v in projection_v2.view_rows(store.conn, node["fromView"])]
+        elif "geo" in node:
+            ids = projection_v2.geo_candidates(store.conn, node["geo"])
+            rows = []
+            for oid in ids or []:
+                r = self._row(store, oid)
+                if r is not None:
+                    rows.append(r)
         else:
             raise QueryError("集合表达式缺算子", "SET_INVALID")
+        where = node.get("where")
+        if where is not None:
+            rows = [r for r in rows if eval_predicate(r["props"], where)]
         return rows
 
     def _rows_of_type(self, store, class_id: str, where: dict | None = None) -> list[dict]:
@@ -720,6 +859,10 @@ class ObjectQueryEngine:
         self.validate(query)
         set_node = query["set"]
         main_type = self.validate_set(set_node)
+        checker = getattr(store, "projection_is_fresh", None)
+        fresh = bool(checker()) if checker is not None else False
+        self.last_plan = projection_v2.choose_plan(
+            set_node, query.get("aggregate"), store.conn, fresh)
         rows = self._resolve_set(set_node, store)
         snapshot_id = self._snapshot_id(store)
 
@@ -759,7 +902,7 @@ class ObjectQueryEngine:
 
         agg = query.get("aggregate")
         if agg is not None:
-            return self._aggregate(agg, rows, set_id)
+            return self._aggregate(agg, rows, set_id, self.last_plan)
 
         page = query.get("page") or {}
         limit = page.get("limit", 100)
@@ -788,10 +931,13 @@ class ObjectQueryEngine:
             props = r["props"]
             if self.security is not None and ctx is not None:
                 props = self.security.mask_properties(r["type"], props, ctx)
-            out_objects.append({
+            item = {
                 "object_id": r["object_id"], "type": r["type"],
                 "name": r["name"], "status": r["status"], "props": props,
-            })
+            }
+            if "view" in r:
+                item["view"] = r["view"]
+            out_objects.append(item)
 
         next_page_token = None
         next_offset = start + len(page_rows)
@@ -816,10 +962,11 @@ class ObjectQueryEngine:
             "objects": out_objects,
             "next_page_token": next_page_token,
             "consistent": True,
+            "plan": self.last_plan,
         }
 
     @staticmethod
-    def _aggregate(agg: dict, rows: list[dict], set_id: str) -> dict:
+    def _aggregate(agg: dict, rows: list[dict], set_id: str, plan: str = "full_scan") -> dict:
         group_props = agg.get("group_by")
         if group_props:
             groups: dict[tuple, list[dict]] = {}
@@ -862,4 +1009,5 @@ class ObjectQueryEngine:
             "set_id": set_id,
             "total": len(rows),
             "groups": out_groups,
+            "plan": plan,
         }

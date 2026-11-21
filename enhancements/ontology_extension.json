@@ -479,6 +479,86 @@
    ]
   }
  },
+ "worksheets": [
+  {
+   "id": "ws-disputes",
+   "label": "费用争议工作台",
+   "objects": ["fee:F001", "waybill:WB20261105001"],
+   "view": "table",
+   "columns": ["fee_type", "actual_amount", "status"]
+  }
+ ],
+ "workflows": [
+  {
+   "id": "wf-dispute-review",
+   "label": "费用争议复核流程",
+   "steps": [
+    {
+     "id": "s1",
+     "type": "query",
+     "tool": "billing.list_fee_items",
+     "arguments": {"waybill_id": "WB20261105001"}
+    },
+    {"id": "s2", "type": "approval", "approver": "finance-lead"},
+    {
+     "id": "s3",
+     "type": "action",
+     "action_id": "dispute_charge",
+     "object_id": "fee:F002",
+     "role": "shipper",
+     "payload": {"reason": "工作流发起"}
+    }
+   ]
+  }
+ ],
+ "authz_engines": {
+  "policy": {},
+  "openfga": {},
+  "opa": {},
+  "cedar": {}
+ },
+ "action_effects": {
+  "dispute_charge": [
+   {
+    "type": "notification",
+    "channels": ["finance-review"],
+    "template": "费用争议已提交，请财务复核"
+   }
+  ],
+  "hold_settlement": [
+   {
+    "type": "webhook",
+    "url": "https://ontology.internal/hooks/settlement-hold",
+    "note": "POC 只记录投递凭据，不发起网络请求"
+   }
+  ]
+ },
+ "materialized_views": [
+  {
+   "id": "waybill_fee_view",
+   "label": "运单费用宽表（OSv2 跨表物化视图示例）",
+   "root": "Waybill",
+   "joins": [
+    {
+     "link": "waybill_produces_fee",
+     "direction": "out",
+     "as": "fees"
+    }
+   ],
+   "properties": ["waybill_id", "status", "total_amount"]
+  }
+ ],
+ "spatial_properties": {
+  "latitude": "latitude",
+  "longitude": "longitude"
+ },
+ "aggregate_precompute": [
+  {
+   "class": "FeeItem",
+   "group_by": ["fee_type"],
+   "metrics": ["count", "sum:actual_amount"]
+  }
+ ],
  "function_registry": [
   {
    "id": "fee_breakdown",

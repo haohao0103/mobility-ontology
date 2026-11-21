@@ -12,3 +12,5 @@ build/
 .pytest_tmp/
 generated/
 logs/
+.idea/
+scripts/_out/

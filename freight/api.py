@@ -272,6 +272,12 @@ def waybill_explain(waybill_id: str,
     return guard(fn)
 
 
+@router.get("/agent/preflight")
+def agent_preflight():
+    """演示前网关探测：永远返回 200，用 available 字段表达结果。"""
+    return get_system().llm_preflight()
+
+
 @router.post("/waybills/{waybill_id}/reasoning-chain/start")
 def reasoning_chain_start(waybill_id: str,
                           max_steps: int = Query(6, ge=2, le=10),

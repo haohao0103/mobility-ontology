@@ -1,7 +1,14 @@
 # Gap 驱动执行清单（Palantir 基准）
 
-> 状态：Draft
-> 版本：0.3
+> ⚠️ **历史快照（2026-11-19）**：本文件的执行优先级与范围判断已被
+> [roadmap/palantir-benchmark.md](../roadmap/palantir-benchmark.md) v3.2（2026-11-20 逐条复核代码）
+> 取代。本文件保留作为决策留痕，**不得作为当前能力状态的依据**。
+> 特别是"Action 执行不在范围 / 移除 apply"的旧结论已作废：
+> `freight/engine.py::execute_action` 已实现前置校验、edits 写回、审计与幂等。
+> 当前口径以基准矩阵 v3.2 + README.md 红线为准。
+
+> 状态：历史快照（Draft → Superseded）
+> 版本：0.3（已冻结）
 > 更新：2026-11-19
 > 能力基准：[roadmap/palantir-benchmark.md](../roadmap/palantir-benchmark.md)
 > 原执行清单：[plan/README.md](README.md)
@@ -11,7 +18,7 @@
 
 1. **先解决本体知识怎么存、怎么查、怎么用**：canonical schema → 存储与数据源映射 → Object 查询与 Object Set → Agent 工具面；这是主线和关键路径；
 2. **判断与提议建立在检索之上**：检索闭环稳定后再做只读 Judgment / Proposal，不作为第一阶段目标，更不能替代检索；
-3. **Action 执行最后且不在范围**：只保留动作声明供提议引用，不做 apply / edits / 副作用 / 写回；P-07 明确暂缓；
+3. ~~**Action 执行最后且不在范围**：只保留动作声明供提议引用，不做 apply / edits / 副作用 / 写回；P-07 明确暂缓~~ → **已作废（2026-11-20）**：apply / edits / 审计 / 幂等已在 `freight/engine.py::execute_action` 实现；批量与副作用状态见基准矩阵 P-07；
 4. **权限只为读与检索服务**：marking 约束可见范围，不阻塞检索主链路，不为写入口预留；
 5. **物化按触发条件插入**：默认现查，投影与索引按基准 3.1 的触发条件再上；
 6. **旧任务不删除、不重编号**：新增任务用 `G{批次}-{序号}`，通过“来源”列映射到原 `P{阶段}-{序号}`。
@@ -121,18 +128,20 @@ G5-01 → G5-02 → G5-03 → G5-06
 - G4 读侧权限在工具面可用后接入，不阻塞检索；
 - G5 判断与提议在 G2 / G3 稳定后启动，只读；
 - 不在关键路径：G2-04~06（投影）、G4、G5、G6；
-- Action 执行（apply / edits / 副作用）不在范围。
+- ~~Action 执行（apply / edits / 副作用）不在范围~~ **已作废**：单笔 apply / edits 已实现；批量与副作用见 v3.2 基准 P-07。
 
 ## 5. 与旧清单的差异
 
-| 变更 | 内容 |
+> 以下为 2026-11-19 的历史范围决策，仅供追溯；当前状态见 v3.2 基准矩阵。
+
+| 变更 | 内容（历史） |
 |---|---|
 | 提前 | 知识存储与检索（G2）、知识使用与评测（G3） |
-| 收敛 | 判断与提议顺延为 G5，只读；Action 执行不做 |
+| 收敛 | 判断与提议顺延为 G5，只读；Action 执行不做（历史判断，已作废） |
 | 降级 | 权限底座为读侧、不阻塞检索；物化按触发条件 |
-| 取代 | [plan/README.md](README.md) 第 7 节“当前优先级”由本文件第 3、4 节取代 |
+| 取代 | [plan/README.md](README.md) 第 7 节"当前优先级"由本文件第 3、4 节取代（历史） |
 | 保持 | Phase 0 的 schema / AST / validate / CI / SHACL 保留原编号与验收标准 |
-| 移除 | Action apply、edits、副作用、执行可靠性（原 Q-14） |
+| 移除 | ~~Action apply、edits、副作用、执行可靠性（原 Q-14）~~（apply/edits 已实现；批量与副作用待补） |
 | 暂缓 | Ontology Manager UI、TerminusDB 引入、全量 OSv2 |
 
 ## 6. MVP 退出标准

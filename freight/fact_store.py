@@ -10,7 +10,7 @@ import json
 import sqlite3
 import threading
 
-from freight import projection
+from freight import projection, projection_v2
 
 # 并发模型（对标 Palantir 服务端多租户的降级实现，P0-3）：
 # - 写路径：单一写连接 + api 层写锁串行（SQLite 单写者约束）
@@ -98,6 +98,8 @@ class FactStore:
         # 投影表与源表同生命周期：建表放在同一处，避免「老库没有投影表」这类
         # 只在生产环境出现的分叉。
         conn.executescript(projection.PROJECTION_SCHEMA)
+        conn.executescript(projection_v2.V2_SCHEMA)
+        self.v2_ext = None  # EnhancedSystem 初始化时注入；None 时 V2 增量维护关闭
         # 老库首次升级 / 绕过写入口改库后的自愈：状态计数与实际不符就全量重建。
         # 不重建的后果不是报错而是静默返回空集，比报错危险得多。
         try:
@@ -154,6 +156,8 @@ class FactStore:
             (object_id, type_id, name, status, json.dumps(props, ensure_ascii=False), at, at),
         )
         projection.sync_object(self.conn, object_id)
+        if self.v2_ext is not None:
+            projection_v2.sync_object(self.conn, object_id, self.v2_ext)
 
     def update_object(self, object_id: str, props: dict, name: str | None,
                       status: str | None, at: str) -> None:
@@ -164,6 +168,8 @@ class FactStore:
             (json.dumps(props, ensure_ascii=False), name, status, at, object_id),
         )
         projection.sync_object(self.conn, object_id)
+        if self.v2_ext is not None:
+            projection_v2.sync_object(self.conn, object_id, self.v2_ext)
 
     def projection_is_fresh(self) -> bool:
         """投影新鲜度（用线程本地只读连接判定）。

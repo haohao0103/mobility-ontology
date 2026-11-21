@@ -73,7 +73,7 @@
 本项目的近期重心是**本体知识怎么存、怎么查、怎么用**（P-04 / P-05）；判断与提议是检索闭环之上的后续增量。
 
 - P-06 收敛为「Action Type 声明 + 提议 preflight」：参数 schema、前置状态/角色、规则阻断、预期影响与风险，产出可复核的 Proposal；
-- 提议不产生 edits、不触发副作用、不写业务数据；P-07 的 apply / 批量执行 / 幂等一律暂缓；
+- 提议层本身只读、不产生 edits；但 P-07 的单笔 apply / edits / 幂等已在 `freight/engine.py::execute_action` 实现（v3.2 更正），批量与副作用状态以矩阵 P-07 为准；
 - 判断与提议共用表达式内核（CEL / JSON Logic）与规则 AST，输出结构化 Judgment；
 - 判断必须绑定证据与时点；证据不足返回 UNKNOWN，而不是替业务下结论。
 
@@ -157,7 +157,7 @@ Palantir 模式的本体之所以有价值，不在于定义得多，而在于**
 
 ### 4.2 必须自研（约 60–70% 工作量，也是差异所在）
 
-1. 判断与只读提议：结构化 Judgment / Proposal、证据要求、表达式内核（P-06）；不含 Action apply（P-07 暂缓）；
+1. 判断与只读提议：结构化 Judgment / Proposal、证据要求、表达式内核（P-06）；Action apply 属 P-07 运行时职责（单笔已实现，批量/副作用见矩阵）；
 2. 规则 AST 与执行器：[semantic_layer.json](../freight/semantic_layer.json) 中 16 条规则仍为字符串公式，AST 只能自定义；
 3. Object Set 语义层：集合代数、分页并集、search-around 语义（P-05）；
 4. marking 传播与本体级权限绑定（P-09）；
@@ -170,23 +170,34 @@ Palantir 模式的本体之所以有价值，不在于定义得多，而在于**
 - 按本矩阵，roadmap 当前优先级需要调整：
   - P0 阶段继续（schema、AST、validate、SHACL、快照），它们是 P-01 的前置；
   - 近期重点是 P-04 / P-05：知识存哪里、怎么查、怎么被 Agent 用，优先于判断与提议；
-  - P-06 判断与提议在检索闭环稳定后再做；P-07（apply / 副作用）明确暂缓；
+  - P-06 判断与提议在检索闭环稳定后再做；P-07 单笔 apply 已实现，批量与副作用按矩阵 P-07 状态补齐；
   - P-09 marking 先做读侧过滤，不阻塞检索，且早于 P-06 提议校验。
 - 具体的任务重排另行产出 gap-driven 执行清单，不在本文件展开。
 
-## 6. 总评（2026-11-20 复核后）
+## 6. 总评（2026-11-21 v3.3 复核后）
 
 - 开源生态能覆盖的是**声明层、校验层、推理层、SDK 生成层**，约占总工作量的 30–40%；
 - Palantir 真正的护城河是 **OSv2 + Action 运行时 + markings** 三件套的耦合，开源无等价物；
 - **声明层与运行时内核已对齐**：类型三件套（P-01）、状态机（P-02）、动作声明与执行（P-06/P-07）、
   类型化函数（P-08）、markings 传播（P-09）、OSDK（P-11）、治理内核（P-13）；
-- **平台件仍缺**：OSv2 全量物化（P-04 轻量档）、Object Set 完备代数（P-05）、
-  系统级血缘（P-10）、版本分支与回滚（P-03）、批量动作与副作用（P-07）、工具评测集（P-12）；
-- 结论：**能力声明层与运行时已够用，剩余差距集中在 Foundry 的平台工程量，不在本体方法论。**
-  下一轮优先级：**P-10 收尾（全链路血缘图）→ P-03 变更集 → P-05 pivot**；
-  另需补 STG 部署验收（本轮 STG `stg-121` 不可达，已改本地部署测试）。
-  另有一项比以上都重要、但不属于本矩阵：**ABox 覆盖率**——当前 500 类里只有 15 类有实例（3.0%），
+- **2026-11-21 平台件补齐（v3.3）**：上版列出的五项平台缺口已逐项落地——
+  - P-04：`freight/projection_v2.py` 跨表物化视图 / 地理索引 / 聚合预计算 / 自适应查询计划（声明在扩展 JSON）；
+  - P-05：`freight/object_query.py` 新增 symmetric_difference / product / pivot / join / fromView / geo；
+  - P-10：`freight/lineage.py` 数据源→对象→属性→规则/动作/函数/证据的系统级血缘图（正向+反向追溯）；
+  - P-03：`freight/change_set.py` 对象数据变更集（预览/apply/一键回滚）+ 命名分支快照与恢复；
+  - P-07：`freight/batch.py` 原子批量 apply（savepoint 整批回滚）+ 跨对象 edits；
+    `enhancements/effects.py` 本体声明驱动的 webhook/通知/触发器副作用；
+  - P-11：`tools/gen_osdk.py` 新增 Java POJO 客户端与 GraphQL SDL 生成；
+  - P-12：`freight/observability.py` 工具调用日志/统计/评测集；`enhancements/authz.py` OpenFGA/OPA/Cedar 骨架；
+  - Workshop/Workflows：`enhancements/workflow.py` Worksheet 渲染 + 4 类步骤工作流（含人工审批断点）；
+  - 图形化 Ontology Manager：`web/ontology-manager.html`（统一入口已挂链）；
+  - 业务 what-if：`freight/simulation.py` savepoint 内执行、零生产写入的前后差异仿真。
+- 结论：**13 项能力矩阵 + Workshop/仿真/UI 已全部有代码落点与测试覆盖**；
+  剩余为工程加深项（全多索引查询计划、真实外部授权网关接入、UI 审批流），不是方法论缺口。
+- 但有一项比以上都重要、但不属于本矩阵：**ABox 覆盖率**——当前 500 类里只有 15 类有实例（3.0%），
   485 个零实例类意味着这些类「能表达」但「没被业务证明过」。详见 §3.5。
+- 部署验收：本轮 STG `stg-121` 不可达，按用户裁定改为本地 8765 部署测试，
+  浏览器彩排 19/19 通过（Playwright + Chromium，清华源 / npmmirror 安装）。
 
 ## 7. 维护规则
 
@@ -201,3 +212,5 @@ Palantir 模式的本体之所以有价值，不在于定义得多，而在于**
 | 0.1 | 2026-11-19 | 首版：建立 13 项能力对标矩阵与三条决定性判断 |
 | 0.2 | 2026-11-19 | 明确不做 Action 执行：P-06 收敛为只读提议，P-07 暂缓 |
 | 0.3 | 2026-11-19 | 明确近期重点为知识存储 / 检索 / 使用（P-04 / P-05 / P-12），判断与提议降为后续增量 |
+| 0.4 | 2026-11-20 | 逐条复核代码重基线（v3.2）：P-07 apply 已实现（更正前版错误）；状态机独立层；修正文档内部"Action 暂缓"的旧表述，统一以矩阵为准 |
+| 0.5 | 2026-11-21 | 按用户裁定全面补齐本矩阵所有差距项；旧计划 `plan/palantir-gap-plan.md` 冻结为历史快照；README 门禁项数对齐（25 项 / 14 目标） |

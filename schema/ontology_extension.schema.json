@@ -94,6 +94,130 @@
       },
       "uniqueItems": true,
       "minItems": 1
+    },
+    "worksheets": {
+      "type": "array",
+      "description": "Workshop 工作台声明：对象引用 + 视图配置。",
+      "items": {
+        "type": "object",
+        "required": ["id", "objects"],
+        "properties": {
+          "id": { "type": "string" },
+          "label": { "type": "string" },
+          "objects": { "type": "array", "items": { "type": "string" } },
+          "view": { "enum": ["table", "graph"] },
+          "columns": { "type": "array", "items": { "type": "string" } }
+        },
+        "additionalProperties": false
+      }
+    },
+    "workflows": {
+      "type": "array",
+      "description": "Workflows 流程声明：步骤序列，支持 action/query/approval/edit。",
+      "items": {
+        "type": "object",
+        "required": ["id", "steps"],
+        "properties": {
+          "id": { "type": "string" },
+          "label": { "type": "string" },
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["id", "type"],
+              "properties": {
+                "id": { "type": "string" },
+                "type": { "enum": ["action", "query", "approval", "edit"] },
+                "action_id": { "type": "string" },
+                "object_id": { "type": "string" },
+                "role": { "type": "string" },
+                "payload": { "type": "object" },
+                "tool": { "type": "string" },
+                "arguments": { "type": "object" },
+                "approver": { "type": "string" },
+                "set": { "type": "object" }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "authz_engines": {
+      "type": "object",
+      "description": "授权引擎适配配置；内置 policy 直接可用，外部引擎为协议骨架。",
+      "additionalProperties": { "type": "object" }
+    },
+    "action_effects": {
+      "type": "object",
+      "description": "动作成功提交后的副作用声明：webhook / notification / trigger。改此键即可挂摘副作用。",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": ["type"],
+          "properties": {
+            "type": { "enum": ["webhook", "notification", "trigger"] },
+            "url": { "type": "string" },
+            "channels": { "type": "array", "items": { "type": "string" } },
+            "template": { "type": "string" },
+            "action_id": { "type": "string" },
+            "object_id": { "type": "string" },
+            "payload": { "type": "object" },
+            "idempotency_key": { "type": "string" },
+            "note": { "type": "string" }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+    "materialized_views": {
+      "type": "array",
+      "description": "OSv2 跨表物化视图声明：只改本体 JSON 即可启用，代码不硬编码业务类型。",
+      "items": {
+        "type": "object",
+        "required": ["id", "root"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "label": { "type": "string" },
+          "root": { "type": "string", "minLength": 1 },
+          "joins": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["link"],
+              "properties": {
+                "link": { "type": "string", "minLength": 1 },
+                "direction": { "enum": ["out", "in"] },
+                "as": { "type": "string", "minLength": 1 }
+              },
+              "additionalProperties": false
+            }
+          },
+          "properties": { "type": "array", "items": { "type": "string" } }
+        },
+        "additionalProperties": false
+      }
+    },
+    "spatial_properties": {
+      "type": "object",
+      "description": "属性 -> 空间语义角色；声明后自动建地理索引（bbox 收窄）。",
+      "additionalProperties": { "enum": ["latitude", "longitude"] }
+    },
+    "aggregate_precompute": {
+      "type": "array",
+      "description": "聚合预计算声明：group_by + metrics，带源计数新鲜度闸门。",
+      "items": {
+        "type": "object",
+        "required": ["class"],
+        "properties": {
+          "class": { "type": "string", "minLength": 1 },
+          "group_by": { "type": "array", "items": { "type": "string" } },
+          "metrics": { "type": "array", "items": { "type": "string" } }
+        },
+        "additionalProperties": false
+      }
     }
   },
   "$defs": {

@@ -12,6 +12,14 @@
 from __future__ import annotations
 
 from freight.engine import FreightSystem
+from freight import projection_v2
+from freight.lineage import LineageGraph
+from freight.change_set import ChangeSetStore
+from freight.batch import BatchExecutor
+from freight.simulation import Simulator
+from enhancements.effects import EffectDispatcher
+from enhancements.workflow import WorkflowEngine
+from enhancements.authz import AuthzRouter
 from enhancements.registry import ExtensionRegistry
 from enhancements.property_registry import PropertyRegistry
 from enhancements.interfaces import InterfaceRegistry
@@ -33,6 +41,31 @@ class EnhancedSystem:
         self.functions = FunctionRegistry(self.ext, self.security, self.interfaces)
         self.usage = UsageGraph(self.ext, system.sem.raw)
         self.store = system.facts.store
+        # OSv2 增强物化：声明来自本体扩展 JSON，缺省全部关闭（零行为漂移）。
+        self.store.v2_ext = self.ext
+        self.lineage = LineageGraph(system.sem, self.ext, self.store)
+        self.changes = ChangeSetStore(self.store)
+        self.batch = BatchExecutor(system)
+        self.simulator = Simulator(system, self.ext, self.security)
+        self.effects = EffectDispatcher(self.ext, system, self.store.conn)
+        system.effect_hook = self.effects.dispatch
+        self.batch.effects = self.effects
+        self.workflow = WorkflowEngine(self.ext, system, self.store.conn)
+        self.authz = AuthzRouter(self.security, self.store.conn,
+                                 (getattr(self.ext, "raw", {}) or {}).get("authz_engines"))
+        self.store.conn.executescript(projection_v2.V2_SCHEMA)
+        self.materialization = projection_v2.sync_all(self.store.conn, self.ext)
+        self.store.conn.commit()
+
+    def storage_v2_stats(self) -> dict:
+        return {"materialization": self.materialization,
+                "consistency": projection_v2.consistency(self.store.conn),
+                **projection_v2.stats(self.store.conn)}
+
+    def sync_materialization(self) -> dict:
+        self.materialization = projection_v2.sync_all(self.store.conn, self.ext)
+        self.store.conn.commit()
+        return self.materialization
 
     # 委托既有能力
     def get_object(self, object_id: str):

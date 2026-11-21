@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ontology Manager · 本体工作台</title>
+<style>
+  :root { --bg:#0b1020; --panel:#151c31; --line:#26304d; --fg:#e8edff; --mut:#8e9ac0;
+          --acc:#5b8cff; --ok:#3ac79a; --warn:#f0b64b; --bad:#ef6a7a; }
+  * { box-sizing:border-box }
+  body { margin:0; font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+         background:var(--bg); color:var(--fg) }
+  header { padding:20px 28px; border-bottom:1px solid var(--line);
+           background:linear-gradient(90deg,#141d38,#0b1020) }
+  h1 { margin:0; font-size:20px; letter-spacing:.5px }
+  .sub { color:var(--mut); font-size:12px; margin-top:4px }
+  nav { display:flex; gap:6px; padding:12px 28px; border-bottom:1px solid var(--line);
+        flex-wrap:wrap }
+  nav button { background:transparent; color:var(--mut); border:1px solid var(--line);
+        padding:7px 14px; border-radius:7px; cursor:pointer; font-size:13px }
+  nav button.on, nav button:hover { color:var(--fg); border-color:var(--acc); background:#1b2747 }
+  main { padding:22px 28px; max-width:1280px }
+  .grid { display:grid; gap:16px }
+  .cards { grid-template-columns:repeat(auto-fit,minmax(170px,1fr)) }
+  .card, .panel { background:var(--panel); border:1px solid var(--line); border-radius:12px }
+  .card { padding:16px }
+  .card .n { font-size:26px; font-weight:700; color:var(--acc) }
+  .card .l { color:var(--mut); font-size:12px; margin-top:2px }
+  .panel { padding:18px; margin-top:16px }
+  h2 { font-size:15px; margin:0 0 14px }
+  .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:12px }
+  input,select { background:#0d1428; border:1px solid var(--line); color:var(--fg);
+        border-radius:7px; padding:8px 10px; font-size:13px }
+  button.go { background:var(--acc); border:0; color:#fff; padding:8px 16px;
+        border-radius:7px; cursor:pointer; font-size:13px }
+  pre { background:#0a1022; border:1px solid var(--line); border-radius:8px; padding:14px;
+        overflow:auto; max-height:460px; font:12px/1.5 ui-monospace,SFMono-Regular,monospace;
+        color:#c6d4ff }
+  table { width:100%; border-collapse:collapse; font-size:13px }
+  th,td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--line) }
+  th { color:var(--mut); font-weight:500 }
+  .tag { display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px;
+        background:#203056; color:#a9c0ff }
+  .ok { color:var(--ok) } .bad { color:var(--bad) } .warn { color:var(--warn) }
+  .hidden { display:none }
+  footer { color:var(--mut); font-size:11px; padding:18px 28px; border-top:1px solid var(--line) }
+</style>
+</head>
+<body>
+<header>
+  <h1>Ontology Manager</h1>
+  <div class="sub">Palantir 式本体工作台 · 声明驱动 · 只读视图 + 受控写操作</div>
+</header>
+<nav>
+  <button class="on" data-tab="overview">总览</button>
+  <button data-tab="objects">对象与查询</button>
+  <button data-tab="lineage">血缘</button>
+  <button data-tab="storage">物化与计划</button>
+  <button data-tab="changeset">变更与分支</button>
+  <button data-tab="workflow">工作台与流程</button>
+  <button data-tab="authz">授权引擎</button>
+</nav>
+<main>
+  <section id="overview">
+    <div class="grid cards" id="stats"></div>
+    <div class="panel">
+      <h2>本体声明摘要</h2>
+      <pre id="meta">加载中…</pre>
+    </div>
+  </section>
+
+  <section id="objects" class="hidden">
+    <div class="panel">
+      <h2>Object Set 查询</h2>
+      <div class="row">
+        <input id="qType" value="FeeItem" placeholder="对象类型" style="width:180px">
+        <input id="qProp" value="fee_type" placeholder="属性" style="width:160px">
+        <input id="qVal" value="base" placeholder="值" style="width:180px">
+        <button class="go" onclick="runQuery()">查询</button>
+      </div>
+      <pre id="queryOut"></pre>
+    </div>
+    <div class="panel">
+      <h2>全部对象类型（节选）</h2>
+      <div class="row"><input id="clsFilter" placeholder="过滤类名" oninput="renderClasses()"></div>
+      <div id="classes"></div>
+    </div>
+  </section>
+
+  <section id="lineage" class="hidden">
+    <div class="panel">
+      <h2>属性级血缘追溯</h2>
+      <div class="row">
+        <input id="linClass" value="FeeItem" style="width:180px">
+        <input id="linProp" value="fee_type" style="width:180px">
+        <button class="go" onclick="runLineage()">追溯</button>
+        <button class="go" onclick="loadLineageGraph()">全图统计</button>
+      </div>
+      <pre id="linOut"></pre>
+    </div>
+  </section>
+
+  <section id="storage" class="hidden">
+    <div class="panel">
+      <h2>OSv2 物化层与自适应计划</h2>
+      <div class="row"><button class="go" onclick="loadStorage()">刷新</button>
+        <button class="go" onclick="syncStorage()">重新物化</button></div>
+      <pre id="storageOut"></pre>
+    </div>
+  </section>
+
+  <section id="changeset" class="hidden">
+    <div class="panel">
+      <h2>变更集与对象数据分支</h2>
+      <div class="row">
+        <input id="csId" placeholder="变更集 ID" style="width:180px">
+        <input id="csLabel" placeholder="说明" style="width:220px">
+        <button class="go" onclick="createCS()">创建</button>
+        <button class="go" onclick="loadCS()">刷新列表</button>
+      </div>
+      <pre id="csOut"></pre>
+    </div>
+  </section>
+
+  <section id="workflow" class="hidden">
+    <div class="panel">
+      <h2>Worksheet / Workflow</h2>
+      <div class="row"><button class="go" onclick="loadWorkflows()">加载声明</button></div>
+      <pre id="wfOut"></pre>
+      <div class="row" style="margin-top:12px">
+        <input id="runId" placeholder="运行 ID" style="width:200px">
+        <button class="go" onclick="startWorkflow()">启动 wf-dispute-review</button>
+        <button class="go" onclick="approveWorkflow()">审批通过</button>
+      </div>
+      <pre id="wfRunOut"></pre>
+    </div>
+  </section>
+
+  <section id="authz" class="hidden">
+    <div class="panel">
+      <h2>授权引擎骨架</h2>
+      <div class="row"><button class="go" onclick="loadAuthz()">刷新引擎目录</button></div>
+      <pre id="authzOut"></pre>
+    </div>
+  </section>
+</main>
+<footer>数据源：当前部署的 STG 本体服务（/freight/*、/enh/*）。页面不内置任何模拟数据。</footer>
+
+<script>
+const $ = id => document.getElementById(id);
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  const text = await r.text();
+  let data; try { data = JSON.parse(text); } catch { data = text; }
+  if (!r.ok) throw new Error(JSON.stringify(data));
+  return data;
+}
+const post = (p, b) => api(p, {method:'POST', headers:{'Content-Type':'application/json'},
+                              body: JSON.stringify(b || {})});
+function show(id, data) { $(id).textContent = JSON.stringify(data, null, 2); }
+function err(id, e) { $(id).textContent = '❌ ' + e.message; }
+
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('nav button').forEach(x => x.classList.remove('on'));
+  b.classList.add('on');
+  document.querySelectorAll('main section').forEach(s => s.classList.add('hidden'));
+  $(b.dataset.tab).classList.remove('hidden');
+});
+
+async function loadOverview() {
+  try {
+    const [meta, line, storage] = await Promise.all([
+      api('/freight/meta'), api('/enh/lineage/summary'), api('/enh/storage/v2')]);
+    const version = meta.version || meta.meta?.version || '-';
+    $('stats').innerHTML = [
+      ['本体版本', version], ['血缘节点', line.nodes], ['血缘边', line.edges],
+      ['物化视图', storage.views], ['地理索引', storage.geo],
+      ['查询计划种类', Object.keys(storage.plans || {}).length],
+    ].map(([l,n]) => `<div class="card"><div class="n">${n}</div><div class="l">${l}</div></div>`).join('');
+    show('meta', {meta, lineage:line});
+  } catch (e) { $('meta').textContent = '❌ ' + e.message; }
+}
+
+async function renderClasses() {
+  try {
+    const meta = await api('/freight/meta');
+    const raw = meta.classes || meta.ontology?.classes || [];
+    const f = ($('clsFilter').value || '').toLowerCase();
+    const list = (Array.isArray(raw) ? raw : Object.keys(raw)).filter(c =>
+      String(typeof c === 'string' ? c : c.id).toLowerCase().includes(f)).slice(0, 200);
+    $('classes').innerHTML = '<table><tr><th>类</th><th>标签</th></tr>' +
+      list.map(c => { const o = typeof c === 'string' ? {id:c} : c;
+        return `<tr><td><span class="tag">${o.id}</span></td><td>${o.label||''}</td></tr>`;
+      }).join('') + '</table>';
+  } catch (e) { $('classes').textContent = '❌ ' + e.message; }
+}
+
+async function runQuery() {
+  try {
+    const where = {}; where[$('qProp').value] = {$eq: $('qVal').value};
+    show('queryOut', await post('/freight/object-set/query', {
+      set:{from:$('qType').value, where}, page:{limit:20}}));
+  } catch (e) { err('queryOut', e); }
+}
+async function runLineage() {
+  try { show('linOut', await api(`/enh/lineage/property/${$('linClass').value}/${$('linProp').value}`)); }
+  catch (e) { err('linOut', e); }
+}
+async function loadLineageGraph() {
+  try { const g = await api('/enh/lineage/graph');
+    show('linOut', {nodes:g.nodes.length, edges:g.edges.length,
+      edge_kinds:[...new Set(g.edges.map(e=>e.kind))]}); }
+  catch (e) { err('linOut', e); }
+}
+async function loadStorage() { try { show('storageOut', await api('/enh/storage/v2')); }
+  catch (e) { err('storageOut', e); } }
+async function syncStorage() { try { show('storageOut', await post('/enh/storage/v2/sync')); }
+  catch (e) { err('storageOut', e); } }
+async function loadCS() { try { show('csOut', await api('/enh/changesets')); }
+  catch (e) { err('csOut', e); } }
+async function createCS() { try {
+    show('csOut', await post('/enh/changesets', {id:$('csId').value, label:$('csLabel').value}));
+  } catch (e) { err('csOut', e); } }
+async function loadWorkflows() { try {
+    const [ws, wf] = await Promise.all([api('/enh/worksheets'), api('/enh/workflows')]);
+    show('wfOut', {worksheets:ws.worksheets, workflows:wf.workflows});
+  } catch (e) { err('wfOut', e); } }
+async function startWorkflow() { try {
+    show('wfRunOut', await post('/enh/workflows/wf-dispute-review/start',
+      {run_id:$('runId').value, context:{actor:'manager', role:'shipper'}}));
+  } catch (e) { err('wfRunOut', e); } }
+async function approveWorkflow() { try {
+    show('wfRunOut', await post(`/enh/workflows/runs/${$('runId').value}/approve`,
+      {approver:'finance-lead'}));
+  } catch (e) { err('wfRunOut', e); } }
+async function loadAuthz() { try { show('authzOut', await api('/enh/authz/engines')); }
+  catch (e) { err('authzOut', e); } }
+
+loadOverview(); renderClasses();
+</script>
+</body>
+</html>

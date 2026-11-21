@@ -194,6 +194,9 @@ class FactMCP:
     def scalar(self, *args, **kwargs):
         return self.store.scalar(*args, **kwargs)
 
+    def projection_is_fresh(self) -> bool:
+        return self.store.projection_is_fresh()
+
     def insert_object(self, *args, **kwargs):
         return self.store.insert_object(*args, **kwargs)
 

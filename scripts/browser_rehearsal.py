@@ -44,7 +44,12 @@ def check(name: str, ok: bool, detail: str = "") -> None:
 
 def _run() -> int:
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+        launch_kwargs = {"headless": True}
+        if os.environ.get("PW_CHANNEL"):
+            launch_kwargs["channel"] = os.environ["PW_CHANNEL"]
+        elif os.environ.get("PW_EXECUTABLE"):
+            launch_kwargs["executable_path"] = os.environ["PW_EXECUTABLE"]
+        browser = p.chromium.launch(**launch_kwargs)
         page = browser.new_page(viewport={"width": 1440, "height": 1000})
         errors = []
         page.on("pageerror", lambda e: errors.append(str(e)))

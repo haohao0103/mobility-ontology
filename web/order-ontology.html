@@ -2681,6 +2681,7 @@ function renderReasoningChain(data) {
         <div class="chain-controls">
           <button class="btn" id="chainPrev" type="button">← 上一步</button>
           <button class="btn primary" id="chainNext" type="button">下一步 →</button>
+          <button class="btn" id="chainRunAll" type="button">⚡ 一键跑到底</button>
           <button class="btn" id="chainAll" type="button">展开全部</button>
         </div>
       </div>
@@ -2708,7 +2709,14 @@ function mountReasoningChain() {
   const prev = document.getElementById('chainPrev');
   const next = document.getElementById('chainNext');
   const all = document.getElementById('chainAll');
+  const runAll = document.getElementById('chainRunAll');
   if (!prev || !next || !all) return;
+  if (runAll && !runAll.dataset.bound) {
+    runAll.dataset.bound = '1';
+    runAll.addEventListener('click', async () => {
+      await runChainToEnd();
+    });
+  }
   prev.addEventListener('click', () => {
     if (chainState.all || chainState.loading) return;
     chainState.index = Math.max(0, chainState.index - 1);
@@ -2730,6 +2738,35 @@ function mountReasoningChain() {
     paintReasoningChain();
   });
   paintReasoningChain();
+}
+
+async function runChainToEnd() {
+  const data = chainState.data;
+  if (!data || !data.session_id || data.finished === false || chainState.loading) {
+    return false;
+  }
+  chainState.loading = true;
+  paintReasoningChain();
+  const btn = document.getElementById('chainRunAll');
+  if (btn) btn.textContent = '⏳ 推理中…';
+  try {
+    // 服务端一次性跑到结论（内部逐步推进），避免现场点十几次
+    const result = await api(
+      `/reasoning-chain/${encodeURIComponent(data.session_id)}/run`,
+      { method: 'POST' }
+    );
+    modalBody.innerHTML = renderReasoningChain(result);
+    chainState.index = (result.steps || []).length - 1;
+    chainState.loading = false;
+    mountReasoningChain();
+    if (btn) btn.textContent = '⚡ 一键跑到底';
+    return true;
+  } catch (err) {
+    chainState.loading = false;
+    if (btn) btn.textContent = '⚡ 一键跑到底';
+    paintReasoningChain();
+    return false;
+  }
 }
 
 async function advanceChain() {

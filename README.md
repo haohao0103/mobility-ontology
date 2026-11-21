@@ -23,7 +23,10 @@ python scripts/semantic_gate.py
 # freight 层验收（12 场景，含 5 个承重测试）
 python scripts/freight_acceptance.py
 
-# 承重实验：只改本体 JSON、代码零改动，18 条用例逐条证明行为翻转
+# 演示自检：上台前 5 分钟跑一遍，确认所有演示路径可用并给出耗时基线
+DEMO_BASE=http://127.0.0.1:8765 python scripts/demo_gate.py
+
+# 承重实验：只改本体 JSON、代码零改动，24 条用例逐条证明行为翻转
 python scripts/load_bearing_demo.py   # 24 条承重用例
 
 # 根层验证（36 项断言）

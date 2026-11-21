@@ -301,6 +301,7 @@ class ReasoningAgent:
         self.tbox_queries = 0
         self.final_action: dict | None = None
         self.error: str | None = None
+        self.degraded = False
         self.finished = False
         self.reviewed = False
         self.started = False
@@ -348,6 +349,42 @@ class ReasoningAgent:
                 self._step_finish()
             else:
                 raise ValueError(f"未知的待执行动作：{self.pending}")
+        except LLMError as exc:
+            # 大模型这一步彻底失败（重试用尽 / 连续空响应）：**不抛给调用方**。
+            # 演示与线上排查都需要一个"基于已有观察的结论"，而不是整条链 503。
+            # 这里降级成初步结论并结束——本体取到的事实仍然有效。
+            self.error = str(exc)
+            self.degraded = True
+            self.finished = True
+            self.pending = None
+            self.steps.append({
+                "kind": "llm", "tag": "LLM · 失败降级", "who": "大模型",
+                "action": "大模型调用失败，改用已取得的观察归纳",
+                "output": str(exc)[:200], "error": str(exc)[:200],
+                "answer": self._degraded_final("")["answer"],
+                "title": "初步结论（大模型不可用）", "question": self.question,
+                "thought": "大模型连续失败，改用已有观察归纳。",
+                "elapsed_ms": 0, "ok": False,
+            })
+            return self.result()
+        except LLMError as exc:
+            # 大模型这一步彻底失败（重试用尽 / 连续空响应）：**不抛给调用方**。
+            # 演示与线上排查都需要一个"基于已有观察的结论"，而不是整条链 503。
+            # 这里降级成初步结论并结束——本体取到的事实仍然有效。
+            self.error = str(exc)
+            self.degraded = True
+            self.finished = True
+            self.pending = None
+            self.steps.append({
+                "kind": "llm", "tag": "LLM · 失败降级", "who": "大模型",
+                "action": "大模型调用失败，改用已取得的观察归纳",
+                "output": str(exc)[:200], "error": str(exc)[:200],
+                "answer": self._degraded_final("")["answer"],
+                "title": "初步结论（大模型不可用）", "question": self.question,
+                "thought": "大模型连续失败，改用已有观察归纳。",
+                "elapsed_ms": 0, "ok": False,
+            })
+            return self.result()
         except Exception as exc:
             # 单步失败必须显式抛给调用方，不能把失败伪装成上一笔已执行步骤。
             self.error = str(exc)
@@ -1599,6 +1636,32 @@ class ReasoningAgent:
             thinking=self.client.final_thinking,
         ))
 
+    def _degraded_final(self, raw: str) -> dict:
+        """工具预算用尽且模型没给合法 final 时的降级结论。
+
+        只用**已经取到的观察**作答，不臆造数字；措辞里明确"初步"与依据条数，
+        让看的人知道这是降级结果、还差什么。
+        """
+        lines = []
+        for obs in self.observations:
+            tool = obs.get("tool") or "查询"
+            summary = obs.get("summary") or obs.get("result") or ""
+            if isinstance(summary, (dict, list)):
+                summary = self._compact(summary, 160)
+            lines.append(f"- {tool}：{str(summary)[:160]}")
+        body = "\n".join(lines[:8]) or "（本轮没有取到任何观察）"
+        return {
+            "action": "final",
+            "title": "初步结论（工具预算用尽，未完成完整核对）",
+            "question": self.question,
+            "thought": "工具调用次数已用完，模型未给出结构化结论，改用已有观察归纳。",
+            "answer": (
+                "以下是本轮已经取到的观察，属于**初步结论**（工具预算用尽，"
+                "尚未完成全部交叉核对）：\n" + body
+            ),
+            "degraded": True,
+        }
+
     def _step_exhausted(self) -> None:
         instruction = (
             "工具调用次数已用完。请基于以上观察，只输出 final JSON："
@@ -1615,8 +1678,11 @@ class ReasoningAgent:
         elapsed_ms = round((time.perf_counter() - started) * 1000)
         candidate = self._parse_action(raw)
         if not candidate or candidate.get("action") != "final":
-            self.error = "归纳输出无法解析"
-            raise LLMError("工具次数用尽后，大模型没有给出合法 final 结论")
+            # 降级而不是报错：工具预算用尽时，模型没给出合法 final JSON 是常见情况。
+            # 演示（以及线上排查）更需要"一个基于已有观察的初步结论"，
+            # 而不是整条链 503 白屏。降级结论会明确标注"初步"与观察条数。
+            candidate = self._degraded_final(raw)
+            self.degraded = True
         self.final_action = candidate
         self.messages.append({"role": "assistant", "content": raw[:4000]})
         self.pending = "action"
@@ -1880,6 +1946,7 @@ class ReasoningAgent:
             },
             "agent": {
                 "ok": self.error is None,
+                "degraded": bool(self.degraded),
                 "running": not self.finished,
                 "model": self.client.model,
                 "endpoint": f"{self.client.base}/chat/completions",
@@ -2924,8 +2991,21 @@ tbox.describe|按类型读取类定义、邻接关系、作用域规则、动作
                     obj = json.loads(candidate)
                 except json.JSONDecodeError:
                     continue
-            if isinstance(obj, dict) and obj.get("action") in ("tool", "final"):
-                return obj
+            if isinstance(obj, dict):
+                action = str(obj.get("action") or "")
+                if action in ("tool", "final"):
+                    return obj
+                # 宽松兜底：模型给了结论但动作名不是 final / 或干脆没给动作名，
+                # 只要有 answer 就按 final 收下——宁可放过一次格式偏差，
+                # 也不要因为字段名的小出入把整个诊断变成 503。
+                if obj.get("answer") and action in ("", "conclude", "answer",
+                                                   "conclusion", "结论", "final_answer"):
+                    obj = dict(obj)
+                    obj["action"] = "final"
+                    obj.setdefault("title", "结论")
+                    obj.setdefault("thought", "")
+                    obj.setdefault("question", "")  # staticmethod 里没有实例上下文
+                    return obj
         return None
 
     @staticmethod

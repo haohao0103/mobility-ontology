@@ -2343,6 +2343,35 @@ class FreightSystem:
         self._prune_agent_sessions()
         return result
 
+    def agent_chain_run(self, session_id: str, max_wait: float = 240.0,
+                        max_steps: int = 40) -> dict:
+        """一次跑到结论（演示用）。
+
+        交互式「下一步」适合细看每一步，但演示现场不该让人等 12 次点击；
+        这个接口内部连续推进直到出结论或超时，返回完整结果与耗时。
+
+        超时不是失败：超时也返回已推进到的结果——演示时可以退而求其次，
+        展示"推理到一半的中间结论"，而不是一片空白。
+        """
+        started = time.perf_counter()
+        steps = 0
+        result: dict = {}
+        while steps < max_steps:
+            result = self.agent_chain_next(session_id)
+            steps += 1
+            if result.get("finished"):
+                break
+            if time.perf_counter() - started > max_wait:
+                result = dict(result)
+                result["timeout"] = True
+                result["elapsed_ms"] = round(
+                    (time.perf_counter() - started) * 1000)
+                break
+        result = dict(result)
+        result.setdefault("elapsed_ms", round((time.perf_counter() - started) * 1000))
+        result["auto_steps"] = steps
+        return result
+
     @staticmethod
     def _prune_agent_sessions() -> None:
         now = time.time()

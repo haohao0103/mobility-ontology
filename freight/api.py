@@ -286,6 +286,14 @@ def reasoning_chain_next(session_id: str):
     return agent_guard(lambda: get_system().agent_chain_next(session_id))
 
 
+@router.post("/reasoning-chain/{session_id}/run")
+def reasoning_chain_run(session_id: str,
+                        max_wait: float = Query(240.0, ge=5.0, le=900.0)):
+    """一次跑到结论（演示用）：连续推进推理链，返回最终答案与全程 stage。"""
+    return agent_guard(lambda: get_system().agent_chain_run(
+        session_id, max_wait=max_wait))
+
+
 @router.get("/waybills/{waybill_id}/reasoning-chain")
 def reasoning_chain(waybill_id: str,
                     max_steps: int = Query(6, ge=2, le=10),

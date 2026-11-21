@@ -63,7 +63,7 @@
 |---|---|
 | 开场问 | 匿名能看到几条？Agent 想把工单说出去，拦得住吗？ |
 | 本体声明 | `data_source_markings[客服工单].marking = DISPUTE_OPS`、列级 marking |
-| 正向 | `POST /enh/security/simulate` → 匿名可见 6/7 行 |
+| 正向 | `POST /enh/security/simulate` → 匿名可见 7/9 行 |
 | **负向翻转** | `POST /enh/security/simulate-marking` → 删标记后可见 0→2；`guard-output` → 匿名 `OUTPUT_MARKING_DENIED` |
 | 话术 | 「权限跟着本体属性走，一路传到 Agent 输出——是数据流的内建属性，不是页面开关。」 |
 
@@ -94,7 +94,7 @@
 
 | 题 | 问题 | 核心件 | **负向翻转** |
 |---|---|---|---|
-| D1 | 改一个属性会波及谁？ | 属性级/对象级血缘、影响面 | 4097 节点/4129 边；属性 upstream/downstream 可查 |
+| D1 | 改一个属性会波及谁？ | 属性级/对象级血缘、影响面 | 4126 节点/4163 边；属性 upstream/downstream 可查 |
 | D2 | 改本体能不能像代码一样评审？ | 版本快照、签字、回滚 | `guard-demo drop_property_unsigned` → FAIL；`drop_property_signed` → PASS（临时签字目录，不写仓库） |
 | D3 | 查业务语义，不查表名？ | Object Set、Ontology SQL、接口多态 | `interfaces/simulate` → 实现类 2→1、函数从接受到拒绝 `INTERFACE_VIOLATION` |
 | D4 | 1961 个属性注册表真的执行吗？ | 属性注册表、写入门禁 | `type-lab` 把 `waiting_minutes` 改 boolean → 创建路径 `TYPE_MISMATCH` |
@@ -220,11 +220,11 @@ DEMO_BASE=http://127.0.0.1:8765 python scripts/browser_rehearsal.py   # 6 主线
 1 承重：换本体版本，代码零改动，结论翻转（30→20 分钟）
 2 状态机：错角色/错状态被拦，同键重放只一次，审计零增量
 3 来源契约：删认领 → FEE_SOURCE_UNRESOLVED 出现
-4 权限：匿名 6/7 行；删 marking 可见 0→2；Agent 输出被拒
+4 权限：匿名 7/9 行；删 marking 可见 0→2；Agent 输出被拒
 5 AI：抽工具/类型声明 → TOOL_UNAVAILABLE / TYPE_UNBOUND
 6 收束：裸 LLM 说"应收 0"，本体按规则应计 12、超收 13
   ↓ 四深挖
-血缘 4097 节点 / 治理未签 FAIL 补签 PASS / 接口删实现 2→1 / 类型改 boolean 写入拒
+血缘 4126 节点 / 治理未签 FAIL 补签 PASS / 接口删实现 2→1 / 类型改 boolean 写入拒
   ↓ 诚实
 500 类声明，18 核心类有真实对象；剧本数据，下一步接真实系统
   ↓ 排他性口径

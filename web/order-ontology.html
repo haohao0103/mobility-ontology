@@ -5967,7 +5967,7 @@ const COMP_SCENARIOS = [
     tag: 'M2 · 状态机与动作',
     title: '已送达的运单还能改派吗？',
     summary: '状态机前置 + 角色 + 参数契约 + 幂等 + 审计，全部在 SAVEPOINT 内实测',
-    meta: '5 步 · 零主库写入',
+    meta: '4 步 · 零主库写入',
     steps: [
       {
         title: '看状态机声明与可用动作',
@@ -5976,8 +5976,13 @@ const COMP_SCENARIOS = [
         note: '状态机声明 + 动作前置都来自本体。',
         component: 'State Machine',
         request: () => ({ method: 'GET', path: '/ontology/state-machines/Waybill' }),
-        render: (d) => compKV([['类型', d.type || 'Waybill'], ['终态', JSON.stringify(d.terminal || d.state_machine?.terminal || []).slice(0, 90)],
-          ['状态数', (d.statuses || d.state_machine?.statuses || []).length]])
+        render: (d) => {
+          const m = d.machine || d.state_machine || d;
+          return compKV([['类型', d.object_type || d.type || 'Waybill'],
+            ['终态', JSON.stringify(m.terminal || []).slice(0, 90)],
+            ['状态数', (m.statuses || []).length],
+            ['迁移边', (m.transitions || []).length]]);
+        }
       },
       {
         title: '错角色 / 错状态实测',
@@ -6051,7 +6056,10 @@ const COMP_SCENARIOS = [
         note: '同一机制，扩大删除范围。',
         component: 'Negative Lab',
         request: () => ({ method: 'POST', path: '/contracts/simulate', body: { case: 'drop_source' } }),
-        render: (d) => compTable(['翻转', '方向', '次数'], (d.flips || []).map((f) => [f.code, f.action, f.count || '—']))
+        render: (d) => compKV([['变更前缺口', (d.before?.findings || []).length],
+          ['变更后缺口', (d.after?.findings || []).length],
+          ['persisted', String(d.persisted)]])
+          + compTable(['翻转', '方向', '次数'], (d.flips || []).map((f) => [f.code, f.action, f.count || '—']))
           + compVerdict(`缺口数量随声明删除而放大：<b>${esc((d.flips || [])[0]?.code || '—')}</b>。`, true)
       },
       {
@@ -6077,7 +6085,7 @@ const COMP_SCENARIOS = [
     steps: [
       {
         title: '匿名 vs 争议角色',
-        question: '7 条费用，匿名能看到几条？',
+        question: '同一批费用行，匿名能看到几条？',
         dependency: 'data_source_markings[客服工单].marking = DISPUTE_OPS',
         note: '标记从数据源传到类、对象、列。',
         component: 'Row Policy',
@@ -6119,8 +6127,8 @@ const COMP_SCENARIOS = [
         request: () => ({ method: 'POST', path: '/security/simulate', body: { user: 'anonymous', roles: [], class_id: 'FeeItem' } }),
         run: (ctx, req) => enhApi('/security/simulate', { method: 'POST', body: JSON.stringify(req.body) }),
         render: (d) => compKV([['可见对象数', Object.keys(d.property_visibility || {}).length],
-          ['首个对象可见属性', Object.values(d.property_visibility || {})[0] ?
-            Object.values(d.property_visibility || {})[0].filter(Boolean).length : 0]])
+          ['首个对象可见属性', Object.values(Object.values(d.property_visibility || {})[0] || {})
+            .filter(Boolean).length]])
       },
     ]
   },
@@ -6190,9 +6198,9 @@ const COMP_SCENARIOS = [
         note: '证据可逐条回源，不靠模型记忆。',
         component: 'Evidence',
         request: () => ({ method: 'GET', path: `/objects/${COMP_WAYBILL}/trace` }),
-        render: (d) => compKV([['trace 节点', (d.trace || d.nodes || []).length],
+        render: (d) => compKV([['时间线事件', d.timeline_count ?? (d.timeline || []).length],
           ['关系', (d.relations || []).length],
-          ['摘要', JSON.stringify(d).slice(0, 90)]])
+          ['当前状态', d.object?.status || '—']])
       },
       {
         title: '裸系统对照',
@@ -6201,6 +6209,7 @@ const COMP_SCENARIOS = [
         note: '裸 LLM 把 quoted_amount=0 当应计 → 0 元；本体按规则算 → 12 元。',
         component: 'Takeaway',
         request: () => ({ local: true, method: 'LOCAL', path: 'plan/demo_script.md §2 实测' }),
+        run: () => ({ bare: '0.00', ontology: '12.00', gap: '13.00' }),
         render: () => compKV([['裸大模型', '0.00 元（凭不上）'], ['本体', '12.00 元（规则+版本+证据）'],
           ['差额', '超收 13 元']]) + compVerdict(`差的 13 元<b>不在数据里</b>，在计价规则里。本体把规则变成机器可执行、可审计的东西。`, true)
       },
@@ -6212,7 +6221,7 @@ const COMP_SCENARIOS = [
     id: 'lineage', tier: 'deep',
     tag: 'D1 · 血缘',
     title: '改一个属性会波及谁？',
-    summary: '4097 节点 / 4129 边：属性级 + 对象级血缘与影响面',
+    summary: '4126 节点 / 4163 边：属性级 + 对象级血缘与影响面',
     meta: '3 步 · 实时接口',
     steps: [
       { title: '血缘图规模', question: '本体知道自己被谁用吗？', dependency: 'derived from declarations',
@@ -6242,12 +6251,12 @@ const COMP_SCENARIOS = [
     steps: [
       { title: '删属性：未签字', question: '删 waiting_minutes 会怎样？', dependency: 'breaking_approvals.json',
         note: '未签字的破坏性变更必须 FAIL。', component: 'Change Gate',
-        request: () => ({ method: 'POST', path: '/ontology/guard-demo', body: { case: 'drop_property_unsigned' } }),
+        request: () => ({ method: 'GET', path: '/ontology/guard-demo?case=drop_property_unsigned' }),
         render: (d) => compKV([['case', d.case], ['verdict', d.verdict], ['未签字', d.unapproved_count]])
           + compVerdict(`未签字 → <b>FAIL</b>，影响面非空。`, true) },
       { title: '补签：放行', question: '补签后会怎样？', dependency: '临时签名目录（不写仓库）',
         note: '签字路径与 classify 完全一致才放行。', component: 'Approval',
-        request: () => ({ method: 'POST', path: '/ontology/guard-demo', body: { case: 'drop_property_signed' } }),
+        request: () => ({ method: 'GET', path: '/ontology/guard-demo?case=drop_property_signed' }),
         render: (d) => compKV([['case', d.case], ['verdict', d.verdict], ['未签字', d.unapproved_count]])
           + compVerdict(`补签 → <b>PASS</b>。签名只存在于临时目录，不污染仓库。`, true) },
       { title: '版本与分支', question: '改坏了怎么办？', dependency: '不可变快照 + checksum',

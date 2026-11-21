@@ -5,6 +5,7 @@
 > 能力基准：[roadmap/palantir-benchmark.md](../roadmap/palantir-benchmark.md)
 > 优先级顺序：[palantir-gap-plan.md](palantir-gap-plan.md)（取代本文第 7 节）
 > 判断/提议契约：[judgment-proposal-contract.md](judgment-proposal-contract.md)
+> 本体价值对照实验：[ab-value-experiment-plan.md](ab-value-experiment-plan.md)
 > ABox 做深计划：[abox-depth-plan.md](abox-depth-plan.md)（深水区 18 类 / 门禁第 26 项 / 真实外部连接）
 > 状态：Draft
 > 更新：2026-11-19

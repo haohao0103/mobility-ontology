@@ -1,11 +1,14 @@
-"""浏览器端到端彩排：真实点击新 8 幕讲解模式 + 每幕首步实时执行断言。
+"""浏览器端到端彩排：6 主线讲解 + 每步真实执行断言 + 深挖展开。
 
-运行（需先启动本地 8765 服务）：
+自管理服务生命周期（lsof 精准清理 8765），运行：
     /tmp/pwenv/bin/python scripts/browser_rehearsal.py
-产出：scripts/_out/rehearsal_act*.png
 """
 from __future__ import annotations
 
+import os
+import signal
+import socket
+import subprocess
 import time
 from pathlib import Path
 
@@ -16,20 +19,14 @@ BASE = os.environ.get("DEMO_BASE", "http://127.0.0.1:8765")
 OUT = Path(__file__).parent / "_out"
 OUT.mkdir(exist_ok=True)
 
-ACTS = [
-    ("bearing", "承重"), ("lineage", "血缘"), ("governance", "治理"),
-    ("query", "语义查询"), ("types", "类型"), ("agent", "推理链"),
-    ("security", "权限"), ("evidence", "收束"),
-]
+ACTS = ["bearing", "machine", "contracts", "security", "agent", "evidence"]
 EXPECT = {
-    "bearing": ["免费等候", "ACT 1 / 8"],
-    "lineage": ["4097", "ACT 2 / 8"],
-    "governance": ["Git", "ACT 3 / 8"],
-    "query": ["业务语义", "ACT 4 / 8"],
-    "types": ["契约", "ACT 5 / 8"],
-    "agent": ["大模型", "ACT 6 / 8"],
-    "security": ["客服看不到", "ACT 7 / 8"],
-    "evidence": ["38", "ACT 8 / 8"],
+    "bearing": ["承重", "ACT 1 / 6"],
+    "machine": ["状态机", "ACT 2 / 6"],
+    "contracts": ["来源契约", "ACT 3 / 6"],
+    "security": ["权限", "ACT 4 / 6"],
+    "agent": ["AI", "ACT 5 / 6"],
+    "evidence": ["收束", "ACT 6 / 6"],
 }
 
 PASS, FAIL = [], []
@@ -40,18 +37,80 @@ def check(name: str, ok: bool, detail: str = "") -> None:
     print(f"[{'PASS' if ok else 'FAIL'}] {name}: {detail}")
 
 
-def main() -> int:
-    import os
-    import signal
-    import subprocess
-    import urllib.request
+def _run() -> int:
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page(viewport={"width": 1440, "height": 1000})
+        errors = []
+        page.on("pageerror", lambda e: errors.append(str(e)))
+        page.goto(f"{BASE}/profile/order-ontology", wait_until="domcontentloaded", timeout=30000)
+        page.wait_for_timeout(2500)
+        check("页面加载无 JS 错误", not errors, "; ".join(errors[:2]))
 
-    import socket
+        # F-01：首屏只有 6 主线
+        cards = page.locator("[data-comp-scenario]")
+        check("首屏主线 6 题", cards.count() == 6, f"实际 {cards.count()} 题")
+
+        start = page.locator('[data-demo="start"]')
+        check("讲解模式入口可见", start.count() == 1 and start.is_visible())
+        start.click()
+        page.wait_for_timeout(500)
+
+        for i, act in enumerate(ACTS):
+            narration = page.locator(".demo-narration")
+            text = narration.inner_text() if narration.count() else ""
+            check(f"ACT{i+1} {act} 讲解词", all(n in text for n in EXPECT[act]),
+                  text[:90].replace("\n", " "))
+
+            run = page.locator('[data-comp-action="run"]')
+            if run.count() and run.is_visible():
+                run.click()
+                try:
+                    page.wait_for_selector(".comp-io .comp-io-tag.output", timeout=20000)
+                    page.wait_for_timeout(500)
+                    out = page.locator(".comp-io").last.inner_text()
+                    ok = "这一步真实返回" in out and "执行失败" not in out and "ERROR" not in out
+                    check(f"ACT{i+1} {act} 首步实时执行", ok, out.replace("\n", " ")[:120])
+                except Exception as exc:
+                    check(f"ACT{i+1} {act} 首步实时执行", False, str(exc)[:100])
+            else:
+                check(f"ACT{i+1} 首步执行", False, "找不到执行按钮")
+
+            # F-09 声明依赖脚注
+            dep = page.locator(".comp-dependency")
+            check(f"ACT{i+1} 声明依赖脚注", dep.count() > 0 and "声明依赖" in dep.first.inner_text(),
+                  dep.first.inner_text()[:90] if dep.count() else "无")
+
+            page.screenshot(path=str(OUT / f"v2_act{i+1}_{act}.png"), full_page=False)
+
+            if i < len(ACTS) - 1:
+                nxt = page.locator('[data-demo="next"]')
+                if nxt.count() and nxt.is_visible():
+                    nxt.click()
+                    page.wait_for_timeout(450)
+
+        # 深挖展开
+        toggle = page.locator('[data-comp-action="toggle-deep"]')
+        if toggle.count():
+            toggle.click()
+            page.wait_for_timeout(400)
+            check("深挖 4 题可展开", page.locator("[data-comp-scenario]").count() == 10,
+                  f"展开后 {page.locator('[data-comp-scenario]').count()} 题")
+        else:
+            check("深挖 4 题可展开", False, "无展开按钮")
+
+        check("全程无 JS 错误", not errors, "; ".join(errors[:3]))
+        browser.close()
+
+    print(f"\nRESULT {len(PASS)} passed / {len(FAIL)} failed")
+    print(f"截图目录: {OUT}")
+    return 0 if not FAIL else 1
+
+
+def main() -> int:
     probe = socket.socket()
-    occupied = probe.connect_ex(("127.0.0.1", 8765)) == 0
-    probe.close()
-    if occupied:
-        # 只杀真正持有 8765 的 PID，不用字符串匹配以免误伤
+    if probe.connect_ex(("127.0.0.1", 8765)) == 0:
+        probe.close()
         out = subprocess.run(["lsof", "-t", "-nP", "-iTCP:8765", "-sTCP:LISTEN"],
                              capture_output=True, text=True).stdout.split()
         for pid in out:
@@ -66,25 +125,23 @@ def main() -> int:
             if free:
                 break
             time.sleep(0.3)
+    else:
+        probe.close()
 
-    srv = subprocess.Popen(
-        ["python3", "cli.py", "serve", "--port", "8765"],
-        cwd=str(Path(__file__).parent.parent),
-        stdout=open("/tmp/mobility_rehearsal_svc.log", "w"),
-        stderr=subprocess.STDOUT,
-        start_new_session=True,
-        env=os.environ,
-    )
+    srv = subprocess.Popen(["python3", "cli.py", "serve", "--port", "8765"],
+                           cwd=str(Path(__file__).parent.parent),
+                           stdout=open("/tmp/mobility_rehearsal_svc.log", "w"),
+                           stderr=subprocess.STDOUT, start_new_session=True, env=os.environ)
     for _ in range(30):
         try:
-            urllib.request.urlopen(f"{BASE}/freight/health", timeout=1)
-            break
+            urllib_ok = subprocess.run(["curl", "-s", "-o", "/dev/null", "-w", "%{http_code}",
+                                        f"{BASE}/freight/health"],
+                                       capture_output=True, text=True).stdout.strip() == "200"
+            if urllib_ok:
+                break
         except Exception:
-            time.sleep(0.5)
-    else:
-        print("服务启动失败")
-        return 1
-
+            pass
+        time.sleep(0.5)
     try:
         return _run()
     finally:
@@ -92,60 +149,6 @@ def main() -> int:
             os.killpg(os.getpgid(srv.pid), signal.SIGTERM)
         except ProcessLookupError:
             pass
-
-
-def _run() -> int:
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        page = browser.new_page(viewport={"width": 1440, "height": 1000})
-        errors = []
-        page.on("pageerror", lambda e: errors.append(str(e)))
-        page.goto(f"{BASE}/profile/order-ontology", wait_until="domcontentloaded", timeout=30000)
-        page.wait_for_timeout(2500)
-        check("页面加载无 JS 错误", not errors, "; ".join(errors[:2]))
-
-        start = page.locator('[data-demo="start"]')
-        check("讲解模式入口可见", start.count() == 1 and start.is_visible())
-        start.click()
-        page.wait_for_timeout(600)
-
-        for i, (act, label) in enumerate(ACTS):
-            narration = page.locator(".demo-narration")
-            text = narration.inner_text() if narration.count() else ""
-            ok = all(n in text for n in EXPECT[act])
-            check(f"ACT{i+1} {act} 讲解词", ok, text[:100].replace("\n", " "))
-
-            # 执行本幕第一步，断言真实 OUTPUT 且不是错误
-            run = page.locator('[data-comp-action="run"]')
-            if run.count() and run.is_visible():
-                run.click()
-                try:
-                    page.wait_for_selector(".comp-io .comp-io-tag.output", timeout=20000)
-                    page.wait_for_timeout(500)
-                    out = page.locator(".comp-io").last.inner_text()
-                    ok = "这一步真实返回" in out and "执行失败" not in out and "ERROR" not in out
-                    check(f"ACT{i+1} 首步实时执行", ok, out.replace("\n", " ")[:130])
-                except Exception as exc:
-                    check(f"ACT{i+1} 首步实时执行", False, str(exc)[:100])
-            else:
-                check(f"ACT{i+1} 首步实时执行", False, "找不到执行按钮")
-
-            page.screenshot(path=str(OUT / f"rehearsal_act{i+1}_{act}.png"), full_page=False)
-
-            if i < len(ACTS) - 1:
-                nxt = page.locator('[data-demo="next"]')
-                if nxt.count() and nxt.is_visible():
-                    nxt.click()
-                    page.wait_for_timeout(500)
-                else:
-                    check(f"ACT{i+1}→{i+2} 切换", False, "按钮不可见")
-
-        check("全程无 JS 错误", not errors, "; ".join(errors[:3]))
-        browser.close()
-
-    print(f"\nRESULT {len(PASS)} passed / {len(FAIL)} failed")
-    print(f"截图目录: {OUT}")
-    return 0 if not FAIL else 1
 
 
 if __name__ == "__main__":

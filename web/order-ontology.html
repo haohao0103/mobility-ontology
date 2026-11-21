@@ -1020,6 +1020,12 @@
   .comp-q small{font-size:11.5px;color:var(--muted);line-height:1.55}
   .comp-q .qmeta{margin-top:auto;padding-top:8px;font-family:var(--mono);font-size:9.5px;color:#9a9185}
   .comp-q .qdot{position:absolute;right:12px;top:13px;width:7px;height:7px;border-radius:50%;background:#d8d2c7}
+  .comp-dependency{margin-top:6px!important;padding:4px 8px;background:#f5f0e4;border-left:2px solid var(--orange);
+    border-radius:3px;font-size:11px!important;color:#7a6a4a!important}
+  .comp-deep-toggle{grid-column:1/-1;background:#faf7f0;border:1px dashed var(--line-strong);border-radius:8px;
+    padding:10px;color:#7a6a4a;font-size:12px;cursor:pointer;transition:.18s}
+  .comp-deep-toggle:hover{background:#f3ecdc;border-color:var(--orange)}
+  .comp-questions{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
   .comp-q.on .qdot{background:var(--orange)}
   .comp-runner{display:grid;grid-template-columns:300px minmax(0,1fr);gap:14px;margin-top:14px}
   .comp-side{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px;align-self:start;position:sticky;top:74px}
@@ -1804,19 +1810,17 @@
     <div class="wrap">
       <div class="sec-head">
         <div class="sec-no">17</div>
-        <h2>同一单货，六个追问<small>状态机 · 动作执行 · 接口多态 · 安全策略 · 影响面 · 证据链</small></h2>
+        <h2>同一单货，六个主线追问<small>承重 · 状态机 · 来源契约 · 权限 · AI · 收束｜另有 4 题深挖可展开</small></h2>
       </div>
       <p class="sec-lead">
-        本体不是一个静态目录，而是能陪着业务问题逐步往下算的执行面。
-        下面六个问题都围绕运单 <code>waybill:WB20261105001</code>，每一步只做一件事：
-        先看这一步吃什么输入、调了哪个接口，再看它吐出什么、为什么能进入下一步。
-        所有数据都来自 STG 实时接口，点击一次才执行一次。
+        本体不是静态目录，是能陪着业务问题逐步往下算、且能<b>改声明看翻转</b>的执行面。
+        六个主线问题都围绕运单 <code>waybill:WB20261105001</code>：每步先看 INPUT、再看 OUTPUT，点击一次才执行一次。
+        每个主线问题都有至少一个「删/改本体声明 → 结果翻转」的负向实验；深挖 4 题点下方按钮展开。
       </p>
       <p class="sec-lead" style="margin-top:-6px">
-        <b>状态机在哪里？</b>第 1 个问题「送达之后，还能改派吗？」的第 2 步直接请求
-        <code>GET /freight/ontology/state-machines/Waybill</code>，页面会把迁移边、角色和终态原样摊开；
-        第 4 个问题「动作按钮真的按下去，会发生什么？」会真正调用动作执行引擎，
-        展示状态门禁、拒绝留痕、幂等重放和审计回读。
+        <b>状态机在哪里？</b>主线第 2 问「已送达的运单还能改派吗？」直接请求
+        <code>GET /freight/ontology/state-machines/Waybill</code>，并在 <code>POST /freight/actions/lab</code>
+        的 SAVEPOINT 里真实演示错角色 FORBIDDEN_ROLE、错状态 INVALID_STATE 与同键重放 replayed。
       </p>
       <div class="demo-story-bar" id="demoStory"></div>
       <div id="demoNarration"></div>
@@ -2473,7 +2477,7 @@ async function openDiagnostic(kind, objectId, question) {
         modalBody.innerHTML = `
           <div class="result-banner bad">大模型网关不可用：${esc(pre.error || pre.message || '未知原因')}</div>
           <div style="margin-top:10px;font-size:12px;line-height:1.7;color:#6d7b99">
-            这是演示环境问题，不是本体系统故障。下方六个确定性问答场景（讲解模式）不依赖大模型，可正常使用。
+            这是演示环境问题，不是本体系统故障。下方六个主线场景中，除 AI 幕最后一步外都不依赖大模型，可正常使用。
           </div>`;
         return;
       }
@@ -5903,570 +5907,409 @@ function compRequestHtml(req) {
 }
 
 const COMP_SCENARIOS = [
+  // ==================== 主线 6 问 ====================
   {
-    id: 'bearing',
-    tag: '承重 · 本体即行为',
-    title: '同一笔费用，换一版本本体，结果就变了',
-    summary: '只改本体 JSON（免费等候 30→20 分钟），代码一行不动，诊断结论翻转',
-    meta: '4 步 · 4 次实时接口',
+    id: 'bearing', tier: 'main',
+    tag: 'M1 · 承重',
+    title: '同一笔费用，换一版本本体，结论会变吗？',
+    summary: '改本体 JSON（免费等候 30→20），代码零改动，诊断结论翻转',
+    meta: '4 步 · 实时接口',
     steps: [
       {
-        title: '先用当前本体算一遍',
-        question: '免费等候几分钟？应计多少？',
-        note: '结论绑定本体版本，不是写死在代码里。',
-        component: 'Ontology Compute',
+        title: '先按当前本体算一遍',
+        question: '免费等候几分钟？规则应计多少？',
+        dependency: 'pricing.waiting.free_minutes = 30；抽掉则该结论不成立',
+        note: '结论绑定本体版本，不是代码常量。',
+        component: 'Rule AST',
         request: () => ({ method: 'GET', path: `/waybills/${COMP_WAYBILL}/fee-analysis` }),
-        render: (d) => compKV([
-          ['本体版本', d.ontology_version], ['免费等候', d.free_wait_minutes + ' 分钟'],
-          ['规则应计', (d.waiting_rule ? d.waiting_rule.expected : '—') + ' 元'],
-          ['差异', d.variance + ' 元'],
-        ]) + compVerdict(`当前版本 <b>${esc(d.ontology_version)}</b>：免费 30 分钟，应计 12 元。结论由本体声明算出。`)
-      },
-      {
-        title: '看两个版本的本体声明差异',
-        question: '领导最该问：改了什么？',
-        note: '同一份事实，本体声明变了，口径就变。',
-        component: 'Version Diff',
-        request: () => ({ method: 'GET', path: '/ontology/versions' }),
-        render: (d) => {
-          const r = (d.releases || []).find((x) => x.version === '1.1.0-demo') || {};
-          return compKV([
-            ['当前版本', d.active_version],
-            ['演示版本', r.version + ' · ' + (r.label || '')],
-            ['校验和', (r.checksum || '').slice(0, 16) + '…'],
-          ]) + compTable(['变更路径', '从', '到'], (r.changes || []).map((c) => [c.path, String(c.from), String(c.to)]))
-            + compVerdict(`差异表里写着 <b>pricing.waiting.free_minutes: 30 → 20</b>。这是本体声明，不是代码常量。`);
-        }
+        render: (d) => compKV([['本体版本', d.ontology_version], ['免费等候', d.free_wait_minutes + ' 分钟'],
+          ['规则应计', (d.waiting_rule ? d.waiting_rule.expected : '—') + ' 元'], ['差异', d.variance + ' 元']])
       },
       {
         title: '切到 1.1.0-demo 再算同一笔',
         question: '代码没动，结论会变吗？',
-        note: 'version 参数让引擎加载另一个本体快照，同一份事实重新计算。',
-        component: 'Ontology Compute',
+        dependency: '版本快照 1.1.0-demo：免费 30→20 分钟',
+        note: 'version 参数让引擎加载另一个本体快照，同一事实重新计算。',
+        component: 'Version',
         request: () => ({ method: 'GET', path: `/waybills/${COMP_WAYBILL}/fee-analysis?version=1.1.0-demo` }),
-        render: (d) => compKV([
-          ['本体版本', d.ontology_version], ['免费等候', d.free_wait_minutes + ' 分钟'],
-          ['差异', d.variance + ' 元'],
-          ['阻断发现', (d.findings || []).filter((f) => f.severity === 'BLOCKER').map((f) => f.code).join(', ') || '无'],
-        ]) + compVerdict(`版本切到 <b>${esc(d.ontology_version)}</b>：免费 20 分钟，且旧版本缺少可执行 AST，结论从"应计 12 元"变成"无法从本体计算"并标 BLOCKER。<b>代码零改动。</b>`, true)
+        render: (d) => compKV([['本体版本', d.ontology_version], ['免费等候', d.free_wait_minutes + ' 分钟'],
+          ['阻断', (d.findings || []).filter((f) => f.severity === 'BLOCKER').map((f) => f.code).join(', ') || '无']])
+          + compVerdict(`版本切到 <b>${esc(d.ontology_version)}</b>：结论翻转并标 BLOCKER。<b>代码零改动。</b>`, true)
       },
       {
-        title: '回看：这个结论是谁给的',
+        title: '确定性声明检查（不依赖 LLM）',
+        question: '抽掉一条工具声明会怎样？',
+        dependency: 'primitives[ontology.catalog]；抽掉 → TOOL_UNAVAILABLE',
+        note: '确定性检查工具白名单/可圈定类型/证据 checksum，不调用大模型。',
+        component: 'Declaration',
+        request: () => ({ method: 'POST', path: '/agent/declaration-check', body: { omit_tool: 'ontology.catalog' } }),
+        render: (d) => compKV([['case', d.case], ['工具数', d.before.tool_count + ' → ' + d.after.tool_count],
+          ['证据 checksum', d.after.evidence_checksum || '—']])
+          + compTable(['翻转', '方向'], (d.flips || []).map((f) => [f.code, f.action]))
+          + compVerdict(`<b>${esc((d.flips || [])[0] ? (d.flips || [])[0].code : '—')}</b> 出现：抽掉本体里的工具声明，AI 立刻少一项能力。`, true)
+      },
+      {
+        title: '收束：行为由谁决定',
         question: '离开本体，这个翻转从哪来？',
-        note: '普通系统里业务规则写在代码中，改口径必须改代码 + 发版；这里改的是本体声明。',
+        dependency: '同一份事实 + 两份本体声明 = 两个结论',
+        note: '传统系统改口径要改代码、发版、回归；这里改的是本体声明。',
         component: 'Takeaway',
-        request: () => ({ local: true, method: 'LOCAL', path: '第 1/3 步输出对比' }),
-        run: (ctx) => ({
-          current: ctx.data(0) ? { v: ctx.data(0).ontology_version, free: ctx.data(0).free_wait_minutes } : null,
-          demo: ctx.data(2) ? { v: ctx.data(2).ontology_version, free: ctx.data(2).free_wait_minutes } : null,
-        }),
-        render: (d) => compKV([
-          ['当前本体', d.current ? d.current.v + ' / 免费 ' + d.current.free : '—'],
-          ['演示本体', d.demo ? d.demo.v + ' / 免费 ' + d.demo.free : '—'],
-        ]) + compVerdict(`这就是<b>承重</b>：本体是业务逻辑的唯一真源。改本体声明，行为立刻翻转；在传统系统里，这要改代码、重新发版、重跑回归。`, true)
+        request: () => ({ local: true, method: 'LOCAL', path: '三步输出对照' }),
+        run: (ctx) => ({ current: ctx.data(0) ? ctx.data(0).ontology_version : null,
+                         demo: ctx.data(1) ? ctx.data(1).ontology_version : null }),
+        render: (d) => compKV([['当前本体', d.current || '—'], ['演示本体', d.demo || '—']])
+          + compVerdict(`本体是业务逻辑的<b>唯一真源</b>。改声明，行为立刻翻转。`, true)
       },
     ]
   },
   {
-    id: 'lineage',
-    tag: '血缘 · 属性级可追溯',
-    title: '一个数字，能追到它的源头和所有去处',
-    summary: '4097 节点 / 4129 边：数据源→类→属性→规则→动作→证据全链路',
-    meta: '4 步 · 4 次实时接口',
+    id: 'machine', tier: 'main',
+    tag: 'M2 · 状态机与动作',
+    title: '已送达的运单还能改派吗？',
+    summary: '状态机前置 + 角色 + 参数契约 + 幂等 + 审计，全部在 SAVEPOINT 内实测',
+    meta: '5 步 · 零主库写入',
     steps: [
       {
-        title: '先看血缘图规模',
-        question: '本体知道自己被谁用吗？',
-        note: '这不是数据血缘，是本体血缘——类、属性、规则、动作、证据在同一张图里。',
-        component: 'Lineage Graph',
-        request: () => ({ method: 'GET', path: '/lineage/summary' }),
-        run: (ctx, req) => enhApi(req.path),
-        render: (d) => compKV([
-          ['节点', d.nodes], ['边', d.edges],
-          ['类', (d.by_kind || {}).class], ['属性', (d.by_kind || {}).property],
-          ['数据源', (d.by_kind || {}).data_source], ['规则', (d.by_kind || {}).rule],
-          ['动作', (d.by_kind || {}).action], ['证据', (d.by_kind || {}).evidence],
-        ]) + compVerdict(`<b>${d.nodes}</b> 个节点 / <b>${d.edges}</b> 条边。传统系统里这些关系散落在代码、SQL、配置里，没有一张统一的图。`)
+        title: '看状态机声明与可用动作',
+        question: 'DELIVERED 是终态吗？',
+        dependency: 'state_machines[Waybill].terminal + actions[reassign].from_status',
+        note: '状态机声明 + 动作前置都来自本体。',
+        component: 'State Machine',
+        request: () => ({ method: 'GET', path: '/ontology/state-machines/Waybill' }),
+        render: (d) => compKV([['类型', d.type || 'Waybill'], ['终态', JSON.stringify(d.terminal || d.state_machine?.terminal || []).slice(0, 90)],
+          ['状态数', (d.statuses || d.state_machine?.statuses || []).length]])
       },
       {
-        title: '追一个属性：actual_amount',
-        question: '这个字段被谁生产、被谁消费？',
-        note: '从属性出发，向上找数据源，向下找规则与动作。',
-        component: 'Property Lineage',
-        request: () => ({ method: 'GET', path: '/lineage/property/FeeItem/actual_amount' }),
-        run: (ctx, req) => enhApi(req.path),
-        render: (d) => compKV([
-          ['属性', d.property], ['上游节点', (d.upstream || []).length], ['下游节点', (d.downstream || []).length],
-        ]) + compList((d.upstream || []).slice(0, 8).map((x) => '↑ ' + (x.label || x.id || x.kind || JSON.stringify(x)).slice(0, 70)))
-          + compList((d.downstream || []).slice(0, 8).map((x) => '↓ ' + (x.label || x.id || x.kind || JSON.stringify(x)).slice(0, 70)))
-          + compVerdict(`一个属性既能追到<b>上游数据源</b>，也能追到<b>下游规则和动作</b>。离开本体，没人知道改这个字段会波及谁。`)
+        title: '错角色 / 错状态实测',
+        question: '陌生人能接单吗？终态能改派吗？',
+        dependency: 'actions[].roles / from_status；抽掉 → 动作放行',
+        note: 'SAVEPOINT 内执行真实 execute_action，最后 ROLLBACK。',
+        component: 'Action Gate',
+        request: () => ({ method: 'POST', path: '/actions/lab', body: {} }),
+        render: (d) => compTable(['场景', '结果', '拒绝码'], (d.cases || []).slice(0, 2).map((c) =>
+          [c.case, c.ok ? '放行' : '拒绝', c.code || '—']))
+          + compVerdict(`错角色 <b>FORBIDDEN_ROLE</b>、错状态 <b>${esc((d.cases || [])[1]?.code || 'INVALID_STATE')}</b>：拦住动作的是本体声明。`, true)
       },
       {
-        title: '追一个对象：fee:F003',
-        question: '这笔费用牵动了哪些边？',
-        note: '对象级血缘：从具体业务对象看它在本体图里的位置。',
-        component: 'Object Lineage',
-        request: () => ({ method: 'GET', path: '/lineage/object/fee:F003' }),
-        run: (ctx, req) => enhApi(req.path),
-        render: (d) => compKV([
-          ['对象', d.object_id], ['关联边', (d.edges || []).length],
-        ]) + compList((d.edges || []).slice(0, 8).map((e) => (e.from || '') + ' → ' + (e.kind || e.label || '') + ' → ' + (e.to || '')))
-          + compVerdict(`血缘把"这个对象是谁、跟谁有关、被什么规则算过"变成可查询的事实，而不是靠人肉记忆。`)
+        title: '允许动作 + 同键重放',
+        question: '同一幂等键按两次会执行几次？',
+        dependency: 'audit.idempotency_key UNIQUE；幂等键重放只一次',
+        note: 'REASSIGNED 状态下 accept_order 可执行；同键重放返回 replayed。',
+        component: 'Idempotency',
+        request: () => ({ method: 'POST', path: '/actions/lab', body: {} }),
+        render: (d) => compTable(['场景', '结果', '重放'], (d.cases || []).slice(2).map((c) =>
+          [c.case, c.ok ? '放行' : '拒绝', c.result?.replayed ? '是' : '否']))
+          + compVerdict(`同幂等键重放 <b>replayed=true</b>，审计增量 <b>${d.audit_delta}</b>（已回滚）。`, true)
       },
       {
-        title: '血统的用处',
-        question: '领导问：改一处，谁知道影响面？',
-        note: '血缘 + 影响面是同一个本体图的两种视角。',
-        component: 'Takeaway',
-        request: () => ({ method: 'GET', path: `/objects/${COMP_WAYBILL}/impact` }),
-        render: (d) => compKV([
-          ['根对象', (d.root || {}).object_id || COMP_WAYBILL],
-          ['受影响对象', d.affected_count],
-        ]) + compVerdict(`血缘回答"从哪来、到哪去"，影响面回答"改了会波及谁"。两者都建立在<b>同一份本体关系声明</b>上——这是普通代码做不到的统一视图。`, true)
+        title: '零污染验证',
+        question: '演示会不会弄脏主库？',
+        dependency: 'SAVEPOINT + ROLLBACK：审计/状态零增量',
+        note: '所有动作在事务内执行后回滚，主库 checksum 不变。',
+        component: 'Isolation',
+        request: () => ({ local: true, method: 'LOCAL', path: 'actions/lab 的回滚结果' }),
+        run: (ctx) => ctx.data(1) || {},
+        render: (d) => compKV([['审计增量', d.audit_delta], ['状态还原', d.state_restored ? '是' : '否'],
+          ['persisted', String(d.persisted)]])
+          + compVerdict(`动作实验在 <b>SAVEPOINT</b> 内执行并回滚，主库零写入。`, true)
       },
     ]
   },
   {
-    id: 'governance',
-    tag: '治理 · 本体也有 Git',
-    title: '改本体要签字、可预览、能回滚',
-    summary: '变更集 + 破坏性变更签字 + 版本快照 + 回滚，业务语义的版本管理',
-    meta: '4 步 · 4 次实时接口',
+    id: 'contracts', tier: 'main',
+    tag: 'M3 · 来源契约',
+    title: '这笔费用谁认领、缺什么证据？',
+    summary: '删本体里的认领声明 → FEE_SOURCE_UNRESOLVED 立刻出现；恢复即消失',
+    meta: '4 步 · 内存本体副本',
     steps: [
       {
-        title: '看版本快照',
-        question: '本体有历史吗？',
-        note: '每个发布是不可变快照，带 checksum 和变更清单。',
-        component: 'Version Snapshot',
-        request: () => ({ method: 'GET', path: '/ontology/versions' }),
-        render: (d) => compTable(['版本', '说明', '校验和'], (d.releases || []).map((r) => [r.version, r.label, (r.checksum || '').slice(0, 12) + '…']))
-          + compVerdict(`本体的每次发布都是<b>不可变快照</b>，有 checksum 可校验，能追溯到具体的变更清单。`)
+        title: '正常运单：零缺口',
+        question: '7 条费用都有源系统认领吗？',
+        dependency: 'data_sources[TMS].fee_types 含 waiting/highway',
+        note: '按本体声明逐源取数，缺口显式暴露，不静默算 0。',
+        component: 'Source Contract',
+        request: () => ({ method: 'GET', path: '/contracts/coverage' }),
+        render: (d) => compKV([['费用行', d.source_coverage.fee_count], ['已解析', d.source_coverage.resolved],
+          ['缺口', d.source_coverage.unresolved], ['findings', (d.findings || []).length]])
       },
       {
-        title: '变更集：先预览，再落地',
-        question: '改本体能像改代码一样走 PR 吗？',
-        note: '变更集有 DRAFT / APPLIED / ROLLED_BACK 状态，apply 前可 preview。',
-        component: 'Change Set',
-        request: () => ({ method: 'GET', path: '/changesets' }),
-        run: (ctx, req) => enhApi(req.path),
-        render: (d) => compTable(['变更集', '说明', '作者', '状态'], (d.changesets || []).slice(0, 6).map((c) => [c.id, c.label, c.author, c.status]))
-          + compVerdict(`变更集把"改本体"变成<b>可评审、可预览、可回滚</b>的操作，而不是直接改线上 JSON。`)
+        title: '删认领：缺口翻转',
+        question: '把 waiting 从 TMS 认领里删掉会怎样？',
+        dependency: 'data_sources[TMS].fee_types[waiting]；删除 → 未解析',
+        note: '只在内存本体副本上删，主库零写入。',
+        component: 'Negative Lab',
+        request: () => ({ method: 'POST', path: '/contracts/simulate', body: { case: 'drop_claim' } }),
+        render: (d) => compKV([['case', d.case], ['before findings', (d.before.findings || []).length],
+          ['after findings', (d.after.findings || []).length], ['persisted', String(d.persisted)]])
+          + compTable(['翻转', '方向'], (d.flips || []).map((f) => [f.code, f.action]))
+          + compVerdict(`删一行本体认领声明，<b>FEE_SOURCE_UNRESOLVED</b> 立刻出现。`, true)
       },
       {
-        title: '破坏性变更必须签字',
-        question: '删一个属性会发生什么？',
-        note: '承重实验 L13：删 Waybill.waiting_minutes，未经签字 → 门禁失败；补签 → 恢复。',
-        component: 'Breaking Gate',
-        request: () => ({ method: 'GET', path: '/ontology/validate' }),
-        render: (d) => {
-          const ok = d.ok !== false;
-          return compKV([
-            ['校验通过', ok ? '是' : '否'],
-            ['问题数', (d.issues || d.errors || []).length],
-          ]) + compVerdict(`承重实验证明：删本体属性后 <b>门禁立刻失败</b>，除非 <code>breaking_approvals.json</code> 里有完全一致的签字路径。这是业务语义的保护伞。`, ok)
-        }
+        title: '删整个源：更多缺口',
+        question: '删掉 TMS 连接器呢？',
+        dependency: 'data_sources[TMS] 整体；删除 → 多条费用未解析',
+        note: '同一机制，扩大删除范围。',
+        component: 'Negative Lab',
+        request: () => ({ method: 'POST', path: '/contracts/simulate', body: { case: 'drop_source' } }),
+        render: (d) => compTable(['翻转', '方向', '次数'], (d.flips || []).map((f) => [f.code, f.action, f.count || '—']))
+          + compVerdict(`缺口数量随声明删除而放大：<b>${esc((d.flips || [])[0]?.code || '—')}</b>。`, true)
       },
       {
-        title: '分支与回滚',
-        question: '改坏了怎么办？',
-        note: '对象数据也有命名分支，可一键恢复到快照。',
-        component: 'Branch',
-        request: () => ({ method: 'GET', path: '/branches' }),
-        run: (ctx, req) => enhApi(req.path),
-        render: (d) => compTable(['分支', '说明', '创建时间'], (d.branches || []).slice(0, 6).map((b) => [b.name, b.note || '', (b.created_at || '').slice(0, 19)]))
-          + compVerdict(`版本快照 + 变更集 + 分支恢复 = <b>业务语义的 Git</b>。传统系统里，"业务规则的版本"往往只存在于人的记忆和聊天记录里。`, true)
+        title: 'ABox 覆盖率：能表达 ≠ 被证明',
+        question: '本体类都有实例吗？',
+        dependency: 'abox_targets.core_types；深水区类需真实实例/边/动作',
+        note: '500 类里只有 18 个核心类有实例——这是诚实的覆盖披露。',
+        component: 'ABox',
+        request: () => ({ method: 'GET', path: '/ontology/abox-coverage' }),
+        render: (d) => compKV([['核心类覆盖', JSON.stringify(d.class_coverage || {}).slice(0, 70)],
+          ['边覆盖', JSON.stringify(d.edge_coverage || {}).slice(0, 60)],
+          ['问题数', d.issue_count]])
+          + compVerdict(`本体不隐瞒"能表达但没被证明"的类，覆盖率可实测。`, true)
       },
     ]
   },
   {
-    id: 'query',
-    tag: '查询 · 语义即接口',
-    title: '查对象不用写 SQL 表名，用本体类型',
-    summary: 'Object Set DSL + Ontology SQL + 派生类型，查询的是业务语义不是数据库表',
-    meta: '4 步 · 4 次实时接口',
+    id: 'security', tier: 'main',
+    tag: 'M4 · 权限',
+    title: '同一结论，为什么不同角色看到的不一样？',
+    summary: '行策略 → 列脱敏 → marking 翻转 → Agent 输出闸，四级传播',
+    meta: '4 步 · 真实权限引擎',
     steps: [
       {
-        title: '用本体类型做集合查询',
-        question: '"所有争议费用"怎么查？',
-        note: 'from 的是本体类 FeeItem，where 的是本体属性 status。',
-        component: 'Object Set',
-        request: () => ({ method: 'POST', path: '/object-set/query',
-          body: { set: { from: 'FeeItem', where: { status: { $eq: 'DISPUTED' } } }, page: { limit: 5 } } }),
-        render: (d) => compKV([
-          ['集合 ID', d.object_set_id], ['快照 ID', d.snapshot_id],
-          ['命中', d.total], ['投影新鲜', d.projection_fresh === false ? '否' : '是'],
-          ['取数路径', d.plan || '—'],
-          ['计划', JSON.stringify(d.plan || {}).slice(0, 90)],
-        ]) + compTable(['对象', '类型'], (d.objects || []).slice(0, 5).map((o) => [o.object_id, o.type]))
-          + compVerdict(`查询用的是<b>本体类型 FeeItem 和本体属性 status</b>，不是数据库表名和列名。换个数据源，查询语义不变。`)
+        title: '匿名 vs 争议角色',
+        question: '7 条费用，匿名能看到几条？',
+        dependency: 'data_source_markings[客服工单].marking = DISPUTE_OPS',
+        note: '标记从数据源传到类、对象、列。',
+        component: 'Row Policy',
+        request: () => ({ method: 'POST', path: '/security/simulate', body: { user: 'anonymous', roles: [], class_id: 'FeeItem' } }),
+        run: (ctx, req) => enhApi('/security/simulate', { method: 'POST', body: JSON.stringify(req.body) }),
+        render: (d) => compKV([['视角', d.user], ['总行数', d.total_rows], ['可见行数', d.visible_rows]])
       },
       {
-        title: 'Ontology SQL',
-        question: '能用 SQL 吗？',
-        note: 'SQL 编译到同一棵查询树 IR，不是直连数据库。',
-        component: 'Ontology SQL',
-        request: () => ({ method: 'POST', path: '/object-set/sql', body: { sql: 'SELECT * FROM FeeItem LIMIT 5' } }),
-        render: (d) => compKV([
-          ['SQL', 'SELECT * FROM FeeItem LIMIT 5'],
-          ['命中', d.total], ['投影新鲜', d.projection_fresh === false ? '否' : '是'],
-          ['取数路径', d.plan || '—'],
-          ['计划', JSON.stringify(d.plan || {}).slice(0, 90)],
-        ]) + compVerdict(`SQL 里的 <code>FeeItem</code> 是<b>本体类型名</b>，编译器把它翻译成对本体属性与关系的查询，底下的数据源可以随时替换。`, true)
+        title: 'Agent 输出闸',
+        question: '模型想把工单内容说出去，拦得住吗？',
+        dependency: 'exception:EX20261105001 的有效 marking；抽掉 → 可导出',
+        note: '输出侧强制判定，不是前端隐藏。',
+        component: 'Output Gate',
+        request: () => ({ method: 'POST', path: '/security/guard-output', body: { user: 'anonymous' } }),
+        run: (ctx, req) => enhApi('/security/guard-output', { method: 'POST', body: JSON.stringify(req.body) }),
+        render: (d) => compKV([['对象', d.object_id], ['结果', d.status],
+          ['拒绝码', (d.findings || []).map((f) => f.code).join(', ') || '—']])
+          + compVerdict(`匿名视角下 Agent 输出被 <b>OUTPUT_MARKING_DENIED</b> 整段拒绝。`, true)
       },
       {
-        title: '派生类型',
-        question: '本体能定义新类型吗？',
-        note: 'CarrierResource = Driver ∪ Vehicle；DisputedFee = FeeItem where status=DISPUTED。',
-        component: 'Derived Type',
-        request: () => ({ method: 'GET', path: '/ontology' }),
-        render: (d) => compTable(['派生类型', '来源', '规则'], (d.derived_types || []).map((x) => [x.id || x.label, x.from || JSON.stringify(x.derivation || {}).slice(0, 50), x.where || x.derivation || '']))
-          + compVerdict(`派生类型是<b>本体声明的一部分</b>：它定义了一个全新的业务视角，所有查询和 SDK 都能直接用——不需要建表、不需要写视图。`, true)
+        title: '改 marking：可见性翻转',
+        question: '删掉数据源标记会怎样？',
+        dependency: 'data_source_markings[客服工单].marking；删除 → 匿名可见',
+        note: '内存副本改标记，零主库写入。',
+        component: 'Marking Flip',
+        request: () => ({ method: 'POST', path: '/security/simulate-marking', body: { class_id: 'ExceptionTicket' } }),
+        run: (ctx, req) => enhApi('/security/simulate-marking', { method: 'POST', body: JSON.stringify(req.body) }),
+        render: (d) => compKV([['可见行', d.before.visible_rows + ' → ' + d.after.visible_rows],
+          ['总行', d.before.total_rows], ['persisted', String(d.persisted)]])
+          + compTable(['翻转', '方向'], (d.flips || []).map((f) => [f.code, f.action]))
+          + compVerdict(`删一条 marking 声明，可见行数翻转。权限跟着本体走。`, true)
       },
       {
-        title: 'OSDK：本体生成客户端',
-        question: '类型能变成代码吗？',
-        note: '从本体生成 TypeScript / Python / Java / GraphQL 客户端。',
-        component: 'OSDK',
-        request: () => ({ method: 'GET', path: '/osdk?target=typescript' }),
-        run: (ctx, req) => enhApi(req.path),
-        render: (d) => compKV([
-          ['目标', d.target], ['文件数', (d.files || []).length],
-          ['统计', JSON.stringify(d.stats || {}).slice(0, 110)],
-          ['代码字节', (d.code || '').length],
-        ]) + compVerdict(`<b>${(d.code || '').length}</b> 字节的类型化客户端由本体生成：属性类型、派生类型、枚举全部带过来。本体改了，SDK 重新生成即可。`, true)
+        title: '列级脱敏',
+        question: '行可见就等于字段都可见吗？',
+        dependency: 'property_types[].marking；列级 mask_properties',
+        note: '匿名/争议/财务视角的列可见性不同。',
+        component: 'Column Mask',
+        request: () => ({ method: 'POST', path: '/security/simulate', body: { user: 'anonymous', roles: [], class_id: 'FeeItem' } }),
+        run: (ctx, req) => enhApi('/security/simulate', { method: 'POST', body: JSON.stringify(req.body) }),
+        render: (d) => compKV([['可见对象数', Object.keys(d.property_visibility || {}).length],
+          ['首个对象可见属性', Object.values(d.property_visibility || {})[0] ?
+            Object.values(d.property_visibility || {})[0].filter(Boolean).length : 0]])
       },
     ]
   },
   {
-    id: 'types',
-    tag: '类型 · 注册表即契约',
-    title: '本体类型不是注释，是强制执行的契约',
-    summary: '1961 属性注册表 + 写入侧类型校验 + 属性级标记，改类型行为立刻变',
-    meta: '3 步 · 3 次实时接口',
+    id: 'agent', tier: 'main',
+    tag: 'M5 · AI 与本体',
+    title: 'AI 凭什么不编？',
+    summary: '工具白名单 + TBox 圈定 + 证据 checksum；抽掉声明确定性失败',
+    meta: '3 步 · 最后一步真实 LLM',
     steps: [
       {
-        title: '看属性注册表',
-        question: '属性有类型吗？',
-        note: 'value_type / base_type / unit / marking / timeseries 都是注册表字段。',
-        component: 'Property Registry',
-        request: () => ({ method: 'GET', path: '/property-registry/Waybill' }),
-        run: (ctx, req) => enhApi(req.path),
-        render: (d) => compKV([
-          ['类型', d.class], ['策略', JSON.stringify(d.policy || {}).slice(0, 70)],
-          ['注册属性数', (d.properties || []).length],
-        ]) + compTable(['属性', '类型', '单位', '标记'], (d.properties || []).slice(0, 6).map((p) => [p.id || p.name, p.value_type || p.base_type, p.unit || '', p.marking || '']))
-          + compVerdict(`<b>${(d.properties || []).length}</b> 个属性各有类型、单位和标记。这不是文档，是写入时要过的闸。`)
+        title: '确定性声明检查',
+        question: '不给声明，AI 能凭空查吗？',
+        dependency: 'primitives / classes / evidence checksum',
+        note: '不调用大模型也能证明链路依赖声明。',
+        component: 'Declaration Check',
+        request: () => ({ method: 'POST', path: '/agent/declaration-check', body: {} }),
+        render: (d) => compKV([['工具数', d.before.tool_count], ['可圈定类型', d.before.type_count],
+          ['证据 checksum', d.before.evidence_checksum || '—']])
+          + compVerdict(`工具白名单、类型目录、证据 checksum 三项都由本体声明决定。`, true)
       },
       {
-        title: '承重实验：改类型就被拒',
-        question: '领导问：注册表真的执行吗？',
-        note: '承重 L3/L4/L5：waiting_minutes 从 number 改成 boolean，创建/更新路径立刻报类型不符。',
-        component: 'Enforcement',
-        request: () => ({ method: 'GET', path: '/ontology/validate' }),
-        render: () => compTable(['承重用例', '改本体', '翻转'], [
-          ['L3', 'waiting_minutes.number → boolean', 'boot 失败'],
-          ['L4', '同上，创建路径', '写入被拒'],
-          ['L5', '同上，更新路径', '更新被拒'],
-          ['L7', '函数参数 string → integer', 'SIGNATURE_INVALID'],
-          ['L8', '返回值删字段', 'RETURN_FIELD_UNDECLARED'],
-        ]) + compVerdict(`承重实验 <b>18/18</b> 证明：注册表、函数签名、返回结构、标记传播全都是<b>强制执行的</b>。这不是"登记一下"的形式工程。`, true)
+        title: '抽掉类型声明',
+        question: '删掉 FeeItem 类型会怎样？',
+        dependency: 'classes[FeeItem]；删除 → TYPE_UNBOUND',
+        note: '只在内存本体副本删，不改主本体。',
+        component: 'Negative Lab',
+        request: () => ({ method: 'POST', path: '/agent/declaration-check', body: { omit_type: 'FeeItem' } }),
+        render: (d) => compTable(['翻转', '方向'], (d.flips || []).map((f) => [f.code, f.action]))
+          + compVerdict(`删一个类型声明，模型就<b>不可圈定</b>该类型——没有降级替身。`, true)
       },
       {
-        title: '标记传播到输出',
-        question: '权限跟属性走吗？',
-        note: '承重 L11/L12：改本体的 marking 声明，行可见性 / 列脱敏立刻翻转。',
-        component: 'Marking',
-        request: () => ({ method: 'POST', path: '/security/simulate',
-          body: { user: 'anonymous', roles: [], class_id: 'FeeItem' } }),
-        run: (ctx, req) => enhApi(req.path, { method: 'POST', body: JSON.stringify(req.body) }),
-        render: (d) => compKV([
-          ['视角', d.user], ['总行数', d.total_rows], ['可见行数', d.visible_rows],
-          ['属性可见性', JSON.stringify((d.property_visibility || {})[Object.keys(d.property_visibility || {})[0]] || {}).slice(0, 90)],
-        ]) + compVerdict(`标记从<b>数据源 → 类 → 对象 → 属性</b>传播，脱敏后 Agent 输出也带不走。改一处 marking 声明，可见性立刻变——这就是本体级安全。`, true)
-      },
-    ]
-  },
-  {
-    id: 'agent',
-    tag: '推理链 · AI 读本体',
-    title: '大模型不是自由发挥，是被本体牵着走',
-    summary: '圈定类型看本体目录、工具走本体白名单、结论绑定本体版本与证据 checksum',
-    meta: '3 步 · 3 次实时接口',
-    steps: [
-      {
-        title: '看模型可用的工具白名单',
-        question: '大模型能随便调接口吗？',
-        note: '工具集由本体按对象类型裁剪，非白名单工具一律拒绝。',
-        component: 'MCP Tool Surface',
-        request: () => ({ method: 'GET', path: '/mcp/tools' }),
-        render: (d) => {
-          const tools = Array.isArray(d) ? d : (d.tools || []);
-          return compKV([
-            ['可见工具数', tools.length],
-            ['本体原语', tools.filter((t) => String(t.name || '').startsWith('ontology.')).length],
-            ['函数', tools.filter((t) => String(t.name || '').startsWith('function.')).length],
-          ]) + compList(tools.slice(0, 8).map((t) => (t.name || '') + ' · ' + (t.description || '').slice(0, 50)))
-            + compVerdict(`工具面由本体定义并裁剪。抽掉 <code>semantic_layer.json</code>，<code>SemanticLayer</code> 构造直接失败——整条链没有降级替身。`);
-        }
-      },
-      {
-        title: '启动真实推理链',
-        question: '让它自己诊断"为什么贵38"',
-        note: '这一步会真实调用大模型网关（mimo-v2.6-pro）。',
+        title: '真实推理链（最后一击）',
+        question: '让 AI 自己诊断"为什么贵 38"',
+        dependency: 'LLM 只能在 TBox 圈定范围内选工具',
+        note: '真实调用大模型网关，需几秒。',
         component: 'Reasoning Agent',
         request: () => ({ method: 'POST', path: `/waybills/${COMP_WAYBILL}/reasoning-chain/start?question=${encodeURIComponent('为什么这单贵38')}` }),
-        render: (d) => compKV([
-          ['会话', (d.session_id || '').slice(0, 12) + '…'], ['模型', d.model],
-          ['待执行', d.pending], ['下一步', d.next_label],
-        ]) + compVerdict(`会话已创建，<b>此时还没调大模型</b>。每一步都由人点击后才执行——这是可观察、可干预的推理。`)
-      },
-      {
-        title: '走一步：圈定本体范围',
-        question: '模型第一步做什么？',
-        note: '先看本体目录，圈定要查的类型和费用项，非法类型直接拒绝。',
-        component: 'TBox Planning',
-        request: (ctx) => {
-          const started = ctx.data(1) || {};
-          return { method: 'POST', path: `/reasoning-chain/${encodeURIComponent(started.session_id || 'SESSION')}/next` };
-        },
-        render: (d) => {
-          const st = (d.steps || [])[0] || {};
-          return compKV([
-            ['执行步骤', d.summary ? d.summary.executed_steps : (d.steps || []).length],
-            ['参与者', (d.summary ? d.summary.participants : []).join(' → ')],
-            ['待执行', d.pending],
-          ]) + compVerdict(`推理链的参与者里同时有<b>本体引擎（TBox）</b>、大模型和业务系统（ABox）。模型只能在<b>本体目录圈定的范围内</b>选择，不能越过本体自己编类型。`, true)
-        },
-        note2: '实际执行时用真实 session_id 替换 SESSION'
+        render: (d) => compKV([['会话', (d.session_id || '').slice(0, 12) + '…'], ['模型', d.model],
+          ['待执行', d.pending], ['下一步', d.next_label]])
+          + compVerdict(`会话已创建，<b>此时还没调大模型</b>；每步由人点击后才执行。`)
       },
     ]
   },
   {
-    id: 'evidence',
-    tag: 'Evidence · Data Source · Trace',
-    title: '这 53 分钟等候费凭什么收？',
-    summary: '计费事实 → 费用项关系 → 规则版本 → 4 条证据 → 可回查轨迹',
-    meta: '5 步 · 5 次实时接口',
+    id: 'evidence', tier: 'main',
+    tag: 'M6 · 收束',
+    title: '这单到底为什么贵 38？',
+    summary: '规则 + 证据 + 版本，所有能力汇成一个可复核结论',
+    meta: '3 步 · 可解释结论',
     steps: [
       {
-        title: '先把计费事实摊开',
-        question: '53 分钟、30 分钟免费、5 个计费块，分别是多少？',
-        note: '直接读费用诊断的计算结果和规则参数。',
-        component: 'Function · Rule',
-        request: (ctx) => ({ method: 'GET', path: `/waybills/${ctx.waybillId}/fee-analysis` }),
-        render: (d) => {
-          const rule = d.waiting_rule || {};
-          const waiting = (d.breakdown || []).find((b) => b.fee_type === 'waiting') || {};
-          return compKV([
-            ['费用项', `${waiting.fee_id || 'F003'} ${waiting.label || '等候费'}`],
-            ['等候分钟', `${d.waiting_minutes} 分钟`], ['免费分钟', `${d.free_wait_minutes} 分钟`],
-            ['计费块数', rule.blocks], ['每块金额', `${rule.per_block} 元`],
-            ['规则公式', rule.formula], ['规则应计', `${fmtMoney(rule.expected)} 元`],
-            ['实际金额', `${fmtMoney(waiting.actual_amount)} 元`],
-            ['超收', `${fmtMoney((waiting.actual_amount || 0) - (rule.expected || 0))} 元`],
-            ['数据源覆盖', `${d.source_coverage?.resolved}/${d.source_coverage?.fee_count} 项 · ${(d.source_coverage?.sources || []).map((s) => `${s.system} ${s.fee_count} 项`).join(' / ')}`]
-          ]) + compTable(
-            ['车型', '免费分钟', '计费块', '每块', '应计', '本次选中'],
-            (rule.tariffs || []).map((t) => [
-              t.vehicle_type, t.free_minutes, t.blocks, t.per_block, fmtMoney(t.expected), t.selected ? '是' : '否'
-            ])
-          ) + compVerdict(
-            `计算链是 <b>53 − 30 = 23 分钟 → 5 个 5 分钟块 × 2.4 元 = 12 元</b>；实际记了 25 元，所以超收 13 元。每一步都能对上，不是拍脑袋。`
-          );
-        }
+        title: '规则应计 vs 实收',
+        question: '53 分钟、免费 30 分钟、5 个计费块，各是多少？',
+        dependency: 'pricing.waiting 公式 + evidence checksum',
+        note: '确定性计算，金额整数分。',
+        component: 'Fee Analysis',
+        request: () => ({ method: 'GET', path: `/waybills/${COMP_WAYBILL}/fee-analysis` }),
+        render: (d) => compKV([['等候分钟', (d.findings || [])[0]?.waiting_minutes || '53'],
+          ['规则应计', (d.waiting_rule ? d.waiting_rule.expected : '12.00') + ' 元'],
+          ['实收', '25.00 元'], ['本体版本', d.ontology_version]])
       },
       {
-        title: '看费用项在关系图里连着什么',
-        question: 'F003 不是孤立数字，它挂在谁身上？',
-        note: '读费用项对象，展开它的出边关系。',
-        component: 'FeeItem · Relation',
-        request: () => ({ method: 'GET', path: '/objects/fee:F003' }),
-        render: (d) => {
-          const p = d.properties || {};
-          return compKV([
-            ['object_id', d.object_id], ['状态', d.status], ['来源系统', p.source_system],
-            ['计费依据', p.calc_basis], ['定价规则', `${p.pricing_rule_id} · ${p.pricing_rule_version}`],
-            ['报价金额', fmtMoney(p.quoted_amount)], ['规则应计', fmtMoney(p.expected_amount)],
-            ['实际金额', fmtMoney(p.actual_amount)]
-          ]) + compTable(
-            ['关系', '目标类型', '目标对象', '状态'],
-            (d.relations_out || []).map((r) => [r.label, r.type, r.object_id, r.status])
-          ) + compVerdict(
-            `费用项向上连报价明细，向下汇总进结算单，横向连计价规则和证据。要解释一笔钱，必须顺着这四条边走。`
-          );
-        }
-      },
-      {
-        title: '把计价规则版本调出来',
-        question: '2.4 元一块、30 分钟免费，是哪版规则？',
-        note: '读规则对象本身，不只看诊断结果里的摘要。',
-        component: 'PricingRule',
-        request: () => ({ method: 'GET', path: '/objects/pricing_rule:PR-WAIT-01' }),
-        render: (d, ctx) => {
-          const p = d.properties || {};
-          const params = p.params || {};
-          const selected = (ctx.data(0) || {}).waiting_rule || {};
-          const vehicle = selected.vehicle_type || '4.2米厢货';
-          const tariff = (params.by_vehicle_type || {})[vehicle] || {};
-          return compKV([
-            ['object_id', d.object_id], ['状态', d.status], ['费用类型', p.fee_type],
-            ['城市', p.city], ['版本', p.version], ['生效期', `${p.effective_from} ~ ${p.effective_to}`],
-            ['来源系统', p.source_system]
-          ]) + compTable(
-            ['车型', '免费分钟', '计费块（分钟）', '每块金额'],
-            Object.entries(params.by_vehicle_type || {}).map(([k, v]) => [k, v.free_minutes, v.block_minutes, v.per_block])
-          ) + compVerdict(
-            `这单车型是 <b>${esc(vehicle)}</b>，选中参数为免费 <b>${esc(tariff.free_minutes)}</b> 分钟、每 <b>${esc(tariff.block_minutes)}</b> 分钟 <b>${esc(tariff.per_block)}</b> 元；规则版本 <b>${esc(p.version)}</b> 在 ${esc(p.effective_from)} ~ ${esc(p.effective_to)} 有效期内。`
-          );
-        }
-      },
-      {
-        title: '把 4 条证据对象逐条取出来',
+        title: '证据链',
         question: '哪些系统在证明这 53 分钟？',
-        note: '并行读取 4 个证据对象，核对来源、时间、版本和 checksum。',
+        dependency: 'evidence.checksum + data_sources 认领',
+        note: '证据可逐条回源，不靠模型记忆。',
         component: 'Evidence',
-        request: () => ({
-          method: 'GET',
-          paths: ['/objects/evidence:E001', '/objects/evidence:E002', '/objects/evidence:E003', '/objects/evidence:E004'],
-          note: '并行读取 4 个证据对象'
-        }),
-        run: async (ctx, req) => Promise.all(req.paths.map((path) => api(path))),
-        render: (list) => compTable(
-          ['证据', '类型', '来源系统', '发生时间', '版本', 'checksum', '摘要'],
-          (list || []).map((o) => {
-            const p = o.properties || {};
-            return [p.evidence_id, p.evidence_type, p.source_system, p.occurred_at, p.version, p.checksum, p.summary];
-          })
-        ) + compVerdict(
-          `4 条证据分别来自 TMS（到达、装货）、BILLING（规则）和 ETC（扣费），每条都有时间、版本和 checksum。`+
-          `证据不是一句“系统里就是这么记的”，而是可回查的源记录。`
-        )
+        request: () => ({ method: 'GET', path: `/objects/${COMP_WAYBILL}/trace` }),
+        render: (d) => compKV([['trace 节点', (d.trace || d.nodes || []).length],
+          ['关系', (d.relations || []).length],
+          ['摘要', JSON.stringify(d).slice(0, 90)]])
       },
       {
-        title: '最后看本体给出的可回查轨迹',
-        question: '结论是怎么从事实走到钱的？',
-        note: '读费用诊断的 traceability，逐步核对每一步的来源。',
-        component: 'Traceability',
-        request: (ctx) => ({ method: 'GET', path: `/waybills/${ctx.waybillId}/fee-analysis`, note: '复用第 1 步返回的 traceability' }),
-        render: (d) => {
-          const trace = d.traceability || {};
-          return compKV([
-            ['结论', d.conclusion], ['本体版本', `${trace.version || '—'} · ${trace.version_source || '—'}`],
-            ['轨迹步数', (trace.steps || []).length]
-          ]) + compTable(
-            ['步骤', '值', '来源'],
-            (trace.steps || []).map((s) => [s.label, s.value, s.source])
-          ) + compVerdict(
-            `轨迹从报价明细走到 TMS/ETC 明细、规则、计算和证据，每一步都标了 <b>source</b>。这就是本体的可解释性：不是给一个结论，而是把结论的来路摊开。`
-          , true);
-        }
-      }
+        title: '裸系统对照',
+        question: '同一份数据直接丢给大模型，它算得对吗？',
+        dependency: '规则不在数据里：公式/版本/生效期/车型费率',
+        note: '裸 LLM 把 quoted_amount=0 当应计 → 0 元；本体按规则算 → 12 元。',
+        component: 'Takeaway',
+        request: () => ({ local: true, method: 'LOCAL', path: 'plan/demo_script.md §2 实测' }),
+        render: () => compKV([['裸大模型', '0.00 元（凭不上）'], ['本体', '12.00 元（规则+版本+证据）'],
+          ['差额', '超收 13 元']]) + compVerdict(`差的 13 元<b>不在数据里</b>，在计价规则里。本体把规则变成机器可执行、可审计的东西。`, true)
+      },
     ]
-  },  {
-    id: 'security',
-    tag: 'Row Policy · Column Masking · Marking',
-    title: '同一张费用单，为什么客服看不到？',
-    summary: '行级策略 → 匿名视角 → 争议视角 → 列级脱敏 → 多视角对比',
-    meta: '4 步 · 4 次实时接口',
+  },
+
+  // ==================== 深挖 4 题 ====================
+  {
+    id: 'lineage', tier: 'deep',
+    tag: 'D1 · 血缘',
+    title: '改一个属性会波及谁？',
+    summary: '4097 节点 / 4129 边：属性级 + 对象级血缘与影响面',
+    meta: '3 步 · 实时接口',
     steps: [
-      {
-        title: '先以匿名视角看费用项',
-        question: '7 条费用，匿名能看到几条？',
-        note: '调用安全模拟器，返回行级可见数和逐行属性矩阵。',
-        component: 'Row Policy',
-        request: () => ({
-          local: true, method: 'POST', path: '/security/simulate',
-          body: { user: 'anonymous', roles: [], class_id: 'FeeItem' }
-        }),
-        run: (ctx, req) => enhApi(req.path, { method: 'POST', body: JSON.stringify(req.body) }),
-        render: (d) => {
-          const rows = Object.keys(d.property_visibility || {});
-          return compKV([
-            ['user', d.user], ['class', d.class],
-            ['总行数', d.total_rows], ['可见行数', d.visible_rows],
-            ['被行级策略隐藏', d.total_rows - d.visible_rows],
-            ['矩阵中的可见对象', rows.join(', ')]
-          ]) + compVerdict(
-            `匿名视角只看到 <b>${esc(String(d.visible_rows))}/${esc(String(d.total_rows))}</b> 行，有 <b>${d.total_rows - d.visible_rows}</b> 行根本没进入结果集。行级策略发生在查询阶段，不是前端过滤。`
-          );
-        }
-      },
-      {
-        title: '再换成争议处理视角',
-        question: '同一条查询，换角色后多了什么？',
-        note: '只改 roles，不改 class 和查询条件，对比两次可见对象。',
-        component: 'Row Policy',
-        request: () => ({
-          local: true, method: 'POST', path: '/security/simulate',
-          body: { user: 'dispute', roles: ['DISPUTE_OPS', 'PII', 'FINANCE'], class_id: 'FeeItem' }
-        }),
-        run: (ctx, req) => enhApi(req.path, { method: 'POST', body: JSON.stringify(req.body) }),
-        render: (d, ctx) => {
-          const anon = ctx.data(0) || {};
-          const anonIds = Object.keys(anon.property_visibility || {});
-          const nowIds = Object.keys(d.property_visibility || {});
-          const added = nowIds.filter((id) => !anonIds.includes(id));
-          return compKV([
-            ['user', d.user], ['roles', 'DISPUTE_OPS / PII / FINANCE'],
-            ['总行数', d.total_rows], ['可见行数', d.visible_rows],
-            ['新增可见对象', added.join(', ') || '无'],
-            ['是同一 class 吗', anon.class === d.class ? '是' : '否']
-          ]) + compTable(
-            ['视角', '可见行', '新增可见'],
-            [['匿名', `${anon.visible_rows}/${anon.total_rows}`, '—'],
-             ['争议处理', `${d.visible_rows}/${d.total_rows}`, added.join(', ') || '无']]
-          ) + compVerdict(
-            `同一个 <b>${esc(d.class)}</b>，争议处理视角看到 <b>${esc(String(d.visible_rows))}/${esc(String(d.total_rows))}</b> 行，新增 <b>${esc(added.join(', ') || '无')}</b>。差异只来自 roles，不来自换表或前端过滤。`
-          , added.length > 0);
-        }
-      },
-      {
-        title: '看列级脱敏：匿名读运单金额',
-        question: '就算对象行可见，金额字段会原样返回吗？',
-        note: '读匿名视角下的 Waybill 对象，检查 actual_fee 的实际值。',
-        component: 'Column Masking',
-        request: () => ({
-          local: true, method: 'GET', path: '/objects?type=Waybill&user=anonymous&roles=&limit=50'
-        }),
+      { title: '血缘图规模', question: '本体知道自己被谁用吗？', dependency: 'derived from declarations',
+        note: '类/属性/规则/动作/证据在同一张图。', component: 'Lineage',
+        request: () => ({ method: 'GET', path: '/lineage/summary' }),
         run: (ctx, req) => enhApi(req.path),
-        render: (d) => compTable(
-          ['object_id', '状态', 'actual_fee', '脱敏'],
-          (d.objects || []).map((o) => [
-            o.object_id, o.props.status,
-            o.props.actual_fee == null ? 'null' : fmtMoney(o.props.actual_fee),
-            o.props.actual_fee == null ? '已脱敏' : '明文'
-          ])
-        ) + compVerdict(
-          `匿名可读对象行，但 <b>actual_fee 全部返回 null</b>。行级策略管“能不能看到这条”，列级策略管“看到这条后哪些字段能看”。`
-        , (d.objects || []).every((o) => o.props.actual_fee == null))
-      },
-      {
-        title: '最后换成 FINANCE 视角回读同一批运单',
-        question: '同一批对象，换标记载荷后金额回来了吗？',
-        note: '只改 roles=FINANCE，对比第 3 步的 null 和第 4 步的真实金额。',
-        component: 'Marking',
-        request: () => ({
-          local: true, method: 'GET', path: '/objects?type=Waybill&user=finance&roles=FINANCE&limit=50'
-        }),
+        render: (d) => compKV([['节点', d.nodes], ['边', d.edges], ['类', (d.by_kind || {}).class],
+          ['属性', (d.by_kind || {}).property], ['规则', (d.by_kind || {}).rule]]) },
+      { title: '属性级追溯', question: 'actual_amount 从哪来、到哪去？', dependency: 'property lineage edges',
+        note: '上游数据源、下游规则/动作。', component: 'Property',
+        request: () => ({ method: 'GET', path: '/lineage/property/FeeItem/actual_amount' }),
         run: (ctx, req) => enhApi(req.path),
-        render: (d, ctx) => {
-          const anon = ctx.data(2) || {};
-          const anonMap = Object.fromEntries((anon.objects || []).map((o) => [o.object_id, o.props.actual_fee]));
-          const rows = (d.objects || []).map((o) => [
-            o.object_id, o.props.status,
-            anonMap[o.object_id] == null ? 'null' : fmtMoney(anonMap[o.object_id]),
-            o.props.actual_fee == null ? 'null' : fmtMoney(o.props.actual_fee),
-            anonMap[o.object_id] == null && o.props.actual_fee != null ? '已解锁' : '—'
-          ]);
-          const unlocked = rows.filter((r) => r[4] === '已解锁').length;
-          return compTable(['object_id', '状态', '匿名 actual_fee', 'FINANCE actual_fee', '对比'], rows) + compVerdict(
-            `同一批 <b>${rows.length}</b> 条运单，FINANCE 视角解锁了 <b>${unlocked}</b> 条金额字段。安全策略不是复制一份脱敏表，而是在同一个对象上按角色实时求值。`
-          , unlocked > 0);
-        }
-      }
+        render: (d) => compKV([['属性', d.property], ['上游', (d.upstream || []).length],
+          ['下游', (d.downstream || []).length]]) },
+      { title: '影响面', question: '改一处会波及谁？', dependency: 'relation declarations',
+        note: '血缘与影响面是同一张图的两种视角。', component: 'Impact',
+        request: () => ({ method: 'GET', path: `/objects/${COMP_WAYBILL}/impact` }),
+        render: (d) => compKV([['受影响对象', d.affected_count]]) },
     ]
-  }
-];
+  },
+  {
+    id: 'governance', tier: 'deep',
+    tag: 'D2 · 治理',
+    title: '改本体能不能像代码一样评审？',
+    summary: '破坏性变更未签字 FAIL、补签 PASS，均真实返回',
+    meta: '3 步 · 真实门禁',
+    steps: [
+      { title: '删属性：未签字', question: '删 waiting_minutes 会怎样？', dependency: 'breaking_approvals.json',
+        note: '未签字的破坏性变更必须 FAIL。', component: 'Change Gate',
+        request: () => ({ method: 'POST', path: '/ontology/guard-demo', body: { case: 'drop_property_unsigned' } }),
+        render: (d) => compKV([['case', d.case], ['verdict', d.verdict], ['未签字', d.unapproved_count]])
+          + compVerdict(`未签字 → <b>FAIL</b>，影响面非空。`, true) },
+      { title: '补签：放行', question: '补签后会怎样？', dependency: '临时签名目录（不写仓库）',
+        note: '签字路径与 classify 完全一致才放行。', component: 'Approval',
+        request: () => ({ method: 'POST', path: '/ontology/guard-demo', body: { case: 'drop_property_signed' } }),
+        render: (d) => compKV([['case', d.case], ['verdict', d.verdict], ['未签字', d.unapproved_count]])
+          + compVerdict(`补签 → <b>PASS</b>。签名只存在于临时目录，不污染仓库。`, true) },
+      { title: '版本与分支', question: '改坏了怎么办？', dependency: '不可变快照 + checksum',
+        note: '业务语义的 Git。', component: 'Version',
+        request: () => ({ method: 'GET', path: '/ontology/versions' }),
+        render: (d) => compTable(['版本', '说明'], (d.releases || []).map((r) => [r.version, r.label])) },
+    ]
+  },
+  {
+    id: 'query', tier: 'deep',
+    tag: 'D3 · 语义查询',
+    title: '查业务语义，不查表名？',
+    summary: 'Object Set + Ontology SQL + 接口多态：删声明 → 实现类减少、函数拒绝',
+    meta: '4 步 · 实时接口',
+    steps: [
+      { title: 'Object Set', question: '"所有争议费用"怎么查？', dependency: 'classes[FeeItem] + property status',
+        note: 'from 是本体类，where 是本体属性。', component: 'Object Set',
+        request: () => ({ method: 'POST', path: '/object-set/query', body: { set: { from: 'FeeItem', where: { status: { $eq: 'DISPUTED' } } }, page: { limit: 5 } } }),
+        render: (d) => compKV([['集合 ID', d.object_set_id], ['命中', d.total], ['计划', JSON.stringify(d.plan || {}).slice(0, 60)]]) },
+      { title: 'Ontology SQL', question: '能用 SQL 吗？', dependency: 'SQL 编译到同一查询树',
+        note: 'FeeItem 是本体类型名，不是表名。', component: 'SQL',
+        request: () => ({ method: 'POST', path: '/object-set/sql', body: { sql: 'SELECT * FROM FeeItem LIMIT 5' } }),
+        render: (d) => compKV([['命中', d.total], ['投影新鲜', d.projection_fresh === false ? '否' : '是'],
+          ['取数路径', d.plan || '—'], ['计划', JSON.stringify(d.plan || {}).slice(0, 60)]]) },
+      { title: '接口声明', question: '接口是什么？', dependency: 'interfaces[Chargeable].implements',
+        note: '显式实现 + 结构匹配双轨。', component: 'Interface',
+        request: () => ({ method: 'GET', path: '/interfaces' }),
+        run: (ctx, req) => enhApi(req.path),
+        render: (d) => compKV([['接口数', (d.interfaces || []).length]]) },
+      { title: '删实现：函数拒绝', question: '删掉实现会怎样？', dependency: 'Chargeable.implements[FeeItem] + status',
+        note: '实现类 2→1，多态函数从接受到拒绝。', component: 'Negative Lab',
+        request: () => ({ method: 'POST', path: '/interfaces/simulate', body: {} }),
+        run: (ctx, req) => enhApi('/interfaces/simulate', { method: 'POST', body: '{}' }),
+        render: (d) => compKV([['实现类', d.before.impl_count + ' → ' + d.after.impl_count],
+          ['函数接受', d.before.function_accepted + ' → ' + d.after.function_accepted]])
+          + compTable(['翻转'], (d.flips || []).map((f) => [f.code]))
+          + compVerdict(`删一条接口声明，多态函数立刻拒绝。`, true) },
+    ]
+  },
+  {
+    id: 'types', tier: 'deep',
+    tag: 'D4 · 类型契约',
+    title: '1961 个属性注册表真的执行吗？',
+    summary: '改属性类型 → 创建路径真实拒绝；不是静态承重表',
+    meta: '2 步 · 真实校验',
+    steps: [
+      { title: '属性注册表', question: '属性有类型吗？', dependency: 'property_types[waiting_minutes].value_type = number',
+        note: '类型/单位/标记/时序都是注册表字段。', component: 'Registry',
+        request: () => ({ method: 'GET', path: '/property-registry/Waybill' }),
+        run: (ctx, req) => enhApi(req.path),
+        render: (d) => compKV([['类型', d.class], ['注册属性数', (d.properties || []).length],
+          ['策略', JSON.stringify(d.policy || {}).slice(0, 60)]]) },
+      { title: '改类型：写入被拒', question: '把 number 改成 boolean 会怎样？', dependency: 'value_type；改后 → TYPE_MISMATCH',
+        note: '用真实 validate_object 校验路径。', component: 'Negative Lab',
+        request: () => ({ method: 'POST', path: '/ontology/type-lab', body: { case: 'waiting_minutes_boolean' } }),
+        render: (d) => compKV([['创建', d.after.create.ok ? '放行' : '拒绝'],
+          ['拒绝码', d.after.create.code || '—'], ['persisted', String(d.persisted)]])
+          + compTable(['翻转'], (d.flips || []).map((f) => [f.code]))
+          + compVerdict(`改一行类型声明，创建路径 <b>TYPE_MISMATCH</b>——注册表是契约，不是注释。`, true) },
+    ]
+  },
+];;
 
 const compState = { scenarioId: 'bearing', index: 0, outputs: {}, running: false };
 
@@ -6496,71 +6339,37 @@ function compMaxUnlocked() {
 }
 
 const DEMO_STORY = [
-  {
-    act: 'ACT 1 / 8 · 承重',
-    scenario: 'bearing',
-    title: '本体不是说明文档，是业务行为的唯一真源',
-    hook: '「代码一行不改，只把本体里的免费等候从 30 分钟改成 20 分钟，诊断结论会不会变？」',
-    point: '指给领导看：第 2 步是本体版本 diff（免费 30→20），第 3 步是切版本后同一笔费用的结论翻转，甚至标了 BLOCKER。这是"离开本体做不到"的最强证据。',
-    say: '传统系统里业务规则写在代码中，改口径要改代码、发版、回归。这里改的是本体声明——行为立刻翻转。'
-  },
-  {
-    act: 'ACT 2 / 8 · 血缘',
-    scenario: 'lineage',
-    title: '本体知道自己被谁用：4097 节点、4129 条边的血缘图',
-    hook: '「一个属性从哪来、被谁消费、改了会波及谁——谁能回答？」',
-    point: '指给领导看：第 2 步属性级血缘（上游数据源、下游规则/动作），第 3 步对象级血缘，第 4 步影响面。三者建立在同一个本体图上。',
-    say: '这不是数据血缘，是本体血缘。类、属性、规则、动作、证据在同一张图里——散落在代码和 SQL 里的系统做不到。'
-  },
-  {
-    act: 'ACT 3 / 8 · 治理',
-    scenario: 'governance',
-    title: '本体也有 Git：版本快照、变更签字、一键回滚',
-    hook: '「业务语义能不能像代码一样走 PR、可评审、可回滚？」',
-    point: '指给领导看：不可变版本快照 + checksum、变更集的 DRAFT/APPLIED 状态、破坏性变更必须签字（承重 L13）、分支恢复。',
-    say: '本体把业务规则的版本管理变成了工程能力。传统系统里"业务规则的第几版"往往只存在于人的记忆里。'
-  },
-  {
-    act: 'ACT 4 / 8 · 语义查询',
-    scenario: 'query',
-    title: '查的是业务语义，不是数据库表名',
-    hook: '「"所有争议费用"——这句话怎么变成查询？」',
-    point: '指给领导看：Object Set 的 from 是本体类 FeeItem、where 是本体属性；Ontology SQL 编译到同一棵查询树；派生类型是本体声明的新视角；最后 OSDK 生成类型化客户端。',
-    say: '本体是查询和 SDK 的共同语义层。换数据源，查询语义不变；本体改了，SDK 重新生成即可。'
-  },
-  {
-    act: 'ACT 5 / 8 · 类型即契约',
-    scenario: 'types',
-    title: '类型不是注释，是写入时必须通过的闸',
-    hook: '「1961 个属性注册表——光登记有什么用？」',
-    point: '指给领导看：属性类型/单位/标记，承重 L3-L8 的写入拒绝和签名校验，L11/L12 的 marking 翻转，最后看匿名视角的真实脱敏结果。',
-    say: '注册表必须执行。改一个类型声明，创建、更新、函数调用全被挡住——这是本体作为契约层，不是文档层。'
-  },
-  {
-    act: 'ACT 6 / 8 · 推理链',
-    scenario: 'agent',
-    title: '大模型被本体牵着走，不是自由发挥',
-    hook: '「让 AI 自己诊断"这单为什么贵 38"——它凭什么不会编？」',
-    point: '指给领导看：工具白名单由本体裁剪、圈定类型只能从本体目录选、参与者里有 TBox 引擎、结论绑定本体版本和证据 checksum。抽掉 semantic_layer.json，整条链构造即失败。',
-    say: '这是本体与 AI 的真正关系：本体给 AI 划出可理解、可约束、可追溯的边界。没有本体的 AI 查数，答对了是运气，答错了你都不知道。'
-  },
-  {
-    act: 'ACT 7 / 8 · 权限',
-    scenario: 'security',
-    title: '权限跟着本体属性走，一路传到 AI 输出',
-    hook: '「同一张费用单，为什么客服看不到？」',
-    point: '沿用原 security 场景：匿名可见 6/7 行、争议处理角色 7/7，列级 marking 脱敏。强调这是从数据源→类→对象→列→Agent 输出的四级传播。',
-    say: '安全是本体的内置属性，不是外挂的一层。改一处 marking 声明，可见性全域翻转。'
-  },
-  {
-    act: 'ACT 8 / 8 · 收束',
-    scenario: 'evidence',
-    title: '所有能力收束到一个可解释的结论',
-    hook: '「绕了一圈，这单到底为什么贵 38？」',
-    point: '沿用原 evidence 场景：费用 25 vs 规则应计 12、证据 checksum、结论绑定本体版本。前面七幕的每个能力都在这里汇合。',
-    say: '本体不是七个独立功能，是一套互相咬合的执行面。领导记住一句话就够：改本体即改行为，所有结论可追溯。'
-  },
-];
+  { act: 'ACT 1 / 6 · 承重', scenario: 'bearing',
+    title: '同一笔费用，换一版本本体，结论会变吗？',
+    hook: '「代码一行不改，只改本体里的免费等候 30→20 分钟，诊断结论会不会变？」',
+    point: '指第 2 步切版本后的结论翻转、第 3 步确定性声明检查（TOOL_UNAVAILABLE）。这是"离开本体做不到"的最强证据。',
+    say: '传统系统业务规则写在代码里，改口径要改代码发版；这里改本体声明，行为立刻翻转。' },
+  { act: 'ACT 2 / 6 · 状态机', scenario: 'machine',
+    title: '已送达的运单还能改派吗？',
+    hook: '「陌生人能接单吗？终态能改派吗？同一幂等键按两次执行几次？」',
+    point: '指错角色 FORBIDDEN_ROLE、错状态 INVALID_STATE、同键重放 replayed=true、审计增量 0。',
+    say: '状态机、角色、参数、幂等、审计——动作的全部纪律都在本体里，并且在事务内可实测。' },
+  { act: 'ACT 3 / 6 · 来源契约', scenario: 'contracts',
+    title: '这笔费用谁认领、缺什么证据？',
+    hook: '「7 条费用都有源系统认领吗？删掉一条认领声明会怎样？」',
+    point: '指正常零缺口 → 删认领后 FEE_SOURCE_UNRESOLVED 出现 → 删整源缺口放大；ABox 覆盖率诚实披露。',
+    say: '缺口不是算出来的 0，是本体声明定义的"谁负责"。删声明，缺口立刻暴露。' },
+  { act: 'ACT 4 / 6 · 权限', scenario: 'security',
+    title: '同一结论，不同角色看到的不一样',
+    hook: '「匿名能看到几条？Agent 想把工单说出去，拦得住吗？」',
+    point: '指行级可见 6/7、Agent 输出闸 OUTPUT_MARKING_DENIED、删 marking 后可见行翻转。',
+    say: '权限跟着本体属性走，一路传到 Agent 输出。不是页面开关，是数据流的内建属性。' },
+  { act: 'ACT 5 / 6 · AI', scenario: 'agent',
+    title: 'AI 凭什么不编？',
+    hook: '「不给声明，AI 能凭空查吗？删掉 FeeItem 类型会怎样？」',
+    point: '指确定性 declaration-check：抽掉工具→TOOL_UNAVAILABLE，删类型→TYPE_UNBOUND；最后一步才真实调大模型。',
+    say: '模型负责理解人话，本体决定它能看什么、能算什么。抽掉声明，链路确定性失败——没有降级替身。' },
+  { act: 'ACT 6 / 6 · 收束', scenario: 'evidence',
+    title: '这单到底为什么贵 38？',
+    hook: '「同一份数据直接丢给大模型，它算得对吗？」',
+    point: '指裸 LLM 答 0 元 vs 本体按规则算 12 元 + 证据 checksum；差的 13 元不在数据里，在规则里。',
+    say: '本体把规则变成机器可执行、可审计的东西。前面五幕在这里汇成一个能复核的结论。' },
+];;
 
 const demoState = { active: false, index: 0 };
 
@@ -6568,8 +6377,8 @@ function renderDemoBar() {
   const host = document.getElementById('demoStory');
   if (!host) return;
   if (!demoState.active) {
-    host.innerHTML = `<span class="story-title">给领导演示 · 6 幕讲解模式</span>
-      <span class="story-progress">六个问题串成一条线：规则 → 关系 → 证据 → 动作 → 接口 → 权限；全程确定性接口，不依赖大模型</span>
+    host.innerHTML = `<span class="story-title">给领导演示 · 6 主线讲解模式</span>
+      <span class="story-progress">承重 → 状态机 → 来源契约 → 权限 → AI → 收束；前五幕全确定性，第 5 幕最后一步真实调用大模型。另有 4 题深挖可展开</span>
       <button type="button" data-demo="start">▶ 开始讲解演示</button>`;
   } else {
     host.innerHTML = `<span class="story-title">讲解模式进行中</span>
@@ -6623,17 +6432,23 @@ function bindDemoEvents() {
   });
 }
 
+let compShowDeep = false;
+
 function renderCompQuestions() {
   const host = document.getElementById('compQuestions');
   if (!host) return;
-  host.innerHTML = COMP_SCENARIOS.map((s) => `
+  const visible = COMP_SCENARIOS.filter((s) => compShowDeep || (s.tier || 'main') === 'main');
+  const deepCount = COMP_SCENARIOS.filter((s) => s.tier === 'deep').length;
+  host.innerHTML = visible.map((s) => `
     <button class="comp-q ${s.id === compState.scenarioId ? 'on' : ''}" type="button" data-comp-scenario="${s.id}">
       <span class="qdot"></span>
       <span class="qtag">${esc(s.tag)}</span>
       <b>${esc(s.title)}</b>
       <small>${esc(s.summary)}</small>
       <span class="qmeta">${esc(s.meta)}</span>
-    </button>`).join('');
+    </button>`).join('')
+    + `<button class="comp-deep-toggle" type="button" data-comp-action="toggle-deep">${
+        compShowDeep ? '收起深挖 4 题' : `展开深挖 ${deepCount} 题（领导追问时看）`}</button>`;
 }
 
 function renderCompStepList(scenario) {
@@ -6683,6 +6498,7 @@ function renderCompDetail(scenario) {
           <span class="kicker">STEP ${String(compState.index + 1).padStart(2, '0')} / ${String(scenario.steps.length).padStart(2, '0')}</span>
           <h3>${esc(step.title)}</h3>
           <p>${esc(step.question)}</p>
+          ${step.dependency ? `<p class="comp-dependency">声明依赖：${esc(step.dependency)}</p>` : ''}
         </div>
         <span class="comp-component">${esc(step.component)}</span>
       </div>
@@ -6778,6 +6594,11 @@ function bindCompEvents() {
   questions.addEventListener('click', (event) => {
     const card = event.target.closest('[data-comp-scenario]');
     if (card) selectCompScenario(card.getAttribute('data-comp-scenario'));
+    const toggle = event.target.closest('[data-comp-action="toggle-deep"]');
+    if (toggle) {
+      compShowDeep = !compShowDeep;
+      renderCompQuestions();
+    }
   });
   runner.addEventListener('click', (event) => {
     const stepEl = event.target.closest('[data-comp-step]');

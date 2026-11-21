@@ -32,7 +32,7 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SKIP_DIRS = {".git", "runs", "__pycache__", "node_modules", "_out", ".pytest_tmp",
-              "logs", "scripts/_out"}
+              "logs", "scripts/_out", ".venv", "venv", "env", "site-packages"}
 SKIP_FILES = {".pyc"}
 
 # 字段名里出现这些词，说明它在宣称"系统做了某种校验 / 保证"

@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-"""演示问题 · 本体要素覆盖审计 + 「离开本体能否解答」对照实验。
+"""演示问题 · 6 主线覆盖矩阵 + 「离开本体能否解答」对照实验。
 
 回答两个问题：
-1. 三个演示问题实际串联了本体系统的哪些要素（类/关系/规则/函数/动作/来源/状态机）；
-2. 这些问题是不是**只有本体能解**——做三个对照：
+1. 六条主线各串联了哪些本体要素、命不命中负向翻转（--fast 走确定性 labs，不依赖 LLM）；
+2. 这些问题是不是**只有本体能解**——对收束问题做三个对照：
    A. 裸 SQL 直查（绕开语义层、规则、状态机）
    B. 纯大模型（不给任何本体上下文）
    C. 本体全链路（现状）
 
 用法：
-    python scripts/demo_coverage_audit.py            # 全量
-    python scripts/demo_coverage_audit.py --fast     # 只跑要素盘点，不跑 LLM 对照
+    python scripts/demo_coverage_audit.py            # 全量（含裸 LLM + 真实推理链）
+    python scripts/demo_coverage_audit.py --fast     # 要素盘点 + 确定性翻转，不跑 LLM
 """
 from __future__ import annotations
 
@@ -29,11 +29,37 @@ from freight import scenarios  # noqa: E402
 from freight.agent import LLMClient, ReasoningAgent  # noqa: E402
 from freight.engine import FreightSystem  # noqa: E402
 
-QUESTIONS = [
-    ("A 差异归因", "这单为什么比预估多 38 元？"),
-    ("B 假设推演", "这单如果给客户减免 40 元，系统接下来会发生什么？会挡住哪一步？"),
-    ("C 数据溯源", "这单的高速费是 ETC 给的还是 TMS 给的？谁认领这条费用？凭证是哪一条？"),
+# 6 主线：问题 → 本体核心件 → 负向翻转 → 依赖接口（与 web/order-ontology.html 的 DEMO_STORY 对齐）
+MAIN_LINES = [
+    ("M1 承重", "同一笔费用，换一版本本体，结论会变吗？",
+     "规则 AST / 版本 / 生效期", "切 1.1.0-demo → BLOCKER",
+     "GET /freight/waybills/{wb}/fee-analysis?version=..."),
+    ("M2 状态机", "已送达的运单还能改派吗？",
+     "状态机 / 角色 / 参数 / 幂等 / 审计", "FORBIDDEN_ROLE / INVALID_STATE / replayed=true",
+     "POST /freight/actions/lab"),
+    ("M3 来源契约", "这笔费用谁认领、缺什么证据？",
+     "数据源契约 / 证据 / ABox 覆盖", "FEE_SOURCE_UNRESOLVED",
+     "POST /freight/contracts/simulate"),
+    ("M4 权限", "同一结论，不同角色看到的不一样",
+     "marking / 行列策略 / Agent 输出闸", "OUTPUT_MARKING_DENIED / 可见行翻转",
+     "POST /enh/security/guard-output / simulate-marking"),
+    ("M5 AI", "AI 凭什么不编？",
+     "工具白名单 / 类型圈定 / 证据 checksum", "TOOL_UNAVAILABLE / TYPE_UNBOUND",
+     "POST /freight/agent/declaration-check"),
+    ("M6 收束", "这单到底为什么贵 38？",
+     "规则 / 版本 / 证据 / 可解释结论", "裸 LLM 应计 0 vs 本体应计 12",
+     "裸 SQL / 裸 LLM / function.fee_breakdown"),
 ]
+
+DEEP_LINES = [
+    ("D1 血缘", "属性级/对象级血缘、影响面", "4097 节点 / 4129 边"),
+    ("D2 治理", "版本快照、签字、回滚", "未签字 FAIL / 补签 PASS"),
+    ("D3 语义查询", "Object Set / Ontology SQL / 接口多态", "INTERFACE_VIOLATION"),
+    ("D4 属性注册表", "属性注册表、写入门禁", "TYPE_MISMATCH"),
+]
+
+COMPARE_QUESTION = "这单为什么比预估多 38 元？"
+COMPARE_LABEL = "M6 收束"
 
 
 def build_system():
@@ -137,23 +163,78 @@ def bare_llm(question: str, facts: dict) -> dict:
                 "error": f"{type(exc).__name__}: {exc}"[:200]}
 
 
+def run_lab_checks(system) -> dict:
+    """确定性负向翻转探测：内存本体副本 + SAVEPOINT，不写主库、不调 LLM。"""
+    from freight import demo_labs as dl
+    from enhancements.demo_labs import guard_output_lab, interface_simulate, simulate_marking
+    from enhancements.runtime import EnhancedSystem
+
+    enh = EnhancedSystem(system)
+
+    def codes(payload):
+        return [f.get("code") for f in (payload.get("flips") or [])
+                if isinstance(f, dict)]
+
+    action = dl.action_lab(system)
+    action_codes = {c.get("code") for c in (action.get("cases") or [])}
+    marking = simulate_marking(enh, "drop_source_marking", "ExceptionTicket")
+    output = guard_output_lab(enh)
+    iface = interface_simulate(enh, "drop_required_property")
+
+    return {
+        "M2 状态机": {
+            "FORBIDDEN_ROLE": "FORBIDDEN_ROLE" in action_codes,
+            "审计增量为零": action.get("audit_delta") == 0,
+        },
+        "M3 来源契约": {
+            "FEE_SOURCE_UNRESOLVED": "FEE_SOURCE_UNRESOLVED"
+            in codes(dl.contract_simulate(system, "drop_claim")),
+        },
+        "M4 权限": {
+            "OUTPUT_MARKING_DENIED": "OUTPUT_MARKING_DENIED"
+            in [f.get("code") for f in (output.get("findings") or [])
+                if isinstance(f, dict)],
+            "可见行翻转": marking["after"]["visible_rows"] > marking["before"]["visible_rows"],
+        },
+        "M5 AI": {
+            "TOOL_UNAVAILABLE": "TOOL_UNAVAILABLE"
+            in codes(dl.declaration_check(system, omit_tool="ontology.catalog")),
+            "TYPE_UNBOUND": "TYPE_UNBOUND"
+            in codes(dl.declaration_check(system, omit_type="FeeItem")),
+        },
+        "D2 治理": {
+            "未签字FAIL": dl.guard_demo(system, "drop_property_unsigned").get("verdict") == "FAIL",
+            "补签PASS": dl.guard_demo(system, "drop_property_signed").get("verdict") == "PASS",
+        },
+        "D3 语义查询": {
+            "INTERFACE_VIOLATION": "INTERFACE_VIOLATION" in codes(iface),
+        },
+        "D4 属性注册表": {
+            "TYPE_MISMATCH": "TYPE_MISMATCH" in codes(dl.type_lab(system)),
+        },
+    }
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--fast", action="store_true")
+    ap.add_argument("--fast", action="store_true", help="不跑裸 LLM 与真实推理链")
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args()
 
     system = build_system()
-    report = {"questions": [], "ontology_elements": {}, "bare_sql": {}, "bare_llm": {}}
-    for label, question in QUESTIONS:
-        row = {"label": label, "question": question}
-        row["with_ontology"] = run_with_ontology(system, question)
-        report["questions"].append(row)
-        if not args.fast:
-            facts = bare_sql(system, "waybill:WB20261105001")
-            report["bare_sql"][label] = facts
-            report["bare_llm"][label] = bare_llm(question, facts)
-        system2 = build_system()  # 每个问题用干净库，避免上一步的状态影响
+    report = {
+        "main_lines": [dict(zip(("id", "question", "core", "flip", "endpoint"), row))
+                       for row in MAIN_LINES],
+        "deep_lines": [dict(zip(("id", "core", "flip"), row)) for row in DEEP_LINES],
+        "lab_checks": run_lab_checks(system),
+        "bare_sql": {}, "bare_llm": {}, "with_ontology": {},
+        "ontology_elements": {},
+    }
+    facts = bare_sql(system, "waybill:WB20261105001")
+    report["bare_sql"][COMPARE_LABEL] = facts
+    if not args.fast:
+        report["bare_llm"][COMPARE_LABEL] = bare_llm(COMPARE_QUESTION, facts)
+        report["with_ontology"][COMPARE_LABEL] = run_with_ontology(system, COMPARE_QUESTION)
 
     # 本体要素清单（从本体 JSON 统计）
     lay = json.load(open(os.path.join(ROOT, "freight", "semantic_layer.json"),
@@ -176,55 +257,69 @@ def main() -> int:
         "原语(MCP工具)": len(lay["primitives"]),
     }
 
+    checks = [v for group in report["lab_checks"].values() for v in group.values()]
+    ok = all(checks)
+    report["flips_ok"] = ok
+
     if args.json:
         print(json.dumps(report, ensure_ascii=False, indent=2))
-        return 0
+        return 0 if ok else 1
 
     print("=" * 92)
-    print("演示问题 × 本体要素覆盖审计")
+    print("6 主线 + 4 深挖 · 本体要素覆盖矩阵（负向翻转走 labs，零写主库）")
     print("=" * 92)
-    for row in report["questions"]:
-        r = row["with_ontology"]
-        print(f"\n【{row['label']}】{row['question']}")
-        if not r.get("ok"):
-            print("  本体链路失败:", r.get("error"))
-            continue
-        print(f"  耗时 {r['elapsed_s']}s / {r['steps']} 步 / 降级={r['degraded']}")
-        print(f"  触及类型({len(r['types'])}): {', '.join(r['types'][:12])}")
-        print(f"  触及本体项({len(r['tbox'])}): {', '.join(r['tbox'][:14])}")
-        print(f"  触及费用类型: {', '.join(r['fee_types'])}")
-        print(f"  调用工具: {', '.join(r['tools'])}")
+    for row in report["main_lines"]:
+        print(f"\n【{row['id']}】{row['question']}")
+        print(f"  核心件: {row['core']}")
+        print(f"  负向翻转: {row['flip']}")
+        print(f"  依赖接口: {row['endpoint']}")
+        hits = report["lab_checks"].get(row["id"], {})
+        if hits:
+            for name, hit in hits.items():
+                print(f"  [{'OK ' if hit else 'FAIL'}] {name}")
+        else:
+            print("  [--] 走接口/裸 LLM 对照（见 demo_gate.py）")
+
+    print("\n" + "=" * 92)
+    print("深挖 4 题")
+    print("=" * 92)
+    for row in report["deep_lines"]:
+        print(f"【{row['id']}】{row['core']} → {row['flip']}")
+        for name, hit in report["lab_checks"].get(row["id"], {}).items():
+            print(f"  [{'OK ' if hit else 'FAIL'}] {name}")
 
     print("\n" + "=" * 92)
     print("对照 A：裸 SQL 直查（绕开语义层 / 规则 / 状态机）能得到什么")
     print("=" * 92)
-    if args.fast:
-        print("  （--fast 跳过）")
-    else:
-        for label, facts in report["bare_sql"].items():
-            print(f"\n  【{label}】")
-            print(f"    运单标量: {facts['运单上的标量']}")
-            print(f"    费用项: {len(facts['费用项（裸表）'])} 条 → "
-                  f"{[f['fee_type'] for f in facts['费用项（裸表）']]}")
-            print(f"    报价明细: {len(facts['报价明细（裸表）'])} 条")
-            print(f"    证据条数: {facts['费用证据条数（裸表）']}")
-            print("    ⚠ 裸表拿不到：规则应计值 / 状态机前置 / 来源归属 / 缺口判定")
+    for label, facts in report["bare_sql"].items():
+        print(f"\n  【{label}】")
+        print(f"    运单标量: {facts['运单上的标量']}")
+        print(f"    费用项: {len(facts['费用项（裸表）'])} 条 → "
+              f"{[f['fee_type'] for f in facts['费用项（裸表）']]}")
+        print(f"    报价明细: {len(facts['报价明细（裸表）'])} 条")
+        print(f"    证据条数: {facts['费用证据条数（裸表）']}")
+        print("    ⚠ 裸表拿不到：规则应计值 / 状态机前置 / 来源归属 / 缺口判定")
 
     print("\n" + "=" * 92)
     print("对照 B：纯大模型（不给本体上下文，只给原始数据）")
     print("=" * 92)
     if args.fast:
-        print("  （--fast 跳过）")
+        print("  （--fast 跳过；实测原文见 plan/demo_script.md §3）")
     else:
         for label, res in report["bare_llm"].items():
             print(f"\n  【{label}】ok={res.get('ok')} {res.get('elapsed_s')}s")
             print("   ", str(res.get("answer") or res.get("error"))[:420])
+        for label, res in report["with_ontology"].items():
+            print(f"\n  【{label} · 本体链路】ok={res.get('ok')} {res.get('elapsed_s')}s "
+                  f"步骤={res.get('steps')} 降级={res.get('degraded')}")
 
     print("\n" + "=" * 92)
-    print("本体要素总量 vs 演示问题触及面")
+    print("本体要素总量")
     print("=" * 92)
     print("  本体声明:", json.dumps(report["ontology_elements"], ensure_ascii=False))
-    return 0
+    print(f"\n结论：负向翻转 {'全部命中' if ok else '存在未命中'}"
+          f"（{sum(checks)}/{len(checks)}）")
+    return 0 if ok else 1
 
 
 if __name__ == "__main__":

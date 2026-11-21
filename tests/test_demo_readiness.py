@@ -47,19 +47,21 @@ class TestOntologySignalsVisible:
 
 
 class TestStoryline:
-    def test_eight_acts_exist(self):
+    MAIN_IDS = ["bearing", "machine", "contracts", "security", "agent", "evidence"]
+    DEEP_IDS = ["lineage", "governance", "query", "types"]
+
+    def test_six_main_acts_exist(self):
         text = page()
         story = re.search(r"const DEMO_STORY = \[(.*?)\n\];", text, re.S)
         assert story is not None
-        acts = re.findall(r"act: 'ACT (\d) / 8", story.group(1))
-        assert acts == ["1", "2", "3", "4", "5", "6", "7", "8"]
+        acts = re.findall(r"act: 'ACT (\d) / 6", story.group(1))
+        assert acts == ["1", "2", "3", "4", "5", "6"]
 
-    def test_story_scenarios_match_cards(self):
+    def test_story_scenarios_match_main_cards(self):
         text = page()
         story = re.search(r"const DEMO_STORY = \[(.*?)\n\];", text, re.S).group(1)
         scenario_ids = re.findall(r"scenario: '(\w+)'", story)
-        assert scenario_ids == ["bearing", "lineage", "governance", "query",
-                                "types", "agent", "security", "evidence"]
+        assert scenario_ids == self.MAIN_IDS
         cards = text.split("const COMP_SCENARIOS = [")[1].split("function compScenario")[0]
         card_ids = re.findall(r"^    id: '(\w+)'", cards, re.M)
         for sid in scenario_ids:
@@ -68,15 +70,28 @@ class TestStoryline:
     def test_story_has_script_and_pointer(self):
         text = page()
         story = re.search(r"const DEMO_STORY = \[(.*?)\n\];", text, re.S).group(1)
-        assert story.count("hook:") == 8
-        assert story.count("point:") == 8
-        assert story.count("say:") == 8
+        for field in ("hook:", "point:", "say:"):
+            assert story.count(field) == 6, field
 
     def test_story_controls_wired(self):
         text = page()
         for token in ("id=\"demoStory\"", "id=\"demoNarration\"", "function gotoDemoAct",
                       "function bindDemoEvents", "data-demo=\"start\"",
                       "data-demo=\"next\"", "bindDemoEvents();"):
+            assert token in text, token
+
+    def test_scenarios_layered_six_main_four_deep(self):
+        text = page()
+        cards = text.split("const COMP_SCENARIOS = [")[1].split("function compScenario")[0]
+        tiered = re.findall(r"^    id: '(\w+)', tier: '(main|deep)'", cards, re.M)
+        assert [sid for sid, tier in tiered if tier == "main"] == self.MAIN_IDS
+        assert [sid for sid, tier in tiered if tier == "deep"] == self.DEEP_IDS
+        assert len(tiered) == 10
+
+    def test_deep_toggle_and_dependency_wired(self):
+        text = page()
+        for token in ("compShowDeep", "s.tier || 'main') === 'main'", "comp-dependency",
+                      "step.dependency", "声明依赖"):
             assert token in text, token
 
 

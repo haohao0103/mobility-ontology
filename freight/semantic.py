@@ -27,8 +27,23 @@ class BusinessReject(Exception):
 class SemanticLayer:
     def __init__(self, path: str = DEFAULT_PATH):
         with open(path, encoding="utf-8") as f:
-            self.raw = json.load(f)
+            raw = json.load(f)
         self.path = path
+        self._index(raw)
+
+    @classmethod
+    def from_raw(cls, raw: dict, path: str = "<memory>") -> "SemanticLayer":
+        """从内存中的本体声明构造，不落临时文件（demo lab 专用）。
+
+        所有索引与磁盘加载走同一条 _index 路径；不修改传入的 raw。
+        """
+        obj = cls.__new__(cls)
+        obj.path = path
+        obj._index(json.loads(json.dumps(raw)))  # 深拷贝，隔离实验室改动
+        return obj
+
+    def _index(self, raw: dict) -> None:
+        self.raw = raw
         self.classes = {c["id"]: c for c in self.raw["classes"]}
         self.relations = {r["id"]: r for r in self.raw["relations"]}
         self.actions = {a["id"]: a for a in self.raw["actions"]}

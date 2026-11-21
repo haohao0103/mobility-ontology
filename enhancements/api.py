@@ -317,6 +317,31 @@ def usage_dependents(class_id: str):
     }
 
 
+# -------------------------------------------------- 增强层负向实验（B-08~B-10，零写主库）
+@router.post("/interfaces/simulate")
+def interfaces_simulate(body: dict):
+    """B-08: 删接口必需属性 → 实现类减少、多态函数拒绝。"""
+    from enhancements.demo_labs import interface_simulate
+    return interface_simulate(get_enh(), body.get("case", "drop_required_property"))
+
+
+@router.post("/security/guard-output")
+def security_guard_output(body: dict):
+    """B-09: Agent 输出闸：匿名/无标记 403，有标记脱敏或放行。"""
+    from enhancements.demo_labs import guard_output_lab
+    return guard_output_lab(get_enh(), body.get("user", "anonymous"),
+                            body.get("roles", ""), body.get("object_id",
+                            "exception:EX20261105001"))
+
+
+@router.post("/security/simulate-marking")
+def security_simulate_marking(body: dict):
+    """B-10: 内存副本改 marking → 行/列可见性翻转。"""
+    from enhancements.demo_labs import simulate_marking
+    return simulate_marking(get_enh(), body.get("case", "drop_source_marking"),
+                            body.get("class_id", "ExceptionTicket"))
+
+
 # -------------------------------------------------- Worksheet / Workflow（Workshop 内核）
 @router.get("/worksheets")
 def worksheets():

@@ -15,6 +15,7 @@ from .semantic import BusinessReject, OntologyViolation
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # 外部业务事实的演示替身；本体知识在 freight/semantic_layer.json。
 DEFAULT_FACT_DB = os.path.join(ROOT, "runs", "freight_facts.db")
+WB_DEFAULT = "waybill:WB20261105001"  # 演示剧本运单，负向实验默认目标
 _LOCK = threading.Lock()
 _SYSTEM: FreightSystem | None = None
 
@@ -174,8 +175,55 @@ def ontology_validate(version: Optional[str] = Query(None)):
 
 
 @router.get("/ontology/guard-demo")
-def ontology_guard_demo():
-    return guard(lambda: get_system().semantic_guard_demo())
+def ontology_guard_demo(case: str = Query("unknown_fee_type")):
+    """B-05 扩展：多 case 的门禁负向演示（未签字 FAIL / 补签 PASS）。"""
+    from freight.demo_labs import guard_demo
+    return guard(lambda: guard_demo(get_system(), case))
+
+
+# ---------------------------------------------------------- demo labs（负向实验，零写主库）
+@router.get("/contracts/coverage")
+def contracts_coverage(waybill_id: str = Query(WB_DEFAULT)):
+    """B-01: 费用归属矩阵 / 解析状态 / 新鲜度 / 证据覆盖 / 缺口清单。"""
+    from freight.demo_labs import contract_coverage
+    return guard(lambda: contract_coverage(get_system(), waybill_id))
+
+
+@router.post("/contracts/simulate")
+def contracts_simulate(body: dict):
+    """B-02: 删认领/证据要求 → before/after findings 翻转（persisted:false）。"""
+    from freight.demo_labs import contract_simulate
+    return guard(lambda: contract_simulate(get_system(), body.get("case", "drop_claim"),
+                                           body.get("waybill_id", WB_DEFAULT)))
+
+
+@router.get("/ontology/abox-coverage")
+def ontology_abox_coverage():
+    """B-03: ABox 深水区覆盖率与问题清单。"""
+    from freight.demo_labs import abox_coverage
+    return guard(lambda: abox_coverage(get_system()))
+
+
+@router.post("/actions/lab")
+def actions_lab(body: dict):
+    """B-04: SAVEPOINT 内错角色/错状态/允许动作/同键重放，ROLLBACK 零污染。"""
+    from freight.demo_labs import action_lab
+    return guard(lambda: action_lab(get_system(), body.get("waybill_id", WB_DEFAULT)))
+
+
+@router.post("/ontology/type-lab")
+def ontology_type_lab(body: dict):
+    """B-06: 改属性类型/函数签名副本，真实写入/调用路径的拒绝码。"""
+    from freight.demo_labs import type_lab
+    return guard(lambda: type_lab(get_system(), body.get("case", "waiting_minutes_boolean")))
+
+
+@router.post("/agent/declaration-check")
+def agent_declaration_check(body: dict):
+    """B-07: 确定性检查工具白名单/可圈定类型/证据 checksum，不调 LLM。"""
+    from freight.demo_labs import declaration_check
+    return guard(lambda: declaration_check(
+        get_system(), body.get("omit_tool"), body.get("omit_type")))
 
 
 @router.post("/ontology/activate")

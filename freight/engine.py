@@ -49,13 +49,13 @@ def _parse_timestamp(value) -> datetime | None:
 
 class FreightSystem:
     def __init__(self, db_path: str, fresh: bool = False, seed: bool = True,
-                 with_scenario: bool = False):
+                 with_scenario: bool = False, semantic: "SemanticLayer | None" = None):
         parent = os.path.dirname(os.path.abspath(db_path))
         os.makedirs(parent, exist_ok=True)
         if fresh and os.path.exists(db_path):
             os.remove(db_path)
         self.db_path = db_path
-        self.sem = SemanticLayer()
+        self.sem = semantic if semantic is not None else SemanticLayer()
         self.base_sem = self.sem
         self.base_version = self.sem.raw.get("meta", {}).get("version")
         self.active_version = self.base_version

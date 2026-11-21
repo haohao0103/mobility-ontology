@@ -172,16 +172,25 @@ def action_lab(system: FreightSystem, waybill_id: str = WB) -> dict:
                                      "error": str(exc)[:160]})
 
         # 动态选一个"有可执行动作"的运单：测试库 SCN02 可用 accept_order，
-        # 生产主库没有 SCN02，但 ACCEPTED/LOADED 运单可用无参动作。
-        # 优先无参动作，避免 reassign_waybill 需要真实司机对象。
+        # 生产主库没有 SCN02，但 ACCEPTED/LOADED 运单可用这些动作。
+        # 优先选取，避免 reassign_waybill 需要真实司机对象。
         lab_target = None
-        no_arg_actions = ("accept_order", "complete", "confirm_loading")
+        preferred_actions = ("accept_order", "complete", "confirm_loading")
 
-        def first_role(act: str) -> str:
+        def action_decl(act: str) -> dict:
             for decl in (system.sem.raw.get("actions") or []):
                 if decl.get("id") == act:
-                    return (decl.get("roles") or ["dispatcher"])[0]
-            return "dispatcher"
+                    return decl
+            return {}
+
+        def first_role(act: str) -> str:
+            return (action_decl(act).get("roles") or ["dispatcher"])[0]
+
+        def lab_payload(act: str) -> dict:
+            """按动作声明补必填字符串参数的占位值（如送达的回单编号）。"""
+            return {p["name"]: f"LAB-{p['name']}"
+                    for p in (action_decl(act).get("params") or [])
+                    if p.get("required") and p.get("type") == "string"}
 
         rows = system.facts.all(
             "SELECT object_id FROM objects WHERE type='Waybill' AND object_id<>?",
@@ -197,9 +206,9 @@ def action_lab(system: FreightSystem, waybill_id: str = WB) -> dict:
                      for a in (obj.get("available_actions") or [])]
             candidates.append((oid, [n for n in names if n]))
         for oid, names in candidates:
-            for act in no_arg_actions:
+            for act in preferred_actions:
                 if act in names:
-                    lab_target = (oid, act, {}, first_role(act))
+                    lab_target = (oid, act, lab_payload(act), first_role(act))
                     break
             if lab_target:
                 break

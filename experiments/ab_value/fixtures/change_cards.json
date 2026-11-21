@@ -13,9 +13,17 @@
     }
   },
   "C2": {
-    "title": "新增车型『7.6米货车』（骨架阶段 pending：需准备含该车型的测试运单）",
-    "change": "pricing.vehicle_types 新增 7.6米货车费率",
-    "status": "PENDING_TEST_DATA",
-    "note": "正式实验前需先在测试库准备含 7.6米货车 的运单，避免『新增了类型但没有任何数据触达它』的假阳性。"
+    "title": "新增车型『7.6米厢货』等候费率（per_block=4.8）",
+    "change": "by_vehicle_type.add: 7.6米厢货 = {free_minutes: 30, block_minutes: 5, per_block: 4.8}",
+    "expected_new_waiting": {"value": 24.0, "tolerance": 0.01},
+    "test_waybill_props": {"waiting_minutes": 53, "vehicle_type": "7.6米厢货"},
+    "_note": "验证用测试运单 props（53 分钟/7.6米厢货）避免『新增了类型但没数据触达』的假阳性；53 分钟→5 块→5×4.8=24.0 元。",
+    "rollback": true,
+    "measure": {
+      "files_changed": "统计实际被修改的文件数",
+      "code_files_changed": "其中代码文件数（.py）",
+      "restart_required": "是否需要重启服务生效",
+      "wall_time_s": "从变更命令到新答案正确返回"
+    }
   }
 }

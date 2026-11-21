@@ -6012,17 +6012,6 @@ const COMP_SCENARIOS = [
     meta: '4 步 · 实时接口',
     steps: [
       {
-        title: '先按当前本体算一遍',
-        graph_parity: 'hardcoded',
-        question: '免费等候几分钟？规则应计多少？',
-        dependency: 'pricing.waiting.free_minutes = 30；抽掉则该结论不成立',
-        note: '结论绑定本体版本，不是代码常量。',
-        component: 'Rule AST',
-        request: () => ({ method: 'GET', path: `/waybills/${COMP_WAYBILL}/fee-analysis` }),
-        render: (d) => compKV([['本体版本', d.ontology_version], ['免费等候', d.free_wait_minutes + ' 分钟'],
-          ['规则应计', (d.waiting_rule ? d.waiting_rule.expected : '—') + ' 元'], ['差异', d.variance + ' 元']])
-      },
-      {
         title: '切到 1.1.0-demo 再算同一笔',
         graph_parity: 'impossible',
         question: '代码没动，结论会变吗？',
@@ -6033,6 +6022,17 @@ const COMP_SCENARIOS = [
         render: (d) => compKV([['本体版本', d.ontology_version], ['免费等候', d.free_wait_minutes + ' 分钟'],
           ['阻断', (d.findings || []).filter((f) => f.severity === 'BLOCKER').map((f) => f.code).join(', ') || '无']])
           + compVerdict(`版本切到 <b>${esc(d.ontology_version)}</b>：结论翻转并标 BLOCKER。<b>代码零改动。</b>`, true)
+      },
+      {
+        title: '先按当前本体算一遍',
+        graph_parity: 'hardcoded',
+        question: '免费等候几分钟？规则应计多少？',
+        dependency: 'pricing.waiting.free_minutes = 30；抽掉则该结论不成立',
+        note: '结论绑定本体版本，不是代码常量。',
+        component: 'Rule AST',
+        request: () => ({ method: 'GET', path: `/waybills/${COMP_WAYBILL}/fee-analysis` }),
+        render: (d) => compKV([['本体版本', d.ontology_version], ['免费等候', d.free_wait_minutes + ' 分钟'],
+          ['规则应计', (d.waiting_rule ? d.waiting_rule.expected : '—') + ' 元'], ['差异', d.variance + ' 元']])
       },
       {
         title: '确定性声明检查（不依赖 LLM）',
@@ -6070,6 +6070,18 @@ const COMP_SCENARIOS = [
     meta: '4 步 · 零主库写入',
     steps: [
       {
+        title: '错角色 / 错状态实测',
+        graph_parity: 'hardcoded',
+        question: '陌生人能接单吗？终态能改派吗？',
+        dependency: 'actions[].roles / from_status；抽掉 → 动作放行',
+        note: 'SAVEPOINT 内执行真实 execute_action，最后 ROLLBACK。',
+        component: 'Action Gate',
+        request: () => ({ method: 'POST', path: '/actions/lab', body: {} }),
+        render: (d) => compTable(['场景', '结果', '拒绝码'], (d.cases || []).slice(0, 2).map((c) =>
+          [c.case, c.ok ? '放行' : '拒绝', c.code || '—']))
+          + compVerdict(`错角色 <b>FORBIDDEN_ROLE</b>、错状态 <b>${esc((d.cases || [])[1]?.code || 'RULE_REJECTED')}</b>：拦住动作的是本体声明。`, true)
+      },
+      {
         title: '看状态机声明与可用动作',
         graph_parity: 'hardcoded',
         question: 'DELIVERED 是终态吗？',
@@ -6086,18 +6098,6 @@ const COMP_SCENARIOS = [
             ['状态数', (m.statuses || []).length],
             ['迁移边', (m.transitions || []).length]]);
         }
-      },
-      {
-        title: '错角色 / 错状态实测',
-        graph_parity: 'hardcoded',
-        question: '陌生人能接单吗？终态能改派吗？',
-        dependency: 'actions[].roles / from_status；抽掉 → 动作放行',
-        note: 'SAVEPOINT 内执行真实 execute_action，最后 ROLLBACK。',
-        component: 'Action Gate',
-        request: () => ({ method: 'POST', path: '/actions/lab', body: {} }),
-        render: (d) => compTable(['场景', '结果', '拒绝码'], (d.cases || []).slice(0, 2).map((c) =>
-          [c.case, c.ok ? '放行' : '拒绝', c.code || '—']))
-          + compVerdict(`错角色 <b>FORBIDDEN_ROLE</b>、错状态 <b>${esc((d.cases || [])[1]?.code || 'RULE_REJECTED')}</b>：拦住动作的是本体声明。`, true)
       },
       {
         title: '允许动作 + 同键重放',
@@ -6134,17 +6134,6 @@ const COMP_SCENARIOS = [
     meta: '4 步 · 内存本体副本',
     steps: [
       {
-        title: '正常运单：零缺口',
-        graph_parity: 'hardcoded',
-        question: '7 条费用都有源系统认领吗？',
-        dependency: 'data_sources[TMS].fee_types 含 waiting/highway',
-        note: '按本体声明逐源取数，缺口显式暴露，不静默算 0。',
-        component: 'Source Contract',
-        request: () => ({ method: 'GET', path: '/contracts/coverage' }),
-        render: (d) => compKV([['费用行', d.source_coverage.fee_count], ['已解析', d.source_coverage.resolved],
-          ['缺口', d.source_coverage.unresolved], ['findings', (d.findings || []).length]])
-      },
-      {
         title: '删认领：缺口翻转',
         graph_parity: 'impossible',
         question: '把 waiting 从 TMS 认领里删掉会怎样？',
@@ -6156,6 +6145,17 @@ const COMP_SCENARIOS = [
           ['after findings', (d.after.findings || []).length], ['persisted', String(d.persisted)]])
           + compTable(['翻转', '方向'], (d.flips || []).map((f) => [f.code, f.action]))
           + compVerdict(`删一行本体认领声明，<b>FEE_SOURCE_UNRESOLVED</b> 立刻出现。`, true)
+      },
+      {
+        title: '正常运单：零缺口',
+        graph_parity: 'hardcoded',
+        question: '7 条费用都有源系统认领吗？',
+        dependency: 'data_sources[TMS].fee_types 含 waiting/highway',
+        note: '按本体声明逐源取数，缺口显式暴露，不静默算 0。',
+        component: 'Source Contract',
+        request: () => ({ method: 'GET', path: '/contracts/coverage' }),
+        render: (d) => compKV([['费用行', d.source_coverage.fee_count], ['已解析', d.source_coverage.resolved],
+          ['缺口', d.source_coverage.unresolved], ['findings', (d.findings || []).length]])
       },
       {
         title: '删整个源：更多缺口',
@@ -6194,17 +6194,6 @@ const COMP_SCENARIOS = [
     meta: '4 步 · 真实权限引擎',
     steps: [
       {
-        title: '匿名 vs 争议角色',
-        graph_parity: 'hardcoded',
-        question: '同一批费用行，匿名能看到几条？',
-        dependency: 'data_source_markings[客服工单].marking = DISPUTE_OPS',
-        note: '标记从数据源传到类、对象、列。',
-        component: 'Row Policy',
-        request: () => ({ method: 'POST', path: '/security/simulate', body: { user: 'anonymous', roles: [], class_id: 'FeeItem' } }),
-        run: (ctx, req) => enhApi('/security/simulate', { method: 'POST', body: JSON.stringify(req.body) }),
-        render: (d) => compKV([['视角', d.user], ['总行数', d.total_rows], ['可见行数', d.visible_rows]])
-      },
-      {
         title: 'Agent 输出闸',
         graph_parity: 'hardcoded',
         question: '模型想把工单内容说出去，拦得住吗？',
@@ -6216,6 +6205,17 @@ const COMP_SCENARIOS = [
         render: (d) => compKV([['对象', d.object_id], ['结果', d.status],
           ['拒绝码', (d.findings || []).map((f) => f.code).join(', ') || '—']])
           + compVerdict(`匿名视角下 Agent 输出被 <b>OUTPUT_MARKING_DENIED</b> 整段拒绝。`, true)
+      },
+      {
+        title: '匿名 vs 争议角色',
+        graph_parity: 'hardcoded',
+        question: '同一批费用行，匿名能看到几条？',
+        dependency: 'data_source_markings[客服工单].marking = DISPUTE_OPS',
+        note: '标记从数据源传到类、对象、列。',
+        component: 'Row Policy',
+        request: () => ({ method: 'POST', path: '/security/simulate', body: { user: 'anonymous', roles: [], class_id: 'FeeItem' } }),
+        run: (ctx, req) => enhApi('/security/simulate', { method: 'POST', body: JSON.stringify(req.body) }),
+        render: (d) => compKV([['视角', d.user], ['总行数', d.total_rows], ['可见行数', d.visible_rows]])
       },
       {
         title: '改 marking：可见性翻转',
@@ -6254,6 +6254,17 @@ const COMP_SCENARIOS = [
     meta: '3 步 · 最后一步真实 LLM',
     steps: [
       {
+        title: '抽掉类型声明',
+        graph_parity: 'impossible',
+        question: '删掉 FeeItem 类型会怎样？',
+        dependency: 'classes[FeeItem]；删除 → TYPE_UNBOUND',
+        note: '只在内存本体副本删，不改主本体。',
+        component: 'Negative Lab',
+        request: () => ({ method: 'POST', path: '/agent/declaration-check', body: { omit_type: 'FeeItem' } }),
+        render: (d) => compTable(['翻转', '方向'], (d.flips || []).map((f) => [f.code, f.action]))
+          + compVerdict(`删一个类型声明，模型就<b>不可圈定</b>该类型——没有降级替身。`, true)
+      },
+      {
         title: '确定性声明检查',
         graph_parity: 'hardcoded',
         question: '不给声明，AI 能凭空查吗？',
@@ -6264,17 +6275,6 @@ const COMP_SCENARIOS = [
         render: (d) => compKV([['工具数', d.before.tool_count], ['可圈定类型', d.before.type_count],
           ['证据 checksum', d.before.evidence_checksum || '—']])
           + compVerdict(`工具白名单、类型目录、证据 checksum 三项都由本体声明决定。`, true)
-      },
-      {
-        title: '抽掉类型声明',
-        graph_parity: 'impossible',
-        question: '删掉 FeeItem 类型会怎样？',
-        dependency: 'classes[FeeItem]；删除 → TYPE_UNBOUND',
-        note: '只在内存本体副本删，不改主本体。',
-        component: 'Negative Lab',
-        request: () => ({ method: 'POST', path: '/agent/declaration-check', body: { omit_type: 'FeeItem' } }),
-        render: (d) => compTable(['翻转', '方向'], (d.flips || []).map((f) => [f.code, f.action]))
-          + compVerdict(`删一个类型声明，模型就<b>不可圈定</b>该类型——没有降级替身。`, true)
       },
       {
         title: '真实推理链（最后一击）',
@@ -6298,6 +6298,18 @@ const COMP_SCENARIOS = [
     meta: '3 步 · 可解释结论',
     steps: [
       {
+        title: '裸系统对照',
+        graph_parity: 'impossible',
+        question: '同一份数据直接丢给大模型，它算得对吗？',
+        dependency: '规则不在数据里：公式/版本/生效期/车型费率',
+        note: '裸 LLM 把 quoted_amount=0 当应计 → 0 元；本体按规则算 → 12 元。',
+        component: 'Takeaway',
+        request: () => ({ local: true, method: 'LOCAL', path: 'plan/demo_script.md §2 实测' }),
+        run: () => ({ bare: '0.00', ontology: '12.00', gap: '13.00' }),
+        render: () => compKV([['裸大模型', '0.00 元（凭不上）'], ['本体', '12.00 元（规则+版本+证据）'],
+          ['差额', '超收 13 元']]) + compVerdict(`差的 13 元<b>不在数据里</b>，在计价规则里。本体把规则变成机器可执行、可审计的东西。`, true)
+      },
+      {
         title: '规则应计 vs 实收',
         graph_parity: 'hardcoded',
         question: '53 分钟、免费 <span data-ontology-value="waiting.free_minutes">30 分钟</span>、5 个计费块，各是多少？',
@@ -6320,18 +6332,6 @@ const COMP_SCENARIOS = [
         render: (d) => compKV([['时间线事件', d.timeline_count ?? (d.timeline || []).length],
           ['关系', (d.relations || []).length],
           ['当前状态', d.object?.status || '—']])
-      },
-      {
-        title: '裸系统对照',
-        graph_parity: 'impossible',
-        question: '同一份数据直接丢给大模型，它算得对吗？',
-        dependency: '规则不在数据里：公式/版本/生效期/车型费率',
-        note: '裸 LLM 把 quoted_amount=0 当应计 → 0 元；本体按规则算 → 12 元。',
-        component: 'Takeaway',
-        request: () => ({ local: true, method: 'LOCAL', path: 'plan/demo_script.md §2 实测' }),
-        run: () => ({ bare: '0.00', ontology: '12.00', gap: '13.00' }),
-        render: () => compKV([['裸大模型', '0.00 元（凭不上）'], ['本体', '12.00 元（规则+版本+证据）'],
-          ['差额', '超收 13 元']]) + compVerdict(`差的 13 元<b>不在数据里</b>，在计价规则里。本体把规则变成机器可执行、可审计的东西。`, true)
       },
     ]
   },
@@ -6433,13 +6433,6 @@ const COMP_SCENARIOS = [
     summary: '改属性类型 → 创建路径真实拒绝；不是静态承重表',
     meta: '2 步 · 真实校验',
     steps: [
-      { title: '属性注册表', question: '属性有类型吗？', dependency: 'property_types[waiting_minutes].value_type = number',
-        graph_parity: 'hardcoded',
-        note: '类型/单位/标记/时序都是注册表字段。', component: 'Registry',
-        request: () => ({ method: 'GET', path: '/property-registry/Waybill' }),
-        run: (ctx, req) => enhApi(req.path),
-        render: (d) => compKV([['类型', d.class], ['注册属性数', (d.properties || []).length],
-          ['策略', JSON.stringify(d.policy || {}).slice(0, 60)]]) },
       { title: '改类型：写入被拒', question: '把 number 改成 boolean 会怎样？', dependency: 'value_type；改后 → TYPE_MISMATCH',
         graph_parity: 'impossible',
         note: '用真实 validate_object 校验路径。', component: 'Negative Lab',
@@ -6448,6 +6441,13 @@ const COMP_SCENARIOS = [
           ['拒绝码', d.after.create.code || '—'], ['persisted', String(d.persisted)]])
           + compTable(['翻转'], (d.flips || []).map((f) => [f.code]))
           + compVerdict(`改一行类型声明，创建路径 <b>TYPE_MISMATCH</b>——注册表是契约，不是注释。`, true) },
+      { title: '属性注册表', question: '属性有类型吗？', dependency: 'property_types[waiting_minutes].value_type = number',
+        graph_parity: 'hardcoded',
+        note: '类型/单位/标记/时序都是注册表字段。', component: 'Registry',
+        request: () => ({ method: 'GET', path: '/property-registry/Waybill' }),
+        run: (ctx, req) => enhApi(req.path),
+        render: (d) => compKV([['类型', d.class], ['注册属性数', (d.properties || []).length],
+          ['策略', JSON.stringify(d.policy || {}).slice(0, 60)]]) },
     ]
   },
 ];;

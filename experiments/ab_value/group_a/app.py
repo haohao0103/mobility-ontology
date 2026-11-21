@@ -29,36 +29,67 @@ WAYBILL = "waybill:WB20261105001"
 class GroupA:
     name = "A: 属性图 + 服务代码规则"
 
+    _orig_yaml = None  # 类级原文备份：只在首次 init 时取，重启（模拟）不覆盖
+
     def __init__(self):
         self.conn = sqlite3.connect(f"file:{FACTS_DB}?mode=ro", uri=True)
         self.conn.row_factory = sqlite3.Row
-        with open(HERE / "rules.yaml", encoding="utf-8") as fh:
-            self.rules = yaml.safe_load(fh)
+        # 重启后磁盘上的 YAML 可能已含变更；原文以首次加载为准
+        if GroupA._orig_yaml is None:
+            GroupA._orig_yaml = (HERE / "rules.yaml").read_text(encoding="utf-8")
+        self.rules = yaml.safe_load((HERE / "rules.yaml").read_text(encoding="utf-8"))
         # 服务代码里的第二处规则副本（真实项目常见形态）
         self._hardcoded_amount_cap = "actual"
 
-    # ---- 变更接口（C1）：改 YAML 参数 ----
+    # ---- 变更接口（C1/C2）----
     def apply_change(self, card: dict) -> dict:
         """按变更卡改 rules.yaml。属性图路线改完必须重启（重新 init）才生效。"""
-        if card["change"].startswith("pricing.waiting.free_minutes"):
+        change = card["change"]
+        if change.startswith("pricing.waiting.free_minutes"):
             old = self.rules["pricing"]["waiting"]["free_minutes"]
-            new = int(card["change"].split("->")[1].strip())
-            self.rules["pricing"]["waiting"]["free_minutes"] = new
+            new = int(change.split("->")[1].strip())
+            # 真实形态：改的是文件/配置；正在运行的进程读的还是旧值，
+            # 必须重启（重新 init）才生效——内存 self.rules 刻意不更新
             path = HERE / "rules.yaml"
             raw = path.read_text(encoding="utf-8")
             path.write_text(raw.replace(f"free_minutes: {old}", f"free_minutes: {new}"),
                             encoding="utf-8")
             return {"changed_files": [str(path.relative_to(ROOT))],
                     "code_files": 0, "restart_required": True}
+        if change.startswith("by_vehicle_type.add:"):
+            # C2 新增车型：A 组在自己的 vehicle_rates 表加一行；
+            # 「按车型取参数」的选择逻辑在服务代码里
+            vehicle, params = change.split("add:", 1)[1].split("=", 1)
+            vehicle = vehicle.strip()
+            entry = {}
+            for kv in params.strip().strip("{}").split(","):
+                k, v = kv.split(":")
+                entry[k.strip()] = float(v)
+            path = HERE / "rules.yaml"
+            raw = path.read_text(encoding="utf-8")
+            marker = "    跑腿: {free_minutes: 10, block_minutes: 5, per_block: 1.0}"
+            new_line = (f"    {vehicle}: {{free_minutes: {int(entry['free_minutes'])}, "
+                        f"block_minutes: {int(entry['block_minutes'])}, "
+                        f"per_block: {entry['per_block']}}}")
+            path.write_text(raw.replace(marker, marker + "\n" + new_line),
+                            encoding="utf-8")
+            return {"changed_files": [str(path.relative_to(ROOT))],
+                    "code_files": 0, "restart_required": True}
         raise ValueError(f"未知变更卡: {card}")
 
     def rollback(self):
-        """把 rules.yaml 改回 30。"""
+        """把 rules.yaml 写回首次 init 时的原文（重启不刷新备份，防污染）。"""
         path = HERE / "rules.yaml"
-        raw = path.read_text(encoding="utf-8")
-        path.write_text(re.sub(r"free_minutes: \d+", "free_minutes: 30", raw),
-                        encoding="utf-8")
-        self.rules["pricing"]["waiting"]["free_minutes"] = 30
+        path.write_text(GroupA._orig_yaml, encoding="utf-8")
+        self.__init__()
+
+    # ---- C2 验证：按车型求应计（选择逻辑在代码里，参数在 YAML 里）----
+    def waiting_expected_for(self, vehicle_type: str, minutes: float) -> float:
+        rates = self.rules["pricing"]["vehicle_rates"]
+        p = rates.get(vehicle_type) or self.rules["pricing"]["waiting"]
+        blocks = 0 if minutes <= p["free_minutes"] else -(-(minutes - p["free_minutes"])
+                                                        // p["block_minutes"])
+        return round(blocks * p["per_block"], 2)
 
     # ---- 事实读取（图查询） ----
     def _waybill(self) -> dict:

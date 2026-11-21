@@ -5,6 +5,13 @@ pricing:
     free_minutes: 30
     block_minutes: 5
     per_block: 2.4
+  # 车型费率表：A 组要支持「按车型取参数」，得自己在服务代码里写选择逻辑
+  vehicle_rates:
+    4.2米厢货: {free_minutes: 30, block_minutes: 5, per_block: 2.4}
+    面包车: {free_minutes: 20, block_minutes: 5, per_block: 1.8}
+    小货车: {free_minutes: 30, block_minutes: 5, per_block: 2.4}
+    大货车: {free_minutes: 40, block_minutes: 10, per_block: 4.0}
+    跑腿: {free_minutes: 10, block_minutes: 5, per_block: 1.0}
 actions:
   waive_charge:
     # 硬编码语义：只能减免 DISPUTED 费用，且减免不得超过实收

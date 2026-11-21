@@ -47,23 +47,25 @@ def gate_correctness(group, golden: dict) -> dict:
 
 
 def m1_change_cost(group, card: dict, golden_after: dict) -> dict:
-    """M1 变更成本：从变更命令到新答案正确返回的耗时 + 改动面。"""
+    """M1 变更成本：从变更命令到新答案正确返回的耗时 + 改动面。
+
+    真实两阶段：变更后立即求值——若答案未变（正在运行的进程还持旧配置），
+    属性图路线需要重启（重新 init）才生效；本体路线改声明即生效。
+    """
     t0 = time.time()
     info = group.apply_change(card)
     r = group.q2_waiting()
-    while not golden_match(r["answer"]["waiting_expected"],
-                           golden_after["waiting_expected"]):
-        info["restart_required"] = True
-        # 模拟属性图路线必须重启：重新 init
-        group.__init__()
+    restart = False
+    if not golden_match(r["answer"]["waiting_expected"], golden_after["waiting_expected"]):
+        restart = True
+        group.__init__()  # 重启：重新加载配置/声明
         r = group.q2_waiting()
-        break
     elapsed = round(time.time() - t0, 3)
     ok = golden_match(r["answer"]["waiting_expected"], golden_after["waiting_expected"])
     group.rollback()
     return {"files_changed": len(info["changed_files"]),
             "code_files_changed": info["code_files"],
-            "restart_required": info["restart_required"],
+            "restart_required": bool(restart or info.get("restart_required")),
             "wall_time_s": elapsed, "answer_ok_after_change": bool(ok)}
 
 
@@ -75,10 +77,33 @@ def m3_auditability(group) -> dict:
     for s in sample:
         audit = s.get("audit") or {}
         present += sum(1 for k in keys if audit.get(k))
-    # 满分 = 样本数 × 关键要素数 × 0.5（Q3 类动作答案天然缺部分要素，给一半权重）
-    max_score = int(len(sample) * len(keys) * 0.5)
+    # 满分 = 样本数 × 关键要素数（缺失项如实留空，不加权美化）
     return {"audit_keys": keys, "present_count": present, "score": present,
-            "max_score": max(max_score, 1)}
+            "max_score": len(sample) * len(keys)}
+
+
+def m2_new_vehicle(group, card: dict) -> dict:
+    """M2 新增车型：C2 变更 + 测试运单求应计，采集改动面与正确性（含真实重启检测）。"""
+    props = card["test_waybill_props"]
+    expected = card["expected_new_waiting"]
+    t0 = time.time()
+    info = group.apply_change(card)
+    value = group.waiting_expected_for(props["vehicle_type"],
+                                       float(props["waiting_minutes"]))
+    restart = False
+    if not golden_match(value, expected):
+        restart = True
+        group.__init__()  # 属性图路线需要重启才加载新配置
+        value = group.waiting_expected_for(props["vehicle_type"],
+                                           float(props["waiting_minutes"]))
+    elapsed = round(time.time() - t0, 3)
+    ok = golden_match(value, expected)
+    group.rollback()
+    return {"files_changed": len(info["changed_files"]),
+            "code_files_changed": info["code_files"],
+            "restart_required": bool(restart or info.get("restart_required")),
+            "wall_time_s": elapsed, "answer_ok_after_change": bool(ok),
+            "new_waiting_expected": value}
 
 
 def run_experiment() -> dict:
@@ -100,12 +125,12 @@ def run_experiment() -> dict:
             "M1_change_cost_C1": (m1_change_cost(g, change_cards["C1"],
                                                  change_cards["C1"]["expected_new_Q2"])
                                   if passed else None),
+            "M2_new_vehicle_C2": (m2_new_vehicle(g, change_cards["C2"])
+                                  if passed else None),
             "M3_auditability": m3_auditability(g) if passed else None,
         }
         if not passed:
             report["groups"][g.name]["verdict"] = "残缺实现 → 当场换人重写，不继续"
-    # M2（新增车型）pending：需先准备含 7.6米货车 的测试运单
-    report["M2_status"] = "PENDING_TEST_DATA（见 fixtures/change_cards.json C2）"
     # M4（非研发可用性）待真人执行
     report["M4_status"] = "PENDING_HUMAN（见 experiments/ab_value/M4_TASK_CARD.md）"
     return report
@@ -130,10 +155,11 @@ def main() -> int:
                   g["correctness_gate"]["detail"])
             if g.get("M1_change_cost_C1"):
                 print("  M1 变更成本(C1):", g["M1_change_cost_C1"])
+            if g.get("M2_new_vehicle_C2"):
+                print("  M2 新增车型(C2):", g["M2_new_vehicle_C2"])
             if g.get("M3_auditability"):
                 print("  M3 可审计性:", g["M3_auditability"])
-        print("\nM2:", report["M2_status"])
-        print("M4:", report["M4_status"])
+        print("\nM4:", report["M4_status"])
     ok = all(g["correctness_gate"]["passed"] for g in report["groups"].values())
     return 0 if ok else 1
 

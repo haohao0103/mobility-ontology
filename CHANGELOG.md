@@ -1,5 +1,49 @@
 # Changelog
 
+## 3.4.0 (2026-11-21) — 来源契约收口（门禁第 27 项）+ 本地部署测试
+
+上一版把运单-费用链做深（深水区 18 类全覆盖），这一版把**来源契约**变成门禁，
+并按用户授权完成**本地部署测试**（STG `stg-121` 本轮不可达）。
+
+### 新增
+- `freight/source_coverage.py`：来源契约判据内核
+  - G1 **归属矩阵**：`pricing` 段的每个 `fee_type` 必须**恰好**被一个
+    `data_sources[].fee_types` 认领 —— 漏认领报 `FEE_TYPE_NO_OWNER`，
+    两个来源认领报 `FEE_TYPE_MULTI_OWNER`，认领了定价里没有的类型报 `FEE_TYPE_NOT_IN_PRICING`；
+  - G2 **费用类型覆盖（V5）**：每个 `fee_type` 在 FeeItem / PricingRule / QuoteItem
+    **三方各有 ≥1 实例**，缺一方报 `FEE_TYPE_NO_INSTANCE` / `_NO_RULE` / `_NO_QUOTE_ITEM`。
+- 门禁**第 27 项** `check_source_contracts`（含 4 条负向用例：删认领 / 双认领 /
+  删报价明细 / 篡改报价明细金额），覆盖目标 15 → **16**。
+- `freight/scenarios.py` 之外，服务启动即带剧本：`FreightSystem(with_scenario=True)`，
+  `freight/api.py` 默认开启 —— **跑起来的服务本身就是深水区 100% 覆盖的那份数据**，
+  与门禁第 26 项度量的是同一批对象。
+- 承重实验 +2 条（L20 删认领 → `FEE_TYPE_NO_OWNER`；L21 双认领 → `FEE_TYPE_MULTI_OWNER`），
+  共 **22 条**。
+
+### 部署环境（本轮实况）
+- **STG `stg-121` 不可达**：实测 `ssh stg-121` 报 `Could not resolve hostname stg-121`，
+  仓库与 `/etc/hosts` 均无该主机地址。`AGENTS.md` 已记录本轮**用户授权改用本地部署测试**
+  （仅本轮有效；任何情况下不得部署 PRD）。
+- **本地部署测试结果**（服务 `cli.py serve --port 8765`）：
+  | 接口 | 结果 |
+  |---|---|
+  | `/freight/health` | 200｜500 类 / 503 链接 / 16 规则 / 15 动作 |
+  | `/freight/ontology/state-machines` | 200｜8 个状态机，15 条迁移边 |
+  | `/freight/objects/waybill:SCN01/state-history` | 200｜轨迹 ACCEPTED → LOADED → DELIVERED |
+  | `/freight/waybills/waybill:WB20261105001/fee-analysis` | 200｜报价 480 / 实收 518 / 差异 38；**报价三口径一致**（明细合计 480 = 报价单总额 480 = 运单快照 480）；来源覆盖：连接器 2 / 费用 7 / 已解析 7 / 未解析 0 |
+  | `/freight/mcp/tools` | 200｜16 个工具（含新增 `ontology.state_machine`） |
+  | `/freight/mcp/call` `ontology.state_machine` | 200｜FeeItem 状态机 + 迁移边 |
+  | `/freight/objects/waybill:SCN01/graph?depth=2` | 200｜13 个节点 |
+  | reasoning-chain（MiMo 直连） | 12 步 finished｜三方分工标注完整｜结论由 `mimo-v2.6-pro` 生成 |
+- **已知抖动**：推理链偶发 503（网关调用超时），同一服务重跑即恢复；`agent.py` 目前**没有退避重试**，
+  建议后续补（本次未改，避免在无 STG 环境里改动网关调用策略）。
+
+### 验证
+- `pytest` **287 passed**（新增 `tests/test_source_contracts.py` 11 项）
+- 语义门禁 **27 项 / 16 覆盖 / ok=true**
+- 承重实验 **22/22**；freight 验收 12/12；smoke **7/7**；`verify.py` 36/36
+
+
 ## 3.3.0 (2026-11-21) — 运单-费用链做深做全 + ABox 深度门禁（第 26 项）
 
 上一版把「本体能表达」做完了，这一版做的是另一半：**证明本体是真的**。

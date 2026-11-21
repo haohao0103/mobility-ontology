@@ -1088,6 +1088,145 @@ def check_abox_coverage(root: str) -> dict:
     return item
 
 
+def check_source_contracts(root: str) -> dict:
+    """P2-7：来源契约——费用类型归属矩阵 + 覆盖度 + 缺口与口径冲突的检测能力。
+
+    机制在 `d046ae1` 已经做完（连接器按 `fee_types` 认领、缺口显式化、报价三口径
+    互校），但**没有检查会问**："这个费用类型归谁管""三方是否齐全""检测能力还在不在"。
+    本门禁项把这些变成硬判据：
+    - G1 归属矩阵：定价里的每个 fee_type 恰好被一个连接器认领；
+    - G2 覆盖度（V5）：每个 fee_type 在 FeeItem / PricingRule / QuoteItem 三方齐全；
+    - 负向用例四条：删认领 / 双认领 / 删报价明细 / 改报价明细金额（口径冲突）。
+    """
+    target = "freight/semantic_layer.json#data_sources"
+    item: dict = {"target": target, "ok": True, "issues": []}
+    from freight import abox, source_coverage
+
+    layer_path = os.path.join(root, "freight", "semantic_layer.json")
+    sem = SemanticLayer(layer_path)
+
+    def add_issue(iss: dict) -> None:
+        item["ok"] = False
+        item["issues"].append({"code": iss["code"], "path": iss.get("path", target),
+                               "message": iss["message"]})
+
+    for iss in source_coverage.check_fee_type_ownership(sem):
+        add_issue(iss)
+
+    db = abox.build_db(prefix="src_gate_")
+    try:
+        for iss in source_coverage.check_fee_type_coverage(sem, db):
+            add_issue(iss)
+        item["coverage"] = source_coverage.measure_fee_type_coverage(sem, db)
+        item["ownership"] = {
+            "universe": source_coverage.fee_type_universe(sem),
+            "owners": {k: [c.get("system") for c in v]
+                       for k, v in source_coverage.fee_type_owners(sem).items()},
+        }
+
+        # ---- 负向用例 ----
+        def _temp_layer(mutate):
+            import tempfile
+            raw = json.loads(json.dumps(sem.raw))
+            mutate(raw)
+            fd, path = tempfile.mkstemp(suffix=".json", prefix="src_neg_")
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(raw, f, ensure_ascii=False)
+            return path
+
+        def _drop_claim(raw):
+            for ds in raw.get("data_sources") or []:
+                if ds.get("system") == "TMS":
+                    ds["fee_types"] = [t for t in ds.get("fee_types") or []
+                                       if t != "waiting"]
+            return raw
+
+        def _double_claim(raw):
+            for ds in raw.get("data_sources") or []:
+                if ds.get("system") == "TMS":
+                    ds["fee_types"] = list(ds.get("fee_types") or []) + ["highway"]
+            return raw
+
+        for label, mutate, expect in (
+            ("删掉一个费用类型的认领", _drop_claim, "FEE_TYPE_NO_OWNER"),
+            ("两个来源认领同一费用类型", _double_claim, "FEE_TYPE_MULTI_OWNER"),
+        ):
+            tmp = _temp_layer(mutate)
+            try:
+                codes = {i["code"] for i in
+                         source_coverage.check_fee_type_ownership(SemanticLayer(tmp))}
+            except Exception as exc:  # noqa: BLE001
+                codes = set()
+                item["issues"].append({
+                    "code": "SOURCE_NEGATIVE_CRASH", "path": target,
+                    "message": f"负向用例执行异常: {exc}"})
+            finally:
+                os.remove(tmp)
+            if expect not in codes:
+                item["ok"] = False
+                item["issues"].append({
+                    "code": "SOURCE_NEGATIVE_LEAKED", "path": target,
+                    "message": f"负向用例未被拦截（期望 {expect}）: {label}"})
+
+        # 负向用例：删掉一类 QuoteItem -> 覆盖度缺项
+        import sqlite3
+        probe_db = abox.build_db(prefix="src_neg_db_")
+        try:
+            conn = sqlite3.connect(probe_db)
+            row = conn.execute(
+                "SELECT object_id, props FROM objects WHERE type='QuoteItem' "
+                "AND props LIKE '%waiting%' LIMIT 1").fetchone()
+            if row:
+                conn.execute("DELETE FROM objects WHERE object_id=?", (row[0],))
+                conn.commit()
+            conn.close()
+            codes = {i["code"] for i in
+                     source_coverage.check_fee_type_coverage(sem, probe_db)}
+            if "FEE_TYPE_NO_QUOTE_ITEM" not in codes:
+                item["ok"] = False
+                item["issues"].append({
+                    "code": "SOURCE_NEGATIVE_LEAKED", "path": target,
+                    "message": "负向用例未被拦截（期望 FEE_TYPE_NO_QUOTE_ITEM）: 删掉一类报价明细"})
+        finally:
+            if os.path.exists(probe_db):
+                os.remove(probe_db)
+
+        # 负向用例：改报价明细金额 -> 三口径必须报冲突
+        probe_db = abox.build_db(prefix="src_neg_quote_")
+        try:
+            conn = sqlite3.connect(probe_db)
+            row = conn.execute(
+                "SELECT object_id, props FROM objects WHERE type='QuoteItem' LIMIT 1"
+            ).fetchone()
+            if row:
+                props = json.loads(row[1])
+                props["amount"] = round(float(props.get("amount") or 0) + 100.0, 2)
+                conn.execute("UPDATE objects SET props=? WHERE object_id=?",
+                             (json.dumps(props, ensure_ascii=False), row[0]))
+                conn.commit()
+            conn.close()
+            from freight.engine import FreightSystem
+
+            system = FreightSystem(probe_db, fresh=False, seed=False)
+            try:
+                report = system.fee_analysis("waybill:WB20261105001")
+                codes = {f.get("code") for f in report.get("findings") or []}
+            finally:
+                system.conn.close()
+            if "QUOTE_TOTAL_MISMATCH" not in codes:
+                item["ok"] = False
+                item["issues"].append({
+                    "code": "SOURCE_NEGATIVE_LEAKED", "path": target,
+                    "message": "负向用例未被拦截（期望 QUOTE_TOTAL_MISMATCH）: 报价明细金额被改"})
+        finally:
+            if os.path.exists(probe_db):
+                os.remove(probe_db)
+    finally:
+        if os.path.exists(db):
+            os.remove(db)
+    return item
+
+
 def main() -> int:
     results = [check_schema(CURRENT, "freight/semantic_layer.json")]
     results.append(check_metadata(CURRENT, "freight/semantic_layer.json"))
@@ -1106,6 +1245,7 @@ def main() -> int:
     results.append(check_breaking_changes(ROOT))
     results.append(check_state_machines(ROOT))
     results.append(check_abox_coverage(ROOT))
+    results.append(check_source_contracts(ROOT))
     results.append(check_query_schema(ROOT))
     for manifest in list_manifests():
         version = manifest["version"]
@@ -1163,6 +1303,7 @@ def main() -> int:
         "breaking_changes": "freight/semantic_layer.json#breaking",
         "state_machines": "freight/semantic_layer.json#state_machines",
         "abox_coverage": "freight/semantic_layer.json#abox_targets",
+        "source_contracts": "freight/semantic_layer.json#data_sources",
     }
     coverage = {
         name: {"target": target, "ok": bool(by_target.get(target))}

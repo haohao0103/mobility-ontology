@@ -260,6 +260,40 @@ def probe_abox(root: str, args: dict) -> dict:
             os.remove(db)
 
 
+
+def probe_source_contracts(root: str, args: dict) -> dict:
+    """来源契约（门禁第 27 项）：归属矩阵 + 覆盖度。"""
+    from freight import abox, source_coverage
+    from freight.semantic import SemanticLayer
+
+    sem = SemanticLayer(os.path.join(root, "freight", "semantic_layer.json"))
+    issues = source_coverage.check_fee_type_ownership(sem)
+    db = abox.build_db(prefix="lb_src_")
+    try:
+        issues += source_coverage.check_fee_type_coverage(sem, db)
+    finally:
+        if os.path.exists(db):
+            os.remove(db)
+    return {"ok": not issues, "codes": sorted({i["code"] for i in issues})}
+
+
+
+def probe_source_contracts(root: str, args: dict) -> dict:
+    """来源契约（门禁第 27 项）：归属矩阵 + 覆盖度。"""
+    from freight import abox, source_coverage
+    from freight.semantic import SemanticLayer
+
+    sem = SemanticLayer(os.path.join(root, "freight", "semantic_layer.json"))
+    issues = source_coverage.check_fee_type_ownership(sem)
+    db = abox.build_db(prefix="lb_src_")
+    try:
+        issues += source_coverage.check_fee_type_coverage(sem, db)
+    finally:
+        if os.path.exists(db):
+            os.remove(db)
+    return {"ok": not issues, "codes": sorted({i["code"] for i in issues})}
+
+
 PROBES = {
     "gate": probe_gate,
     "gate_full": probe_gate_full,
@@ -273,6 +307,7 @@ PROBES = {
     "projection": probe_projection,
     "action_param": probe_action_param,
     "abox": probe_abox,
+    "source_contracts": probe_source_contracts,
 }
 
 
@@ -419,6 +454,40 @@ def mut_drop_core_type(raw):
     types = list((raw.get("abox_targets") or {}).get("core_types") or [])
     types = [t for t in types if t != "FeeItem"]
     raw.setdefault("abox_targets", {})["core_types"] = types
+    return raw
+
+
+
+def mut_drop_fee_claim(raw):
+    """删掉 TMS 对 waiting 的认领 -> 归属矩阵必须报无人认领。"""
+    for ds in raw.get("data_sources") or []:
+        if ds.get("system") == "TMS" and ds.get("fee_types"):
+            ds["fee_types"] = [t for t in ds["fee_types"] if t != "waiting"]
+    return raw
+
+
+def mut_double_fee_claim(raw):
+    """让 TMS 也认领 highway（ETC 已经认领）-> 口径打架必须报。"""
+    for ds in raw.get("data_sources") or []:
+        if ds.get("system") == "TMS" and ds.get("fee_types"):
+            ds["fee_types"] = list(ds["fee_types"]) + ["highway"]
+    return raw
+
+
+
+def mut_drop_fee_claim(raw):
+    """删掉 TMS 对 waiting 的认领 -> 归属矩阵必须报无人认领。"""
+    for ds in raw.get("data_sources") or []:
+        if ds.get("system") == "TMS" and ds.get("fee_types"):
+            ds["fee_types"] = [t for t in ds["fee_types"] if t != "waiting"]
+    return raw
+
+
+def mut_double_fee_claim(raw):
+    """让 TMS 也认领 highway（ETC 已经认领）-> 口径打架必须报。"""
+    for ds in raw.get("data_sources") or []:
+        if ds.get("system") == "TMS" and ds.get("fee_types"):
+            ds["fee_types"] = list(ds["fee_types"]) + ["highway"]
     return raw
 
 
@@ -606,7 +675,26 @@ CASES = [
         "check": lambda b, m: b["class_total"] == 18 and m["class_total"] == 17
         and m["ok"],
     },
+    {
+        "id": "L20", "gap": "P2-7 归属矩阵",
+        "change": f"{LAYER} data_sources 里 TMS 去掉 waiting 认领",
+        "file": LAYER, "mut": mut_drop_fee_claim,
+        "probe": ("source_contracts", {}),
+        "expect": "门禁变 FAIL 报 FEE_TYPE_NO_OWNER（费用类型必须有人认领）",
+        "check": lambda b, m: b["ok"] and not m["ok"]
+        and "FEE_TYPE_NO_OWNER" in m["codes"],
+    },
+    {
+        "id": "L21", "gap": "P2-7 归属唯一",
+        "change": f"{LAYER} data_sources 里 TMS 也认领 highway",
+        "file": LAYER, "mut": mut_double_fee_claim,
+        "probe": ("source_contracts", {}),
+        "expect": "门禁变 FAIL 报 FEE_TYPE_MULTI_OWNER（一个类型只能一个口径）",
+        "check": lambda b, m: b["ok"] and not m["ok"]
+        and "FEE_TYPE_MULTI_OWNER" in m["codes"],
+    },
 ]
+
 
 
 

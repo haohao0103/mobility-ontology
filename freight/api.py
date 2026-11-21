@@ -22,7 +22,10 @@ _SYSTEM: FreightSystem | None = None
 def get_system() -> FreightSystem:
     global _SYSTEM
     if _SYSTEM is None:
-        _SYSTEM = FreightSystem(DEFAULT_FACT_DB, fresh=False, seed=True)
+        # with_scenario=True：服务启动即带上核心业务剧本（15 个迁移动作真实执行），
+        # 于是运行中的服务与门禁第 26 项度量的是同一份数据。
+        _SYSTEM = FreightSystem(DEFAULT_FACT_DB, fresh=False, seed=True,
+                                with_scenario=True)
     return _SYSTEM
 
 

@@ -47,7 +47,8 @@ def _parse_timestamp(value) -> datetime | None:
 
 
 class FreightSystem:
-    def __init__(self, db_path: str, fresh: bool = False, seed: bool = True):
+    def __init__(self, db_path: str, fresh: bool = False, seed: bool = True,
+                 with_scenario: bool = False):
         parent = os.path.dirname(os.path.abspath(db_path))
         os.makedirs(parent, exist_ok=True)
         if fresh and os.path.exists(db_path):
@@ -63,6 +64,12 @@ class FreightSystem:
         self.conn.commit()
         if seed and not self.facts.scalar("SELECT COUNT(*) FROM objects"):
             self.seed()
+            if with_scenario:
+                # 核心业务剧本：让跑起来的服务本身就是"被业务证明过"的深水区，
+                # 而不是只有一条诊断主链路的浅数据。空库才建，已有库不动（幂等）。
+                from freight import scenarios
+
+                scenarios.run_core_scenario(self)
             self.conn.commit()
 
     # ------------------------------------------------------------------ 写入原语

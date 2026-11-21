@@ -106,8 +106,19 @@ python scripts/demo_coverage_audit.py     # 内含「裸 SQL 对照」与「裸 
 **T-30 分钟**
 ```bash
 cd /Users/mac/WorkBuddy/2026-11-18-20-40-54/mobility_ontology_audit/src/mobility-ontology-main
+
+# 0) 先停掉正在跑的服务——它占着 runs/freight_facts.db，
+#    跑 pytest / 门禁会报 "database is locked"（2026-11-21 实测踩过）
+lsof -nP -tiTCP:8799 -sTCP:LISTEN | xargs kill; sleep 1
+
+# 1) 静态检查
+python -m pytest && python -m scripts.semantic_gate --json | head -5
+
+# 2) 起服务，再做运行时自检与彩排
+python cli.py serve --port 8799 &
+sleep 12
 DEMO_BASE=http://127.0.0.1:8799 python scripts/demo_gate.py     # 必须全绿
-python scripts/browser_rehearsal.py                              # 8 幕真实点击彩排
+DEMO_BASE=http://127.0.0.1:8799 python scripts/browser_rehearsal.py   # 8 幕真实点击
 ```
 - [ ] demo_gate 全绿（记下耗时基线：LLM 4~5s、推理链 45~90s）
 - [ ] 浏览器彩排 19/19 通过（连续两次）

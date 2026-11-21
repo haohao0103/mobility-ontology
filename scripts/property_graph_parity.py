@@ -388,7 +388,8 @@ def drift_experiment(svc: PropertyGraphService) -> dict:
     value = evaluate_rule_ast(ast_node, ctx)
     ont_drift = {
         "diagnosis": value, "preflight": value,
-        "consistent": True,
+        # 刻意不叫 consistent：它不是一次一致性校验，而是"两侧读同一份声明"的事实
+        "same_source": True,
         "detectable": True,
         "note": "所有路径读同一份声明；漏改不可能发生（没有第二处可漏）",
     }

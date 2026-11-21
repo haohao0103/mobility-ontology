@@ -1361,6 +1361,74 @@ def check_honesty(root: str) -> dict:
     return item
 
 
+
+def check_demo_current_values(root: str) -> dict:
+    """P2-10 演示页当前值一致性：页面里手写的"当前业务值"必须与本体一致。
+
+    起因：演示页大部分数值已改成从接口动态渲染，但仍有少量**手写文案**
+    （如"超过 30 分钟免费时长"）。本体参数一改，页面还写旧值——演示当天就会
+    出现"领导看到 30、系统算出 16.8"的事故。
+
+    做法：页面里凡是"当前值"都用 `data-ontology-value="waiting.free_minutes"`
+    标注；门禁解析标注、抽出数字、与本体比对。历史对比文案（版本 diff 的
+    30→20）**不加标注**，因此不会误报。
+    """
+    target = "web/order-ontology.html#data-ontology-value"
+    item: dict = {"target": target, "ok": True, "issues": []}
+    import re
+
+    layer_path = os.path.join(root, "freight", "semantic_layer.json")
+    with open(layer_path, encoding="utf-8") as fh:
+        layer = json.load(fh)
+    pricing = layer.get("pricing") or {}
+
+    def resolve(path: str):
+        cur = pricing
+        for part in path.split("."):
+            if not isinstance(cur, dict) or part not in cur:
+                return None
+            cur = cur[part]
+        return cur
+
+    html_path = os.path.join(root, "web", "order-ontology.html")
+    try:
+        with open(html_path, encoding="utf-8") as fh:
+            html = fh.read()
+    except OSError as exc:
+        item["ok"] = False
+        item["issues"].append({"code": "DEMO_VALUE_SCAN_FAILED", "path": target,
+                               "message": f"无法读取演示页: {exc}"})
+        return item
+
+    pattern = re.compile(
+        r'data-ontology-value="([a-z_.]+)"[^>]*>([^<]*)<', re.IGNORECASE)
+    checked = 0
+    for path, text in pattern.findall(html):
+        expected = resolve(path)
+        if expected is None:
+            continue
+        checked += 1
+        nums = re.findall(r"\d+(?:\.\d+)?", text)
+        if not nums:
+            continue
+        got = float(nums[0])
+        if abs(got - float(expected)) > 1e-9:
+            item["ok"] = False
+            item["issues"].append({
+                "code": "DEMO_VALUE_DIVERGED", "path": f"web/order-ontology.html[{path}]",
+                "message": (f"演示页写的 {path}={got:g}，本体里是 {expected:g}——"
+                            f"改本体后页面没同步，演示会说错话"),
+            })
+    item["checked_markers"] = checked
+    if checked == 0:
+        item["ok"] = False
+        item["issues"].append({
+            "code": "DEMO_VALUE_MISSING", "path": target,
+            "message": "演示页没有任何 data-ontology-value 标注——当前值无法被校验",
+        })
+    return item
+
+
 def main() -> int:
     results = [check_schema(CURRENT, "freight/semantic_layer.json")]
     results.append(check_metadata(CURRENT, "freight/semantic_layer.json"))
@@ -1382,6 +1450,7 @@ def main() -> int:
     results.append(check_source_contracts(ROOT))
     results.append(check_gap_detection(ROOT))
     results.append(check_honesty(ROOT))
+    results.append(check_demo_current_values(ROOT))
     results.append(check_query_schema(ROOT))
     for manifest in list_manifests():
         version = manifest["version"]
@@ -1442,6 +1511,7 @@ def main() -> int:
         "source_contracts": "freight/semantic_layer.json#data_sources",
         "gap_detection": "freight/semantic_layer.json#data_sources",
         "honesty": "scripts/honesty_scan.py",
+        "demo_current_values": "web/order-ontology.html#data-ontology-value",
     }
     coverage = {
         name: {"target": target, "ok": bool(by_target.get(target))}

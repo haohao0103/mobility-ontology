@@ -1401,7 +1401,7 @@
           <div class="walk-no">3</div>
           <div>
             <h3>取证据，不取结论</h3>
-            <p>司机 09:12 到达装货点，10:05 完成装货——等候 <span class="hl">53 分钟</span>，超过 30 分钟免费时长；高速费有 ETC 扣费记录</p>
+            <p>司机 09:12 到达装货点，10:05 完成装货——等候 <span class="hl">53 分钟</span>，超过 <span data-ontology-value="waiting.free_minutes">30 分钟</span>免费时长；高速费有 ETC 扣费记录</p>
             <span class="soft">每条证据带：来源系统 · 时间戳 · 版本号</span>
           </div>
         </article>
@@ -6174,7 +6174,7 @@ const COMP_SCENARIOS = [
     steps: [
       {
         title: '规则应计 vs 实收',
-        question: '53 分钟、免费 30 分钟、5 个计费块，各是多少？',
+        question: '53 分钟、免费 <span data-ontology-value="waiting.free_minutes">30 分钟</span>、5 个计费块，各是多少？',
         dependency: 'pricing.waiting 公式 + evidence checksum',
         note: '确定性计算，金额整数分。',
         component: 'Fee Analysis',

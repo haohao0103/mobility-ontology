@@ -12,7 +12,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
 import os
 BASE = os.environ.get("DEMO_BASE", "http://127.0.0.1:8765")
@@ -98,6 +98,26 @@ def _run() -> int:
                   f"展开后 {page.locator('[data-comp-scenario]').count()} 题")
         else:
             check("深挖 4 题可展开", False, "无展开按钮")
+
+        # 区块 18：属性图对照实验（现场可跑）
+        parity_btn = page.locator("#parityRunBtn")
+        if parity_btn.count():
+            parity_btn.scroll_into_view_if_needed()
+            parity_btn.click()
+            try:
+                page.wait_for_selector("#parityResult table", timeout=20000)
+                page.wait_for_timeout(300)
+                body = page.locator("#parityResult").inner_text()
+                check("区块18 对照实验可运行", "Q6" in body and "漏改实验" in body,
+                      f"结果含 Q6 与漏改实验：{'是' if ('Q6' in body and '漏改实验' in body) else '否'}")
+                check("区块18 漏改结论正确", "无任何机制能发现" in body and "漏改不可能发生" in body,
+                      "属性图侧漏改不可发现 + 本体侧单源")
+                check("区块18 对齐估算展示", "2968" in body,
+                      f"完整对齐估算 2968 行{'可见' if '2968' in body else '缺失'}")
+            except PlaywrightTimeoutError:
+                check("区块18 对照实验可运行", False, "20 秒内未渲染出结果表")
+        else:
+            check("区块18 对照实验可运行", False, "未找到运行按钮")
 
         check("全程无 JS 错误", not errors, "; ".join(errors[:3]))
         browser.close()

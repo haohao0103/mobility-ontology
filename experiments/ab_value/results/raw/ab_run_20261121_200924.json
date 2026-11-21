@@ -1,0 +1,75 @@
+{
+  "facts_checksum": "a63114d7ce9bd97d543b2b20e57d8e23e9847f4a17ad5e2bfd12a0dacaa372c4",
+  "groups": {
+    "A: 属性图 + 服务代码规则": {
+      "correctness_gate": {
+        "passed": true,
+        "detail": {
+          "Q1.quoted_total": true,
+          "Q1.actual_total": true,
+          "Q1.diff_total": true,
+          "Q1.waiting_expected": true,
+          "Q1.waiting_over": true,
+          "Q2.waiting_expected": true,
+          "Q2.waiting_over": true,
+          "Q3.blocked_step": true
+        }
+      },
+      "M1_change_cost_C1": {
+        "files_changed": 1,
+        "code_files_changed": 0,
+        "restart_required": true,
+        "wall_time_s": 0.001,
+        "answer_ok_after_change": true
+      },
+      "M3_auditability": {
+        "audit_keys": [
+          "version",
+          "rule_id",
+          "effective_from",
+          "evidence_ids",
+          "checksum"
+        ],
+        "present_count": 0,
+        "score": 0,
+        "max_score": 7
+      }
+    },
+    "B: 可执行本体（现状）": {
+      "correctness_gate": {
+        "passed": true,
+        "detail": {
+          "Q1.quoted_total": true,
+          "Q1.actual_total": true,
+          "Q1.diff_total": true,
+          "Q1.waiting_expected": true,
+          "Q1.waiting_over": true,
+          "Q2.waiting_expected": true,
+          "Q2.waiting_over": true,
+          "Q3.blocked_step": true
+        }
+      },
+      "M1_change_cost_C1": {
+        "files_changed": 1,
+        "code_files_changed": 0,
+        "restart_required": false,
+        "wall_time_s": 0.122,
+        "answer_ok_after_change": true
+      },
+      "M3_auditability": {
+        "audit_keys": [
+          "version",
+          "rule_id",
+          "effective_from",
+          "evidence_ids",
+          "checksum"
+        ],
+        "present_count": 3,
+        "score": 3,
+        "max_score": 7
+      }
+    }
+  },
+  "M2_status": "PENDING_TEST_DATA（见 fixtures/change_cards.json C2）",
+  "M4_status": "PENDING_HUMAN（见 experiments/ab_value/M4_TASK_CARD.md）"
+}

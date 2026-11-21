@@ -1022,6 +1022,11 @@
   .comp-q .qdot{position:absolute;right:12px;top:13px;width:7px;height:7px;border-radius:50%;background:#d8d2c7}
   .comp-dependency{margin-top:6px!important;padding:4px 8px;background:#f5f0e4;border-left:2px solid var(--orange);
     border-radius:3px;font-size:11px!important;color:#7a6a4a!important}
+  .comp-parity{margin-top:6px!important;padding:4px 8px;border-left:2px solid;border-radius:3px;
+    font-size:11px!important}
+  .comp-parity.same{background:#eef2ee;border-left-color:#8aa28a;color:#5a705a}
+  .comp-parity.hard{background:#eef4f8;border-left-color:#7a9ab8;color:#4a6a88}
+  .comp-parity.imp{background:#f7eef1;border-left-color:#c08a94;color:#8a5a64}
   .comp-deep-toggle{grid-column:1/-1;background:#faf7f0;border:1px dashed var(--line-strong);border-radius:8px;
     padding:10px;color:#7a6a4a;font-size:12px;cursor:pointer;transition:.18s}
   .comp-deep-toggle:hover{background:#f3ecdc;border-color:var(--orange)}
@@ -1826,6 +1831,30 @@
       <div id="demoNarration"></div>
       <div class="comp-questions" id="compQuestions"></div>
       <div class="comp-runner" id="compRunner"></div>
+    </div>
+  </section>
+
+  <section class="block" id="parity">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="sec-no">18</div>
+        <h2>属性图也能做吗？——同题同数据对照实验<small>不辩论，现场跑：六题 × 属性图组 vs 本体组</small></h2>
+      </div>
+      <p class="sec-lead">
+        属性图组用图结构存<b>同一份事实</b>，但<b>禁止读本体声明</b>——公式、状态机、口径、归属表只能
+        硬编码在服务代码里（这正是真实属性图项目的形态）。本体组走现状。六题逐题对照：
+        <b>属性图能做的题我们如实说能做</b>（Q1 不当卖点）；差别在「知识在声明里，还是在代码里」。
+        实验设计：同题同数据、属性图组零声明访问；核心实现与
+        <code>scripts/property_graph_parity.py</code> 共用同一份代码，单一口径。
+      </p>
+      <button class="comp-deep-toggle" type="button" id="parityRunBtn"
+              onclick="runParityExperiment(this)">▶ 运行对照实验（GET /freight/ontology/property-graph-parity）</button>
+      <div id="parityResult">
+        <p class="sec-lead" style="opacity:.7">
+          点击运行后，这里逐题展示两组答案与差异结论，并演示「漏改实验」：改一条业务参数只改一处服务，
+          属性图方案两边结论打架且无机制发现；本体侧所有路径读同一份声明，漏改不可能发生。
+        </p>
+      </div>
     </div>
   </section>
 </main>
@@ -5885,6 +5914,73 @@ function compRaw(data) {
   return `<details class="comp-raw"><summary>查看原始返回 JSON</summary><pre>${esc(JSON.stringify(data, null, 2))}</pre></details>`;
 }
 
+// ==================== 属性图 vs 本体 对照实验（区块 18） ====================
+const PARITY_META = {
+  same: { cls: 'same', label: '属性图对照：这步属性图也能做（图遍历主场）——不构成独有差异，别当卖点' },
+  hardcoded: { cls: 'hard', label: '属性图对照：也能做，但公式/状态机/口径要硬编码在服务代码里——改一次发一次版，多处副本漏改无机制发现' },
+  impossible: { cls: 'imp', label: '属性图对照：做不到——这步的知识在本体声明里，数据里没有，改数据替代不了' },
+};
+
+function parityBadge(kind) {
+  const m = PARITY_META[kind];
+  return m ? `<p class="comp-parity ${m.cls}">${esc(m.label)}</p>` : '';
+}
+
+async function runParityExperiment(btn) {
+  const host = document.getElementById('parityResult');
+  if (!host) return;
+  const original = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = '运行中…（本体组在临时库重放诊断链，约 2 秒）'; }
+  try {
+    const d = await api('/ontology/property-graph-parity');
+    host.innerHTML = renderParityReport(d);
+  } catch (err) {
+    host.innerHTML = `<div class="comp-verdict">运行失败：${esc(err.message || String(err))}</div>`;
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = original || '▶ 重新运行对照实验'; }
+  }
+}
+
+function parityCell(side) {
+  if (!side) return '—';
+  const mark = side.answered === false ? '（答不出）' : '';
+  return `${side.answer}${mark} —— ${side.note}`;
+}
+
+function renderParityReport(d) {
+  const qRows = (d.questions || []).map((q) =>
+    [`${q.id} · ${q.question}`, parityCell(q.property_graph), parityCell(q.ontology), q.dimension]);
+
+  const drift = d.drift_experiment || {};
+  const pgd = drift.property_graph || {};
+  const ond = drift.ontology || {};
+
+  const est = d.full_alignment_estimate || {};
+  const estRows = Object.entries(est.breakdown || {}).map(([k, v]) => [k, v]);
+
+  return `
+    ${compTable(['问题（考察点）', '属性图组（禁读声明）', '本体组（走现状）', '差异结论'], qRows)}
+
+    <div class="comp-verdict ok" style="margin-top:12px">
+      <b>漏改实验（变更成本的分水岭）</b>：把免费等候 30→20，属性图方案若只改诊断服务一处——
+      诊断说 <b>${pgd.diagnosis} 元</b> / 预检说 <b>${pgd.preflight} 元</b>，一致？
+      <b>${pgd.consistent ? '是' : '否'}</b>（无任何机制能发现，${pgd.detectable ? '可发现' : '不可发现'}）。
+      本体侧：诊断与预检都读同一份声明，同一来源？
+      <b>${ond.same_source ? '是' : '否'}</b>（${esc(ond.note || '')}）。
+    </div>
+
+    ${compKV([
+      ['属性图方案硬编码的业务知识', `${d.property_graph_hardcoded_business_lines} 行（9 组常量）`],
+      ['完整对齐估算（合计）', `${est.total_estimated_lines} 行，且无 schema 校验 / 门禁 / 承重保护`],
+      ['公平性', ((d.fairness || {}).note) || '同题同数据；属性图组禁止读本体声明'],
+    ])}
+
+    ${compTable(['对齐估算分项', '约需行数'], estRows)}
+
+    ${compRaw(d)}
+  `;
+}
+
 function compStatus(status) {
   const labels = {
     CREATED: '已创建', ACCEPTED: '已接单', REASSIGNED: '已改派',
@@ -5917,6 +6013,7 @@ const COMP_SCENARIOS = [
     steps: [
       {
         title: '先按当前本体算一遍',
+        graph_parity: 'hardcoded',
         question: '免费等候几分钟？规则应计多少？',
         dependency: 'pricing.waiting.free_minutes = 30；抽掉则该结论不成立',
         note: '结论绑定本体版本，不是代码常量。',
@@ -5927,6 +6024,7 @@ const COMP_SCENARIOS = [
       },
       {
         title: '切到 1.1.0-demo 再算同一笔',
+        graph_parity: 'impossible',
         question: '代码没动，结论会变吗？',
         dependency: '版本快照 1.1.0-demo：免费 30→20 分钟',
         note: 'version 参数让引擎加载另一个本体快照，同一事实重新计算。',
@@ -5938,6 +6036,7 @@ const COMP_SCENARIOS = [
       },
       {
         title: '确定性声明检查（不依赖 LLM）',
+        graph_parity: 'impossible',
         question: '抽掉一条工具声明会怎样？',
         dependency: 'primitives[ontology.catalog]；抽掉 → TOOL_UNAVAILABLE',
         note: '确定性检查工具白名单/可圈定类型/证据 checksum，不调用大模型。',
@@ -5950,6 +6049,7 @@ const COMP_SCENARIOS = [
       },
       {
         title: '收束：行为由谁决定',
+        graph_parity: 'impossible',
         question: '离开本体，这个翻转从哪来？',
         dependency: '同一份事实 + 两份本体声明 = 两个结论',
         note: '传统系统改口径要改代码、发版、回归；这里改的是本体声明。',
@@ -5971,6 +6071,7 @@ const COMP_SCENARIOS = [
     steps: [
       {
         title: '看状态机声明与可用动作',
+        graph_parity: 'hardcoded',
         question: 'DELIVERED 是终态吗？',
         dependency: 'state_machines[Waybill].terminal + actions[reassign].from_status',
         note: '状态机声明 + 动作前置都来自本体。',
@@ -5986,6 +6087,7 @@ const COMP_SCENARIOS = [
       },
       {
         title: '错角色 / 错状态实测',
+        graph_parity: 'hardcoded',
         question: '陌生人能接单吗？终态能改派吗？',
         dependency: 'actions[].roles / from_status；抽掉 → 动作放行',
         note: 'SAVEPOINT 内执行真实 execute_action，最后 ROLLBACK。',
@@ -5997,6 +6099,7 @@ const COMP_SCENARIOS = [
       },
       {
         title: '允许动作 + 同键重放',
+        graph_parity: 'hardcoded',
         question: '同一幂等键按两次会执行几次？',
         dependency: 'audit.idempotency_key UNIQUE；幂等键重放只一次',
         note: 'REASSIGNED 状态下 accept_order 可执行；同键重放返回 replayed。',
@@ -6008,6 +6111,7 @@ const COMP_SCENARIOS = [
       },
       {
         title: '零污染验证',
+        graph_parity: 'hardcoded',
         question: '演示会不会弄脏主库？',
         dependency: 'SAVEPOINT + ROLLBACK：审计/状态零增量',
         note: '所有动作在事务内执行后回滚，主库 checksum 不变。',
@@ -6029,6 +6133,7 @@ const COMP_SCENARIOS = [
     steps: [
       {
         title: '正常运单：零缺口',
+        graph_parity: 'hardcoded',
         question: '7 条费用都有源系统认领吗？',
         dependency: 'data_sources[TMS].fee_types 含 waiting/highway',
         note: '按本体声明逐源取数，缺口显式暴露，不静默算 0。',
@@ -6039,6 +6144,7 @@ const COMP_SCENARIOS = [
       },
       {
         title: '删认领：缺口翻转',
+        graph_parity: 'impossible',
         question: '把 waiting 从 TMS 认领里删掉会怎样？',
         dependency: 'data_sources[TMS].fee_types[waiting]；删除 → 未解析',
         note: '只在内存本体副本上删，主库零写入。',
@@ -6051,6 +6157,7 @@ const COMP_SCENARIOS = [
       },
       {
         title: '删整个源：更多缺口',
+        graph_parity: 'impossible',
         question: '删掉 TMS 连接器呢？',
         dependency: 'data_sources[TMS] 整体；删除 → 多条费用未解析',
         note: '同一机制，扩大删除范围。',
@@ -6064,6 +6171,7 @@ const COMP_SCENARIOS = [
       },
       {
         title: 'ABox 覆盖率：能表达 ≠ 被证明',
+        graph_parity: 'impossible',
         question: '本体类都有实例吗？',
         dependency: 'abox_targets.core_types；深水区类需真实实例/边/动作',
         note: '500 类里只有 18 个核心类有实例——这是诚实的覆盖披露。',
@@ -6085,6 +6193,7 @@ const COMP_SCENARIOS = [
     steps: [
       {
         title: '匿名 vs 争议角色',
+        graph_parity: 'hardcoded',
         question: '同一批费用行，匿名能看到几条？',
         dependency: 'data_source_markings[客服工单].marking = DISPUTE_OPS',
         note: '标记从数据源传到类、对象、列。',
@@ -6095,6 +6204,7 @@ const COMP_SCENARIOS = [
       },
       {
         title: 'Agent 输出闸',
+        graph_parity: 'hardcoded',
         question: '模型想把工单内容说出去，拦得住吗？',
         dependency: 'exception:EX20261105001 的有效 marking；抽掉 → 可导出',
         note: '输出侧强制判定，不是前端隐藏。',
@@ -6107,6 +6217,7 @@ const COMP_SCENARIOS = [
       },
       {
         title: '改 marking：可见性翻转',
+        graph_parity: 'impossible',
         question: '删掉数据源标记会怎样？',
         dependency: 'data_source_markings[客服工单].marking；删除 → 匿名可见',
         note: '内存副本改标记，零主库写入。',
@@ -6120,6 +6231,7 @@ const COMP_SCENARIOS = [
       },
       {
         title: '列级脱敏',
+        graph_parity: 'hardcoded',
         question: '行可见就等于字段都可见吗？',
         dependency: 'property_types[].marking；列级 mask_properties',
         note: '匿名/争议/财务视角的列可见性不同。',
@@ -6141,6 +6253,7 @@ const COMP_SCENARIOS = [
     steps: [
       {
         title: '确定性声明检查',
+        graph_parity: 'hardcoded',
         question: '不给声明，AI 能凭空查吗？',
         dependency: 'primitives / classes / evidence checksum',
         note: '不调用大模型也能证明链路依赖声明。',
@@ -6152,6 +6265,7 @@ const COMP_SCENARIOS = [
       },
       {
         title: '抽掉类型声明',
+        graph_parity: 'impossible',
         question: '删掉 FeeItem 类型会怎样？',
         dependency: 'classes[FeeItem]；删除 → TYPE_UNBOUND',
         note: '只在内存本体副本删，不改主本体。',
@@ -6162,6 +6276,7 @@ const COMP_SCENARIOS = [
       },
       {
         title: '真实推理链（最后一击）',
+        graph_parity: 'impossible',
         question: '让 AI 自己诊断"为什么贵 38"',
         dependency: 'LLM 只能在 TBox 圈定范围内选工具',
         note: '真实调用大模型网关，需几秒。',
@@ -6182,6 +6297,7 @@ const COMP_SCENARIOS = [
     steps: [
       {
         title: '规则应计 vs 实收',
+        graph_parity: 'hardcoded',
         question: '53 分钟、免费 <span data-ontology-value="waiting.free_minutes">30 分钟</span>、5 个计费块，各是多少？',
         dependency: 'pricing.waiting 公式 + evidence checksum',
         note: '确定性计算，金额整数分。',
@@ -6193,6 +6309,7 @@ const COMP_SCENARIOS = [
       },
       {
         title: '证据链',
+        graph_parity: 'same',
         question: '哪些系统在证明这 53 分钟？',
         dependency: 'evidence.checksum + data_sources 认领',
         note: '证据可逐条回源，不靠模型记忆。',
@@ -6204,6 +6321,7 @@ const COMP_SCENARIOS = [
       },
       {
         title: '裸系统对照',
+        graph_parity: 'impossible',
         question: '同一份数据直接丢给大模型，它算得对吗？',
         dependency: '规则不在数据里：公式/版本/生效期/车型费率',
         note: '裸 LLM 把 quoted_amount=0 当应计 → 0 元；本体按规则算 → 12 元。',
@@ -6225,18 +6343,21 @@ const COMP_SCENARIOS = [
     meta: '3 步 · 实时接口',
     steps: [
       { title: '血缘图规模', question: '本体知道自己被谁用吗？', dependency: 'derived from declarations',
+        graph_parity: 'same',
         note: '类/属性/规则/动作/证据在同一张图。', component: 'Lineage',
         request: () => ({ method: 'GET', path: '/lineage/summary' }),
         run: (ctx, req) => enhApi(req.path),
         render: (d) => compKV([['节点', d.nodes], ['边', d.edges], ['类', (d.by_kind || {}).class],
           ['属性', (d.by_kind || {}).property], ['规则', (d.by_kind || {}).rule]]) },
       { title: '属性级追溯', question: 'actual_amount 从哪来、到哪去？', dependency: 'property lineage edges',
+        graph_parity: 'same',
         note: '上游数据源、下游规则/动作。', component: 'Property',
         request: () => ({ method: 'GET', path: '/lineage/property/FeeItem/actual_amount' }),
         run: (ctx, req) => enhApi(req.path),
         render: (d) => compKV([['属性', d.property], ['上游', (d.upstream || []).length],
           ['下游', (d.downstream || []).length]]) },
       { title: '影响面', question: '改一处会波及谁？', dependency: 'relation declarations',
+        graph_parity: 'same',
         note: '血缘与影响面是同一张图的两种视角。', component: 'Impact',
         request: () => ({ method: 'GET', path: `/objects/${COMP_WAYBILL}/impact` }),
         render: (d) => compKV([['受影响对象', d.affected_count]]) },
@@ -6250,16 +6371,19 @@ const COMP_SCENARIOS = [
     meta: '3 步 · 真实门禁',
     steps: [
       { title: '删属性：未签字', question: '删 waiting_minutes 会怎样？', dependency: 'breaking_approvals.json',
+        graph_parity: 'impossible',
         note: '未签字的破坏性变更必须 FAIL。', component: 'Change Gate',
         request: () => ({ method: 'GET', path: '/ontology/guard-demo?case=drop_property_unsigned' }),
         render: (d) => compKV([['case', d.case], ['verdict', d.verdict], ['未签字', d.unapproved_count]])
           + compVerdict(`未签字 → <b>FAIL</b>，影响面非空。`, true) },
       { title: '补签：放行', question: '补签后会怎样？', dependency: '临时签名目录（不写仓库）',
+        graph_parity: 'impossible',
         note: '签字路径与 classify 完全一致才放行。', component: 'Approval',
         request: () => ({ method: 'GET', path: '/ontology/guard-demo?case=drop_property_signed' }),
         render: (d) => compKV([['case', d.case], ['verdict', d.verdict], ['未签字', d.unapproved_count]])
           + compVerdict(`补签 → <b>PASS</b>。签名只存在于临时目录，不污染仓库。`, true) },
       { title: '版本与分支', question: '改坏了怎么办？', dependency: '不可变快照 + checksum',
+        graph_parity: 'impossible',
         note: '业务语义的 Git。', component: 'Version',
         request: () => ({ method: 'GET', path: '/ontology/versions' }),
         render: (d) => compTable(['版本', '说明'], (d.releases || []).map((r) => [r.version, r.label])) },
@@ -6273,20 +6397,24 @@ const COMP_SCENARIOS = [
     meta: '4 步 · 实时接口',
     steps: [
       { title: 'Object Set', question: '"所有争议费用"怎么查？', dependency: 'classes[FeeItem] + property status',
+        graph_parity: 'hardcoded',
         note: 'from 是本体类，where 是本体属性。', component: 'Object Set',
         request: () => ({ method: 'POST', path: '/object-set/query', body: { set: { from: 'FeeItem', where: { status: { $eq: 'DISPUTED' } } }, page: { limit: 5 } } }),
         render: (d) => compKV([['集合 ID', d.object_set_id], ['命中', d.total], ['计划', JSON.stringify(d.plan || {}).slice(0, 60)]]) },
       { title: 'Ontology SQL', question: '能用 SQL 吗？', dependency: 'SQL 编译到同一查询树',
+        graph_parity: 'hardcoded',
         note: 'FeeItem 是本体类型名，不是表名。', component: 'SQL',
         request: () => ({ method: 'POST', path: '/object-set/sql', body: { sql: 'SELECT * FROM FeeItem LIMIT 5' } }),
         render: (d) => compKV([['命中', d.total], ['投影新鲜', d.projection_fresh === false ? '否' : '是'],
           ['取数路径', d.plan || '—'], ['计划', JSON.stringify(d.plan || {}).slice(0, 60)]]) },
       { title: '接口声明', question: '接口是什么？', dependency: 'interfaces[Chargeable].implements',
+        graph_parity: 'hardcoded',
         note: '显式实现 + 结构匹配双轨。', component: 'Interface',
         request: () => ({ method: 'GET', path: '/interfaces' }),
         run: (ctx, req) => enhApi(req.path),
         render: (d) => compKV([['接口数', (d.interfaces || []).length]]) },
       { title: '删实现：函数拒绝', question: '删掉实现会怎样？', dependency: 'Chargeable.implements[FeeItem] + status',
+        graph_parity: 'impossible',
         note: '实现类 2→1，多态函数从接受到拒绝。', component: 'Negative Lab',
         request: () => ({ method: 'POST', path: '/interfaces/simulate', body: {} }),
         run: (ctx, req) => enhApi('/interfaces/simulate', { method: 'POST', body: '{}' }),
@@ -6304,12 +6432,14 @@ const COMP_SCENARIOS = [
     meta: '2 步 · 真实校验',
     steps: [
       { title: '属性注册表', question: '属性有类型吗？', dependency: 'property_types[waiting_minutes].value_type = number',
+        graph_parity: 'hardcoded',
         note: '类型/单位/标记/时序都是注册表字段。', component: 'Registry',
         request: () => ({ method: 'GET', path: '/property-registry/Waybill' }),
         run: (ctx, req) => enhApi(req.path),
         render: (d) => compKV([['类型', d.class], ['注册属性数', (d.properties || []).length],
           ['策略', JSON.stringify(d.policy || {}).slice(0, 60)]]) },
       { title: '改类型：写入被拒', question: '把 number 改成 boolean 会怎样？', dependency: 'value_type；改后 → TYPE_MISMATCH',
+        graph_parity: 'impossible',
         note: '用真实 validate_object 校验路径。', component: 'Negative Lab',
         request: () => ({ method: 'POST', path: '/ontology/type-lab', body: { case: 'waiting_minutes_boolean' } }),
         render: (d) => compKV([['创建', d.after.create.ok ? '放行' : '拒绝'],
@@ -6508,6 +6638,7 @@ function renderCompDetail(scenario) {
           <h3>${esc(step.title)}</h3>
           <p>${esc(step.question)}</p>
           ${step.dependency ? `<p class="comp-dependency">声明依赖：${esc(step.dependency)}</p>` : ''}
+          ${step.graph_parity ? parityBadge(step.graph_parity) : ''}
         </div>
         <span class="comp-component">${esc(step.component)}</span>
       </div>

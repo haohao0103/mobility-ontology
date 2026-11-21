@@ -1,0 +1,18 @@
+{
+  "_comment": "黄金答案与容差：正确性门禁。来源：本体诊断链实测（waybill:WB20261105001）。注：Q3 的 waive 预检按【减免 13 元上限】口径 —— 高速费 25 元为实收，减免不能超过实收金额，40 元会被金额门禁拒绝。",
+  "Q1": {
+    "quoted_total": {"value": 480.0, "tolerance": 0.01},
+    "actual_total": {"value": 518.0, "tolerance": 0.01},
+    "diff_total": {"value": 38.0, "tolerance": 0.01},
+    "waiting_expected": {"value": 12.0, "tolerance": 0.01},
+    "waiting_over": {"value": 13.0, "tolerance": 0.01}
+  },
+  "Q2": {
+    "waiting_expected": {"value": 12.0, "tolerance": 0.01},
+    "waiting_over": {"value": 13.0, "tolerance": 0.01}
+  },
+  "Q3": {
+    "blocked_step": {"value": 1, "tolerance": 0},
+    "_note": "blocked_step=1 表示『减免动作本身被挡』（金额门禁：减免 40 超过实收 25，R-SETTLE-01/金额校验拒绝）；属性图方案若按 40 直接放行即为残缺实现。"
+  }
+}

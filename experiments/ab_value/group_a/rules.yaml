@@ -1,0 +1,14 @@
+# A 组（属性图路线）的业务规则文件
+# 真实属性图项目里，这些参数通常散在服务代码或配置里——没有 schema 校验、没有门禁。
+pricing:
+  waiting:
+    free_minutes: 30
+    block_minutes: 5
+    per_block: 2.4
+actions:
+  waive_charge:
+    # 硬编码语义：只能减免 DISPUTED 费用，且减免不得超过实收
+    from_status: [DISPUTED]
+    amount_cap: actual
+  hold_settlement:
+    from_status: [DRAFT, PENDING]

@@ -226,6 +226,24 @@ def agent_declaration_check(body: dict):
         get_system(), body.get("omit_tool"), body.get("omit_type")))
 
 
+@router.get("/ontology/property-graph-parity")
+def ontology_property_graph_parity():
+    """属性图 vs 可执行本体：同题同数据对照实验（六题 + 漏改实验 + 对齐估算）。
+
+    核心实现在 freight/parity_lab.py，与 scripts/property_graph_parity.py 共用，
+    单一实现、单一口径；零写主库。
+    """
+    try:
+        from freight.parity_lab import build_report
+    except ImportError as exc:
+        raise HTTPException(status_code=503, detail={
+            "code": "PARITY_DEPENDENCY_MISSING",
+            "message": f"缺少对照实验依赖（networkx）：{exc}",
+        })
+    return guard(lambda: build_report())
+
+
+
 @router.post("/ontology/activate")
 def ontology_activate(body: VersionIn):
     return guard(lambda: get_system().activate_version(body.version))

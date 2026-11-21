@@ -1,0 +1,21 @@
+{
+  "_comment": "变更卡：两组各按自己的形态执行同一业务变更，采集 M1 变更成本。",
+  "C1": {
+    "title": "等候费免费分钟 30 -> 20",
+    "change": "pricing.waiting.free_minutes: 30 -> 20",
+    "expected_new_Q2": {"waiting_expected": {"value": 16.8, "tolerance": 0.01}},
+    "rollback": true,
+    "measure": {
+      "files_changed": "统计实际被修改的文件数",
+      "code_files_changed": "其中代码文件数（.py）",
+      "restart_required": "是否需要重启服务生效",
+      "wall_time_s": "从变更命令到新答案正确返回"
+    }
+  },
+  "C2": {
+    "title": "新增车型『7.6米货车』（骨架阶段 pending：需准备含该车型的测试运单）",
+    "change": "pricing.vehicle_types 新增 7.6米货车费率",
+    "status": "PENDING_TEST_DATA",
+    "note": "正式实验前需先在测试库准备含 7.6米货车 的运单，避免『新增了类型但没有任何数据触达它』的假阳性。"
+  }
+}

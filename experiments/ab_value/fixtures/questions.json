@@ -1,0 +1,19 @@
+{
+  "questions": [
+    {
+      "id": "Q1",
+      "text": "这单为什么比预估多 38 元？",
+      "answer_fields": ["quoted_total", "actual_total", "diff_total", "waiting_expected", "waiting_over"]
+    },
+    {
+      "id": "Q2",
+      "text": "等候费按规则应收多少？超收多少？",
+      "answer_fields": ["waiting_expected", "waiting_over"]
+    },
+    {
+      "id": "Q3",
+      "text": "给客户减免 40 元，系统接下来会发生什么？会挡住哪一步？",
+      "answer_fields": ["blocked_step", "next_action"]
+    }
+  ]
+}

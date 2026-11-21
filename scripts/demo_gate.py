@@ -43,6 +43,7 @@ CHECKS = [
     ("来源契约覆盖", "/freight/contracts/coverage", 10),
     ("ABox 覆盖率", "/freight/ontology/abox-coverage", 10),
     ("治理门禁（未签字）", "/freight/ontology/guard-demo?case=drop_property_unsigned", 10),
+    ("属性图对照实验", "/freight/ontology/property-graph-parity", 10),
 ]
 
 
@@ -144,6 +145,21 @@ def _verify_marking(payload: dict):
     return ok, f"可见行 {before}→{after}"
 
 
+def _verify_parity(payload: dict):
+    qs = payload.get("questions") or []
+    drift = payload.get("drift_experiment") or {}
+    pgd = drift.get("property_graph") or {}
+    ond = drift.get("ontology") or {}
+    est = (payload.get("full_alignment_estimate") or {}).get("total_estimated_lines")
+    ok = (len(qs) == 6
+          and pgd.get("consistent") is False and pgd.get("detectable") is False
+          and ond.get("same_source") is True and ond.get("detectable") is True
+          and (payload.get("property_graph_hardcoded_business_lines") or 0) > 0
+          and (est or 0) > 0)
+    return ok, (f"六题={len(qs)} 漏改(属性图)不一致={pgd.get('consistent') is False} "
+                f"漏改(本体)同源={ond.get('same_source') is True} 对齐估算={est} 行")
+
+
 # 每条主线/深挖的负向翻转：改声明 → 结果翻转 → persisted:false
 SCENARIOS = [
     ("M3 删认领→缺口出现", "POST", "/freight/contracts/simulate",
@@ -165,6 +181,8 @@ SCENARIOS = [
      {"user": "anonymous", "roles": ""}, _verify_guard_output),
     ("M4 删 marking→可见行翻转", "POST", "/enh/security/simulate-marking",
      {"case": "drop_source_marking", "class_id": "ExceptionTicket"}, _verify_marking),
+    ("属性图对照实验结构", "GET", "/freight/ontology/property-graph-parity",
+     None, _verify_parity),
 ]
 
 

@@ -1,0 +1,10 @@
+Creative Commons Attribution 4.0 International (CC BY 4.0)
+
+本基准的**用例清单、期望结果、数据集与协议**（manifest.json / data/ / PROTOCOL.md）
+采用 CC BY 4.0 授权，可自由使用、修改与再分发，署名即可。
+
+参考实现（implementations/）同样采用 CC BY 4.0。
+
+完整条款：https://creativecommons.org/licenses/by/4.0/deed.zh-hans
+
+使用时请注明：ontology-execution benchmark, v0.1.0。

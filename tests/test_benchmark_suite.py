@@ -115,3 +115,55 @@ class TestRuns:
             for key in ("passed", "total", "M1_changed_files", "M1_restarts_required",
                         "M2_audit_elements", "M3_duplicate_copies"):
                 assert ref[name][key] == now[key], (name, key, ref[name][key], now[key])
+
+
+class TestThirdPartyIsolation:
+    """第三方实现的隔离检查：偷看期望值 / 使用作者私有能力必须被拦住。"""
+
+    def _audit(self, runner, code: str):
+        import tempfile
+        with tempfile.TemporaryDirectory(dir=str(ROOT / ".tmp_bench")) as td:
+            path = Path(td) / "impl.py"
+            path.write_text(code, encoding="utf-8")
+            return runner.audit_impl(path)
+
+    def test_clean_impl_passes(self, runner):
+        rep = self._audit(runner, "import json\nclass X:\n    pass\nIMPL = X\n")
+        assert rep["ok"], rep["issues"]
+
+    def test_reading_manifest_is_blocked(self, runner):
+        rep = self._audit(runner, "m = json.loads(open('manifest.json').read())\n")
+        assert not rep["ok"]
+        assert any("manifest" in i for i in rep["issues"])
+
+    def test_expect_key_access_is_blocked(self, runner):
+        rep = self._audit(runner, "x = case['expects']\n")
+        assert not rep["ok"]
+
+    def test_private_package_import_is_blocked(self, runner):
+        rep = self._audit(runner, "from freight.engine import FreightSystem\n")
+        assert not rep["ok"]
+
+    def test_starter_template_has_no_logic(self):
+        """起步模板必须只有骨架，不能含实现逻辑（否则第三方会被污染）。"""
+        text = (BENCH / "starter" / "impl_template.py").read_text(encoding="utf-8")
+        assert text.count("NotImplementedError") >= 3
+        assert "12.0" not in text and "2.4" not in text, "模板不得含具体数值"
+
+    def test_review_checklist_exists(self):
+        assert (BENCH / "REVIEW_CHECKLIST.md").exists()
+        assert (BENCH / "THIRD_PARTY.md").exists()
+
+
+class TestJudgeHonesty:
+    """判定器不许把『答不出』算成『答对』。"""
+
+    def test_none_is_not_false(self, runner):
+        """期望 False、实现返回 None（答不出）→ 必须判 FAIL。"""
+        assert runner.compare({"blocked": False}, {"blocked": None}, 0.01) != []
+
+    def test_none_against_true_is_fail(self, runner):
+        assert runner.compare({"blocked": True}, {"blocked": None}, 0.01) != []
+
+    def test_explicit_false_passes(self, runner):
+        assert runner.compare({"blocked": False}, {"blocked": False}, 0.01) == []

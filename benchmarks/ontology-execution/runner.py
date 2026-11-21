@@ -40,6 +40,10 @@ BUILTIN = {
     "ontology_ref": HERE / "implementations" / "ontology_ref" / "impl.py",
     "property_graph_ref": HERE / "implementations" / "property_graph_ref" / "impl.py",
 }
+# RAG 组需要大模型端点（慢 + 要 key），默认不跑；用 --with-rag 显式加入。
+BUILTIN_OPTIONAL = {
+    "rag_ref": HERE / "implementations" / "rag_ref" / "impl.py",
+}
 
 # 静态检测：同一语义被**硬编码**了几遍（副本计数）。
 # 只认「字面量赋值」——从声明/配置里**读取**不算副本。
@@ -98,6 +102,11 @@ def compare(expects: dict, answer: dict, tolerance: float) -> list[dict]:
             misses.append({"key": key, "expected": want, "actual": "<missing>"})
             continue
         got = answer[key]
+        # **答不出（None）不等于答对（False）**：缺值必须判 FAIL，
+        # 否则"数据不足，无法判断"会被算成"它说不会被挡" —— 这是最恶劣的伪通过。
+        if got is None:
+            misses.append({"key": key, "expected": want, "actual": "<无法判断>"})
+            continue
         if isinstance(want, bool) or isinstance(got, bool):
             ok = bool(got) == bool(want)
         elif isinstance(want, (int, float)):
@@ -135,6 +144,7 @@ def run_impl(name: str, impl_path: Path, manifest: dict) -> dict:
     tolerance = manifest.get("tolerance", 0.01)
     results = []
     metrics = {"M1": [], "M2": [], "M3": []}
+    ws = None
     try:
         Impl = load_impl(impl_path)
 
@@ -154,7 +164,8 @@ def run_impl(name: str, impl_path: Path, manifest: dict) -> dict:
             results.append({"id": case["id"], "name": case["name"], "kind": "query",
                             "status": "PASS" if not misses else "FAIL",
                             "misses": misses, "answer": answer})
-            close_workspace(ws)
+            if ws is not None:
+                close_workspace(ws)
 
         # ---- 变更类用例 ----
         for case in manifest["cases"]:
@@ -181,13 +192,17 @@ def run_impl(name: str, impl_path: Path, manifest: dict) -> dict:
                             "status": "PASS" if not misses else "FAIL",
                             "misses": misses, "answer": answer,
                             "change": change})
-            close_workspace(ws)
+            if ws is not None:
+                close_workspace(ws)
 
         # ---- M3：副本计数（静态）----
         metrics["M3"].append({"duplicate_rule_copies": duplicate_copies(impl_path)})
     finally:
-        close_workspace(ws)
+        if ws is not None:
+            if ws is not None:
+                close_workspace(ws)
         os.environ.pop("BENCH_DATA_DIR", None)
+        os.environ.pop("BENCH_IMPL_DIR", None)
 
     passed = sum(1 for r in results if r["status"] == "PASS")
     return {
@@ -215,6 +230,49 @@ def summarize(run: dict) -> dict:
     }
 
 
+
+# ---- 第三方实现的隔离检查（PROTOCOL.md §4）----
+# 只在**读取这些文件**或**按这些键取值**时才算偷看；
+# 单纯出现 expected 这类普通变量名不算（否则误报一片）。
+FORBIDDEN_PATTERNS = [
+    (re.compile(r"manifest\.json"), "不得读取 manifest.json（期望值在评测方手里）"),
+    (re.compile(r"golden\.json"), "不得读取黄金答案"),
+    (re.compile(r"baseline\.json"), "不得读取基线结果"),
+    (re.compile(r"""\[["'](?:expects|expected|expect)["']\]"""), "不得按键读取期望值字段"),
+    (re.compile(r"""\.get\(\s*['\"](?:expects|expected|expect)['\"]"""),
+     "不得按键读取期望值字段"),
+]
+FORBIDDEN_IMPORTS = [
+    (re.compile(r"^\s*from\s+freight\b", re.M), "不得 import 作者私有包 freight"),
+    (re.compile(r"^\s*import\s+freight\b", re.M), "不得 import 作者私有包 freight"),
+    (re.compile(r"semantic_layer\.json"), "不得读取作者的本体声明文件"),
+]
+STDLIB_OK = {
+    "json", "math", "os", "re", "ast", "sys", "pathlib", "typing", "hashlib",
+    "collections", "itertools", "functools", "dataclasses", "datetime", "csv",
+    "sqlite3", "argparse", "copy", "random", "decimal", "statistics", "uuid",
+    "urllib", "http", "socket", "subprocess", "tempfile", "shutil", "glob",
+    "textwrap", "time", "traceback", "string", "random",
+}
+
+
+def audit_impl(impl_path: Path) -> dict:
+    """静态隔离检查：第三方实现不得偷看期望值、不得使用作者私有能力。"""
+    src = impl_path.read_text(encoding="utf-8", errors="ignore")
+    issues, notes = [], []
+    for pattern, why in FORBIDDEN_PATTERNS:
+        if pattern.search(src):
+            issues.append(why)
+    for pattern, why in FORBIDDEN_IMPORTS:
+        if pattern.search(src):
+            issues.append(f"源码命中禁止项：{why}")
+    for m in re.finditer(r"^\s*(?:from|import)\s+([A-Za-z_][\w.]*)", src, re.M):
+        root = m.group(1).split(".")[0]
+        if root not in STDLIB_OK and root != "__future__":
+            notes.append(f"非标准库依赖：{m.group(1)}（不失败，但请在提交里说明）")
+    return {"ok": not issues, "issues": issues, "notes": notes}
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--impl", action="append", default=[],
@@ -222,6 +280,10 @@ def main() -> int:
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--check-baseline", action="store_true",
                     help="与 baseline.json 比对：有差异则退出码非 0（CI 用）")
+    ap.add_argument("--audit-impl", action="store_true",
+                    help="只做第三方实现的隔离检查（不跑用例）")
+    ap.add_argument("--with-rag", action="store_true",
+                    help="同时跑 RAG 路线（需要 OPENAI_CHAT_API_KEY，且会慢很多）")
     args = ap.parse_args()
 
     manifest = load_manifest()
@@ -231,14 +293,33 @@ def main() -> int:
         impls[path.stem] = path
     if not impls:
         impls = {k: v for k, v in BUILTIN.items()}
+        if args.with_rag:
+            impls.update(BUILTIN_OPTIONAL)
+
+    if args.audit_impl:
+        reports = []
+        for name, path in impls.items():
+            rep = audit_impl(path)
+            rep["implementation"] = name
+            reports.append(rep)
+            label = path.parent.name if path.parent.name != "implementations" else path.stem
+            print(f"[{'OK ' if rep['ok'] else 'FAIL'}] 隔离检查 {label}"
+                  + ("" if rep["ok"] else ": " + "; ".join(rep["issues"])))
+            for note in rep["notes"]:
+                print(f"       提示 {note}")
+        return 0 if all(r["ok"] for r in reports) else 1
 
     runs = []
     for name, path in impls.items():
         try:
             runs.append(run_impl(name, path, manifest))
         except Exception as exc:  # noqa: BLE001
+            # 「不可用」与「跑失败」要分开：需要外部依赖的组（如 RAG 需要大模型端点）
+            # 缺依赖时是 SKIPPED，不是 FAIL —— 否则会把环境问题算成实现问题。
+            skipped = type(exc).__name__ in ("RAGNotAvailable", "Unavailable")
             runs.append({"implementation": name, "passed": 0, "total": 0,
                          "results": [], "metrics": {"M1": [], "M2": [], "M3": []},
+                         "skipped": skipped,
                          "error": f"{type(exc).__name__}: {exc}"})
 
     summary = [summarize(r) for r in runs]
@@ -275,8 +356,12 @@ def main() -> int:
     print("=" * 92)
     print(f"可执行本体基准 {manifest['benchmark']} v{manifest['version']}")
     print("=" * 92)
-    for row in summary:
+    for row, run in zip(summary, runs):
         print(f"\n{row['implementation']}  用例 {row['passed']}/{row['total']} PASS")
+        if run.get("error"):
+            tag = "SKIPPED（缺依赖）" if run.get("skipped") else "ERROR"
+            print(f"  ⚠ {tag}：{run['error']}")
+            continue
         print(f"  M1 变更成本：改 {row['M1_changed_files']} 个文件，需重启 {row['M1_restarts_required']} 次")
         print(f"  M2 可审计性：答案携带审计要素 {row['M2_audit_elements']}/5")
         print(f"  M3 一致性风险：规则副本数 {row['M3_duplicate_copies']}")

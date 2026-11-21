@@ -38,6 +38,30 @@ python scripts/honesty_scan.py
 # 诚实性扫描：禁止「宣称做了校验、背后却没有计算」的字段（已进 semantic_gate 第 29 项）
 python scripts/honesty_scan.py
 
+## 📣 对外发布：可执行本体执行基准（ontology-execution）
+
+> **同一份数据、同一组问题，可执行本体与属性图 + 服务代码规则两条路线各答一遍**，
+> 用客观可判定规则评分，并测量变更成本 / 可审计性 / 一致性风险。
+> 目前**没有**面向"可执行本体"的公开基准——这是我们自己开的坑。
+
+```bash
+cd benchmarks/ontology-execution
+python runner.py                  # 30 秒跑起来（只依赖标准库，不联网）
+python runner.py --json           # 机器可读
+python runner.py --check-baseline # 与基线比对（CI 用）
+```
+
+| 指标 | 本体路线 | 属性图路线 |
+|---|---|---|
+| 用例通过 | **6 / 6** | 5 / 6 |
+| 变更后需重启 | **0 次** | 3 次 |
+| 答案携带审计要素 | **5 / 5** | 0 / 5 |
+| 同一语义被写几遍 | **0 份** | 3 份 |
+
+- 接入协议：[benchmarks/ontology-execution/PROTOCOL.md](benchmarks/ontology-execution/PROTOCOL.md)
+- 独立发布步骤：[benchmarks/ontology-execution/PUBLISH.md](benchmarks/ontology-execution/PUBLISH.md)
+- **效度前提**：参考实现由本仓作者编写，存在稻草人风险 → 正式结论须由独立第三方实现（协议 §6）
+
 # 承重实验：只改本体 JSON、代码零改动，24 条用例逐条证明行为翻转
 python scripts/load_bearing_demo.py   # 24 条承重用例
 

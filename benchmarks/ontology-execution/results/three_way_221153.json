@@ -1,0 +1,707 @@
+{
+  "benchmark": "ontology-execution",
+  "version": "0.1.0",
+  "runs": [
+    {
+      "implementation": "ontology_ref",
+      "path": "benchmarks/ontology-execution/implementations/ontology_ref/impl.py",
+      "passed": 6,
+      "total": 6,
+      "results": [
+        {
+          "id": "Q1",
+          "name": "差异归因：报价 480 / 实收 518 / 差 38，其中等候费应计 12、超收 13",
+          "kind": "query",
+          "status": "PASS",
+          "misses": [],
+          "answer": {
+            "quoted_total": 480.0,
+            "actual_total": 518.0,
+            "diff_total": 38.0,
+            "waiting_expected": 12.0,
+            "waiting_over": 13.0,
+            "explain": "实收 518.0 比报价 480.0 多 38.0；其中等候费规则应计 12.0、实收 25.0，超收 13.0",
+            "audit": {
+              "version": "3.0.0",
+              "rule_id": "R-WAIT-01",
+              "effective_from": "2026-10-01",
+              "evidence_ids": [
+                "evidence:ACT-02bc62497b1f",
+                "evidence:ACT-1a785f346574",
+                "evidence:ACT-277388e8b266",
+                "evidence:ACT-47467f69384f",
+                "evidence:ACT-645f7b2f8566",
+                "evidence:ACT-6bd5ddf32bfa",
+                "evidence:ACT-6ce929c15905",
+                "evidence:ACT-75f1f5ec0607",
+                "evidence:ACT-83ac67db882f",
+                "evidence:ACT-a88fd6dc8327",
+                "evidence:ACT-abb6dcc81c83",
+                "evidence:ACT-c6dd3e7b0910",
+                "evidence:ACT-d1a304e098aa",
+                "evidence:ACT-df6ea5a1537b",
+                "evidence:ACT-ecbc52a055f4",
+                "evidence:ACT-f3ec59c73a02",
+                "evidence:E001",
+                "evidence:E002",
+                "evidence:E003",
+                "evidence:E004",
+                "evidence:E005",
+                "evidence:E006",
+                "evidence:E007"
+              ],
+              "checksum": "a2ca7a29ff05"
+            }
+          }
+        },
+        {
+          "id": "Q2",
+          "name": "等候费按规则应收多少 / 超收多少",
+          "kind": "query",
+          "status": "PASS",
+          "misses": [],
+          "answer": {
+            "waiting_expected": 12.0,
+            "waiting_over": 13.0,
+            "explain": "按声明公式与生效参数，等候费应计 12.0 元，实收 25.0 元，超收 13.0 元",
+            "audit": {
+              "version": "3.0.0",
+              "rule_id": "R-WAIT-01",
+              "effective_from": "2026-10-01",
+              "evidence_ids": [
+                "evidence:ACT-02bc62497b1f",
+                "evidence:ACT-1a785f346574",
+                "evidence:ACT-277388e8b266",
+                "evidence:ACT-47467f69384f",
+                "evidence:ACT-645f7b2f8566",
+                "evidence:ACT-6bd5ddf32bfa",
+                "evidence:ACT-6ce929c15905",
+                "evidence:ACT-75f1f5ec0607",
+                "evidence:ACT-83ac67db882f",
+                "evidence:ACT-a88fd6dc8327",
+                "evidence:ACT-abb6dcc81c83",
+                "evidence:ACT-c6dd3e7b0910",
+                "evidence:ACT-d1a304e098aa",
+                "evidence:ACT-df6ea5a1537b",
+                "evidence:ACT-ecbc52a055f4",
+                "evidence:ACT-f3ec59c73a02",
+                "evidence:E001",
+                "evidence:E002",
+                "evidence:E003",
+                "evidence:E004",
+                "evidence:E005",
+                "evidence:E006",
+                "evidence:E007"
+              ],
+              "checksum": "a2ca7a29ff05"
+            }
+          }
+        },
+        {
+          "id": "Q3",
+          "name": "减免 40 元会被哪一步挡住",
+          "kind": "query",
+          "status": "PASS",
+          "misses": [],
+          "answer": {
+            "blocked": true,
+            "reason_code": "AMOUNT_EXCEEDS_ACTUAL",
+            "explain": "减免 40.0 元超过实收 25.0 元（减免金额不得超过费用实收金额；结算已入账时须先冲正）",
+            "audit": {
+              "version": "3.0.0",
+              "rule_id": "R-WAIT-01",
+              "effective_from": "2026-10-01",
+              "evidence_ids": [],
+              "checksum": "a2ca7a29ff05"
+            }
+          }
+        },
+        {
+          "id": "C1",
+          "name": "变更：免费等候 30→20 分钟后，同一笔等候费应计多少",
+          "kind": "change",
+          "status": "PASS",
+          "misses": [],
+          "answer": {
+            "waiting_expected": 16.8,
+            "waiting_over": 8.2,
+            "explain": "按声明公式与生效参数，等候费应计 16.8 元，实收 25.0 元，超收 8.2 元",
+            "audit": {
+              "version": "3.0.0",
+              "rule_id": "R-WAIT-01",
+              "effective_from": "2026-10-01",
+              "evidence_ids": [
+                "evidence:ACT-02bc62497b1f",
+                "evidence:ACT-1a785f346574",
+                "evidence:ACT-277388e8b266",
+                "evidence:ACT-47467f69384f",
+                "evidence:ACT-645f7b2f8566",
+                "evidence:ACT-6bd5ddf32bfa",
+                "evidence:ACT-6ce929c15905",
+                "evidence:ACT-75f1f5ec0607",
+                "evidence:ACT-83ac67db882f",
+                "evidence:ACT-a88fd6dc8327",
+                "evidence:ACT-abb6dcc81c83",
+                "evidence:ACT-c6dd3e7b0910",
+                "evidence:ACT-d1a304e098aa",
+                "evidence:ACT-df6ea5a1537b",
+                "evidence:ACT-ecbc52a055f4",
+                "evidence:ACT-f3ec59c73a02",
+                "evidence:E001",
+                "evidence:E002",
+                "evidence:E003",
+                "evidence:E004",
+                "evidence:E005",
+                "evidence:E006",
+                "evidence:E007"
+              ],
+              "checksum": "091fa663be05"
+            }
+          },
+          "change": {
+            "changed_files": [
+              "ontology.json"
+            ],
+            "code_files": 0,
+            "restart_required": false
+          }
+        },
+        {
+          "id": "C2",
+          "name": "变更：新增 7.6米厢货费率，并新增一张该车型的运单（53 分钟等候）",
+          "kind": "change",
+          "status": "PASS",
+          "misses": [],
+          "answer": {
+            "waiting_expected": 15.0,
+            "waiting_over": 10.0,
+            "explain": "按声明公式与生效参数，等候费应计 15.0 元，实收 25.0 元，超收 10.0 元",
+            "audit": {
+              "version": "3.0.0",
+              "rule_id": "R-WAIT-01",
+              "effective_from": "2026-10-01",
+              "evidence_ids": [
+                "evidence:ACT-02bc62497b1f",
+                "evidence:ACT-1a785f346574",
+                "evidence:ACT-277388e8b266",
+                "evidence:ACT-47467f69384f",
+                "evidence:ACT-645f7b2f8566",
+                "evidence:ACT-6bd5ddf32bfa",
+                "evidence:ACT-6ce929c15905",
+                "evidence:ACT-75f1f5ec0607",
+                "evidence:ACT-83ac67db882f",
+                "evidence:ACT-a88fd6dc8327",
+                "evidence:ACT-abb6dcc81c83",
+                "evidence:ACT-c6dd3e7b0910",
+                "evidence:ACT-d1a304e098aa",
+                "evidence:ACT-df6ea5a1537b",
+                "evidence:ACT-ecbc52a055f4",
+                "evidence:ACT-f3ec59c73a02",
+                "evidence:E001",
+                "evidence:E002",
+                "evidence:E003",
+                "evidence:E004",
+                "evidence:E005",
+                "evidence:E006",
+                "evidence:E007"
+              ],
+              "checksum": "6358ad54bff0"
+            }
+          },
+          "change": {
+            "changed_files": [
+              "ontology.json"
+            ],
+            "code_files": 0,
+            "restart_required": false
+          }
+        },
+        {
+          "id": "C3",
+          "name": "漂移探针：把减免上限口径从 actual 改为 none，改完减免 40 元应当**不再**被金额门禁挡住",
+          "kind": "change",
+          "status": "PASS",
+          "misses": [],
+          "answer": {
+            "blocked": false,
+            "reason_code": "",
+            "explain": "减免 40.0 元可执行：DISPUTED -> WAIVED",
+            "audit": {
+              "version": "3.0.0",
+              "rule_id": "R-WAIT-01",
+              "effective_from": "2026-10-01",
+              "evidence_ids": [],
+              "checksum": "029cecaa2806"
+            }
+          },
+          "change": {
+            "changed_files": [
+              "ontology.json"
+            ],
+            "code_files": 0,
+            "restart_required": false
+          }
+        }
+      ],
+      "metrics": {
+        "M1": [
+          {
+            "case": "C1",
+            "changed_files": 1,
+            "code_files": 0,
+            "restart_required": false
+          },
+          {
+            "case": "C2",
+            "changed_files": 1,
+            "code_files": 0,
+            "restart_required": false
+          },
+          {
+            "case": "C3",
+            "changed_files": 1,
+            "code_files": 0,
+            "restart_required": false
+          }
+        ],
+        "M2": [
+          {
+            "case": "Q1",
+            "audit_present": 5,
+            "elements": [
+              "version",
+              "rule_id",
+              "effective_from",
+              "evidence_ids",
+              "checksum"
+            ]
+          },
+          {
+            "case": "Q2",
+            "audit_present": 5,
+            "elements": [
+              "version",
+              "rule_id",
+              "effective_from",
+              "evidence_ids",
+              "checksum"
+            ]
+          },
+          {
+            "case": "Q3",
+            "audit_present": 4,
+            "elements": [
+              "version",
+              "rule_id",
+              "effective_from",
+              "checksum"
+            ]
+          }
+        ],
+        "M3": [
+          {
+            "duplicate_rule_copies": 0
+          }
+        ]
+      }
+    },
+    {
+      "implementation": "property_graph_ref",
+      "path": "benchmarks/ontology-execution/implementations/property_graph_ref/impl.py",
+      "passed": 5,
+      "total": 6,
+      "results": [
+        {
+          "id": "Q1",
+          "name": "差异归因：报价 480 / 实收 518 / 差 38，其中等候费应计 12、超收 13",
+          "kind": "query",
+          "status": "PASS",
+          "misses": [],
+          "answer": {
+            "quoted_total": 480.0,
+            "actual_total": 518.0,
+            "diff_total": 38.0,
+            "waiting_expected": 12.0,
+            "waiting_over": 13.0,
+            "explain": "实收 518.0 比报价 480.0 多 38.0；等候费应计 12.0（按服务代码参数）",
+            "audit": {}
+          }
+        },
+        {
+          "id": "Q2",
+          "name": "等候费按规则应收多少 / 超收多少",
+          "kind": "query",
+          "status": "PASS",
+          "misses": [],
+          "answer": {
+            "waiting_expected": 12.0,
+            "waiting_over": 13.0,
+            "explain": "按服务代码参数，等候费应计 12.0 元，超收 13.0 元",
+            "audit": {}
+          }
+        },
+        {
+          "id": "Q3",
+          "name": "减免 40 元会被哪一步挡住",
+          "kind": "query",
+          "status": "PASS",
+          "misses": [],
+          "answer": {
+            "blocked": true,
+            "reason_code": "AMOUNT_EXCEEDS_ACTUAL",
+            "explain": "减免 40.0 元超过实收 25.0 元",
+            "audit": {}
+          }
+        },
+        {
+          "id": "C1",
+          "name": "变更：免费等候 30→20 分钟后，同一笔等候费应计多少",
+          "kind": "change",
+          "status": "PASS",
+          "misses": [],
+          "answer": {
+            "waiting_expected": 16.8,
+            "waiting_over": 8.2,
+            "explain": "按服务代码参数，等候费应计 16.8 元，超收 8.2 元",
+            "audit": {}
+          },
+          "change": {
+            "changed_files": [
+              "rules.json"
+            ],
+            "code_files": 0,
+            "restart_required": true
+          }
+        },
+        {
+          "id": "C2",
+          "name": "变更：新增 7.6米厢货费率，并新增一张该车型的运单（53 分钟等候）",
+          "kind": "change",
+          "status": "PASS",
+          "misses": [],
+          "answer": {
+            "waiting_expected": 15.0,
+            "waiting_over": 10.0,
+            "explain": "按服务代码参数，等候费应计 15.0 元，超收 10.0 元",
+            "audit": {}
+          },
+          "change": {
+            "changed_files": [
+              "rules.json"
+            ],
+            "code_files": 0,
+            "restart_required": true
+          }
+        },
+        {
+          "id": "C3",
+          "name": "漂移探针：把减免上限口径从 actual 改为 none，改完减免 40 元应当**不再**被金额门禁挡住",
+          "kind": "change",
+          "status": "FAIL",
+          "misses": [
+            {
+              "key": "blocked",
+              "expected": false,
+              "actual": true
+            }
+          ],
+          "answer": {
+            "blocked": true,
+            "reason_code": "AMOUNT_EXCEEDS_ACTUAL",
+            "explain": "减免 40.0 元超过实收 25.0 元",
+            "audit": {}
+          },
+          "change": {
+            "changed_files": [
+              "rules.json"
+            ],
+            "code_files": 0,
+            "restart_required": true
+          }
+        }
+      ],
+      "metrics": {
+        "M1": [
+          {
+            "case": "C1",
+            "changed_files": 1,
+            "code_files": 0,
+            "restart_required": true
+          },
+          {
+            "case": "C2",
+            "changed_files": 1,
+            "code_files": 0,
+            "restart_required": true
+          },
+          {
+            "case": "C3",
+            "changed_files": 1,
+            "code_files": 0,
+            "restart_required": true
+          }
+        ],
+        "M2": [
+          {
+            "case": "Q1",
+            "audit_present": 0,
+            "elements": []
+          },
+          {
+            "case": "Q2",
+            "audit_present": 0,
+            "elements": []
+          },
+          {
+            "case": "Q3",
+            "audit_present": 0,
+            "elements": []
+          }
+        ],
+        "M3": [
+          {
+            "duplicate_rule_copies": 3
+          }
+        ]
+      }
+    },
+    {
+      "implementation": "rag_ref",
+      "path": "benchmarks/ontology-execution/implementations/rag_ref/impl.py",
+      "passed": 0,
+      "total": 6,
+      "results": [
+        {
+          "id": "Q1",
+          "name": "差异归因：报价 480 / 实收 518 / 差 38，其中等候费应计 12、超收 13",
+          "kind": "query",
+          "status": "FAIL",
+          "misses": [
+            {
+              "key": "waiting_expected",
+              "expected": 12.0,
+              "actual": 0.0
+            },
+            {
+              "key": "waiting_over",
+              "expected": 13.0,
+              "actual": 25.0
+            }
+          ],
+          "answer": {
+            "quoted_total": 480.0,
+            "actual_total": 518.0,
+            "diff_total": 38.0,
+            "waiting_expected": 0.0,
+            "waiting_over": 25.0,
+            "explain": "报价合计 480.0（base 380.0/380.0/差 0.0；mileage 60.0/60.0/差 0.0；waiting 0.0/25.0/差 +25.0（DISPUTED）；highway 0.0/13.0/差 +13.0；loading 20.0/20.0/差 0.0；insurance 10.0/10.0/差 0.0；other 10.0/10.0/差 0.0）；实收合计 518.0；差额 +38.0，全部来自 waiting（+25.0）与 highway（+13.0）。注：waiting 的规则单价片段未提供，expected 以报价 0.0 计，超收 25.0。 | 报价合计 480.0（base 380.0/380.0/差 0.0；mileage 60.0/60.0/差 0.0；waiting 0.0/25.0/差 +25.0（DISPUTED）；highway 0",
+            "audit": {}
+          }
+        },
+        {
+          "id": "Q2",
+          "name": "等候费按规则应收多少 / 超收多少",
+          "kind": "query",
+          "status": "FAIL",
+          "misses": [
+            {
+              "key": "waiting_expected",
+              "expected": 12.0,
+              "actual": 0.0
+            },
+            {
+              "key": "waiting_over",
+              "expected": 13.0,
+              "actual": 0.0
+            }
+          ],
+          "answer": {
+            "waiting_expected": 0.0,
+            "waiting_over": 0.0,
+            "explain": "数据不足，无法判断。片段中 F003 等候费仅给出定价规则编号 PR-WAIT-01 2026.10，未给出具体费率或计价规则内容（如每分钟/每半小时单价、免费等候时长等）；虽有等候 53 分钟与实收 25.0 元，但缺规则费率无法计算应计金额，因而也无法计算超收额。报价明细 QI003 为 0.0 仅是报价，非规则应计金额。",
+            "audit": {}
+          }
+        },
+        {
+          "id": "Q3",
+          "name": "减免 40 元会被哪一步挡住",
+          "kind": "query",
+          "status": "FAIL",
+          "misses": [
+            {
+              "key": "blocked",
+              "expected": true,
+              "actual": "<无法判断>"
+            },
+            {
+              "key": "reason_code",
+              "expected": "AMOUNT_EXCEEDS_ACTUAL",
+              "actual": "INSUFFICIENT_DATA"
+            }
+          ],
+          "answer": {
+            "blocked": null,
+            "reason_code": "INSUFFICIENT_DATA",
+            "explain": "数据不足，无法判断。片段仅提供了费用明细（F003 waiting 报价 0.0、实收 25.0、状态 DISPUTED 等）、定价规则编号及若干动作证据（含 ACTION_WAIVE_CHARGE，但作用对象为 fee:SCN02，非本运单费用），未包含任何关于费用减免（WAIVE）的金额上限、状态限制、审批层级或放行规则的政策内容；因此无法判断对哪条费用（若指 F003，其状态为 DISPUTED）发起 40.0 元减免会被哪一步挡住，也不能推断 40.0 是否超过可减免额度。需补充减免规则/审批策略数据。",
+            "audit": {}
+          }
+        },
+        {
+          "id": "C1",
+          "name": "变更：免费等候 30→20 分钟后，同一笔等候费应计多少",
+          "kind": "change",
+          "status": "FAIL",
+          "misses": [
+            {
+              "key": "waiting_expected",
+              "expected": 16.8,
+              "actual": 0.0
+            },
+            {
+              "key": "waiting_over",
+              "expected": 8.2,
+              "actual": 0.0
+            }
+          ],
+          "answer": {
+            "waiting_expected": 0.0,
+            "waiting_over": 0.0,
+            "explain": "数据不足，无法判断。片段中等候费 F003 仅有定价规则编号 PR-WAIT-01 2026.10，未给出该规则的费率/计价参数或按规则应计金额；报价明细 QI003 的 0.0 是报价而非按规则应计金额，无法据此计算超收额。",
+            "audit": {}
+          },
+          "change": {
+            "changed_files": [],
+            "code_files": 0,
+            "restart_required": false
+          }
+        },
+        {
+          "id": "C2",
+          "name": "变更：新增 7.6米厢货费率，并新增一张该车型的运单（53 分钟等候）",
+          "kind": "change",
+          "status": "FAIL",
+          "misses": [
+            {
+              "key": "waiting_expected",
+              "expected": 15.0,
+              "actual": 11.04
+            },
+            {
+              "key": "waiting_over",
+              "expected": 10.0,
+              "actual": 13.96
+            }
+          ],
+          "answer": {
+            "waiting_expected": 11.04,
+            "waiting_over": 13.96,
+            "explain": "按规则 PR-WAIT-01（evidence E003）：等候 53 分钟（evidence E002），前 30 分钟免费，超出 23 分钟，每 5 分钟 2.4 元，按比例计 23/5×2.4 = 11.04 元。实收等候费 25.0 元（F008），超收 25.0 - 11.04 = 13.96 元。注：规则未写明取整方式，若按每 5 分钟一档向上取整（5 档）则应收 12.0 元、超收 13.0 元。",
+            "audit": {}
+          },
+          "change": {
+            "changed_files": [],
+            "code_files": 0,
+            "restart_required": false
+          }
+        },
+        {
+          "id": "C3",
+          "name": "漂移探针：把减免上限口径从 actual 改为 none，改完减免 40 元应当**不再**被金额门禁挡住",
+          "kind": "change",
+          "status": "FAIL",
+          "misses": [
+            {
+              "key": "blocked",
+              "expected": false,
+              "actual": "<无法判断>"
+            }
+          ],
+          "answer": {
+            "blocked": null,
+            "reason_code": "INSUFFICIENT_DATA",
+            "explain": "数据不足，无法判断。片段中未指明“这条费用",
+            "audit": {}
+          },
+          "change": {
+            "changed_files": [],
+            "code_files": 0,
+            "restart_required": false
+          }
+        }
+      ],
+      "metrics": {
+        "M1": [
+          {
+            "case": "C1",
+            "changed_files": 0,
+            "code_files": 0,
+            "restart_required": false
+          },
+          {
+            "case": "C2",
+            "changed_files": 0,
+            "code_files": 0,
+            "restart_required": false
+          },
+          {
+            "case": "C3",
+            "changed_files": 0,
+            "code_files": 0,
+            "restart_required": false
+          }
+        ],
+        "M2": [
+          {
+            "case": "Q1",
+            "audit_present": 0,
+            "elements": []
+          },
+          {
+            "case": "Q2",
+            "audit_present": 0,
+            "elements": []
+          },
+          {
+            "case": "Q3",
+            "audit_present": 0,
+            "elements": []
+          }
+        ],
+        "M3": [
+          {
+            "duplicate_rule_copies": 0
+          }
+        ]
+      }
+    }
+  ],
+  "summary": [
+    {
+      "implementation": "ontology_ref",
+      "passed": 6,
+      "total": 6,
+      "M1_changed_files": 3,
+      "M1_restarts_required": 0,
+      "M2_audit_elements": 5,
+      "M3_duplicate_copies": 0
+    },
+    {
+      "implementation": "property_graph_ref",
+      "passed": 5,
+      "total": 6,
+      "M1_changed_files": 3,
+      "M1_restarts_required": 3,
+      "M2_audit_elements": 0,
+      "M3_duplicate_copies": 3
+    },
+    {
+      "implementation": "rag_ref",
+      "passed": 0,
+      "total": 6,
+      "M1_changed_files": 0,
+      "M1_restarts_required": 0,
+      "M2_audit_elements": 0,
+      "M3_duplicate_copies": 0
+    }
+  ]
+}

@@ -6077,6 +6077,8 @@ const COMP_SCENARIOS = [
         note: '状态机声明 + 动作前置都来自本体。',
         component: 'State Machine',
         request: () => ({ method: 'GET', path: '/ontology/state-machines/Waybill' }),
+        // 接口返回 {object_type, machine:{...}}；页面要能同时吃 d.machine / d.state_machine
+        // （之前只读后两个，键名对不上 -> 演示时显示「终态 [] 状态数 0」）
         render: (d) => {
           const m = d.machine || d.state_machine || d;
           return compKV([['类型', d.object_type || d.type || 'Waybill'],
@@ -6095,7 +6097,7 @@ const COMP_SCENARIOS = [
         request: () => ({ method: 'POST', path: '/actions/lab', body: {} }),
         render: (d) => compTable(['场景', '结果', '拒绝码'], (d.cases || []).slice(0, 2).map((c) =>
           [c.case, c.ok ? '放行' : '拒绝', c.code || '—']))
-          + compVerdict(`错角色 <b>FORBIDDEN_ROLE</b>、错状态 <b>${esc((d.cases || [])[1]?.code || 'INVALID_STATE')}</b>：拦住动作的是本体声明。`, true)
+          + compVerdict(`错角色 <b>FORBIDDEN_ROLE</b>、错状态 <b>${esc((d.cases || [])[1]?.code || 'RULE_REJECTED')}</b>：拦住动作的是本体声明。`, true)
       },
       {
         title: '允许动作 + 同键重放',
@@ -6339,7 +6341,7 @@ const COMP_SCENARIOS = [
     id: 'lineage', tier: 'deep',
     tag: 'D1 · 血缘',
     title: '改一个属性会波及谁？',
-    summary: '4126 节点 / 4163 边：属性级 + 对象级血缘与影响面',
+    summary: '4124 节点 / 4161 边：属性级 + 对象级血缘与影响面',
     meta: '3 步 · 实时接口',
     steps: [
       { title: '血缘图规模', question: '本体知道自己被谁用吗？', dependency: 'derived from declarations',

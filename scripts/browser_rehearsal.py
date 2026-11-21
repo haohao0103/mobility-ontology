@@ -17,7 +17,12 @@ from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeo
 import os
 BASE = os.environ.get("DEMO_BASE", "http://127.0.0.1:8765")
 OUT = Path(__file__).parent / "_out"
-OUT.mkdir(exist_ok=True)
+# 沙箱环境下 os.mkdir 的 exist_ok 会被 broker 拦成 FileExistsError，
+# 目录已存在时直接跳过即可（演示当天要反复跑，不能被这个挡住）
+try:
+    OUT.mkdir(parents=True, exist_ok=True)
+except FileExistsError:
+    pass
 
 ACTS = ["bearing", "machine", "contracts", "security", "agent", "evidence"]
 EXPECT = {

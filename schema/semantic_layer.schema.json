@@ -96,6 +96,9 @@
       "additionalProperties": {
         "$ref": "#/$defs/stateMachine"
       }
+    },
+    "abox_targets": {
+      "$ref": "#/$defs/aboxTargets"
     }
   },
   "$defs": {
@@ -1005,6 +1008,52 @@
         },
         "note": {
           "type": "string"
+        }
+      }
+    },
+    "aboxTargets": {
+      "type": "object",
+      "description": "ABox 深度校验区（深水区）声明：门禁据此校验实例/边/动作覆盖。",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "core_types"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "label": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "derive_from": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "core_types": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "require_instance": {
+          "type": "boolean"
+        },
+        "require_action_exercised": {
+          "type": "boolean"
+        },
+        "require_not_isolated": {
+          "type": "boolean"
+        },
+        "require_action_class_edges": {
+          "type": "boolean"
         }
       }
     }

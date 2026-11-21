@@ -31,6 +31,11 @@ def check(name: str, ok: bool, detail: str) -> None:
 def main() -> int:
     td = tempfile.mkdtemp(prefix="no_llm_")
     os.environ.pop("OPENAI_CHAT_API_KEY", None)  # 保证无 key 环境
+    # 还要屏蔽 .env 注入：`_load_env_file` 只在环境变量缺失时补 key，
+    # 光 pop 环境变量的话，仓库里的 .env 会把 key 又塞回来 —— 于是「无 key」
+    # 场景根本没测到（本地有 .env 时这个 smoke 反而红）。
+    import freight.agent as agent_mod
+    agent_mod._load_env_file = lambda path: None
     app = create_app(db_path=os.path.join(td, "facts.db"), fresh=True)
     client = TestClient(app)
     wb = "waybill:WB20261105001"

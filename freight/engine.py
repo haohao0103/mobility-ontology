@@ -425,17 +425,22 @@ class FreightSystem:
         self.facts.add_audit(
             t_accept, "张师傅", "driver", "accept_order", "waybill:WB20261105001",
             "APPROVED", None, {"object_id": "waybill:WB20261105001"},
-            {"status": "ACCEPTED"},
+            # 审计 result 格式必须与 execute_action 路径一致（before/after_status），
+            # 否则「迁移边与声明一致性」这类度量会读不到状态，产生假不一致
+            {"before_status": "CREATED", "after_status": "ACCEPTED",
+             "status": "ACCEPTED"},
         )
         self.facts.add_audit(
             t_post, "财务共享中心", "finance", "post_settlement", "settlement:ST20261105001",
             "APPROVED", None, {"object_id": "settlement:ST20261105001"},
-            {"status": "POSTED", "amount": 518.0},
+            {"before_status": "PENDING", "after_status": "POSTED",
+             "status": "POSTED", "amount": 518.0},
         )
         self.facts.add_audit(
             t_dispute, "货主", "shipper", "dispute_charge", "fee:F003",
             "APPROVED", None, {"object_id": "fee:F003", "reason": "等候费偏高"},
-            {"status": "DISPUTED", "ticket_id": "EX20261105001"},
+            {"before_status": "NORMAL", "after_status": "DISPUTED",
+             "status": "DISPUTED", "ticket_id": "EX20261105001"},
         )
 
     # ------------------------------------------------------------------ 读取
@@ -2702,6 +2707,67 @@ class FreightSystem:
             self.facts.add_event(oid, "CLOSED", at, actor,
                                  {"resolution": props["resolution"]})
             result["message"] = "异常工单已关闭，处理结论已留痕。"
+
+        elif action_id == "arrive_stop":
+            # 站点到达：记录到达时间；有上游运单时同步到达时间
+            props["arrived_at"] = at
+            props["status"] = new_status
+            self.facts.update_object(oid, props, None, new_status, at)
+            self.facts.add_event(oid, "ARRIVED", at, actor, {"role": role})
+            result["message"] = "站点已到达。"
+
+        elif action_id == "depart_stop":
+            # 站点离开：必须有到达时间（否则等于凭空消失）
+            if not props.get("arrived_at"):
+                raise BusinessReject("站点尚未到达，不能执行离开。", "RULE_REJECTED")
+            props["departed_at"] = at
+            props["status"] = new_status
+            self.facts.update_object(oid, props, None, new_status, at)
+            self.facts.add_event(oid, "COMPLETED", at, actor, {"role": role})
+            result["message"] = "站点已离开，装卸完成。"
+
+        elif action_id == "issue_quote":
+            # 报价签发：过期报价不能签发（valid_until 与当前时间比较）
+            valid_until = str(props.get("valid_until") or "")
+            if valid_until and valid_until < at[:10]:
+                raise BusinessReject(
+                    f"报价已于 {valid_until} 过期，不能签发。", "RULE_REJECTED")
+            props["status"] = new_status
+            self.facts.update_object(oid, props, None, new_status, at)
+            self.facts.add_event(oid, "ACTIVE", at, actor, {"role": role})
+            result["message"] = "报价已签发生效。"
+
+        elif action_id == "supersede_quote":
+            # 报价改版：必须指向一个存在的新报价，且新报价不能是同一张
+            new_quote_id = payload.get("new_quote_id")
+            if new_quote_id and f"quote:{new_quote_id}" == oid:
+                raise BusinessReject("新报价不能是当前报价自身。", "VALIDATION_ERROR")
+            if new_quote_id:
+                target = self.facts.get_row(f"quote:{new_quote_id}")
+                if target is None:
+                    raise BusinessReject(f"新报价不存在: {new_quote_id}",
+                                         "VALIDATION_ERROR")
+            props["status"] = new_status
+            self.facts.update_object(oid, props, None, new_status, at)
+            self.facts.add_event(oid, "SUPERSEDED", at, actor,
+                                 {"new_quote_id": new_quote_id,
+                                  "reason": payload.get("reason", "")})
+            result.update({"message": f"报价已改版，由 {new_quote_id} 取代。",
+                           "new_quote_id": new_quote_id})
+
+        elif action_id == "confirm_subcontract":
+            # 分包确认：分包金额不得超过运单收入（否则倒挂）
+            allocated = float(props.get("allocated_amount") or 0)
+            revenue = float(props.get("waybill_revenue") or 0)
+            if revenue and allocated > revenue:
+                raise BusinessReject(
+                    f"分包金额 {allocated:.2f} 超过运单收入 {revenue:.2f}，不能确认。",
+                    "RULE_REJECTED")
+            props["confirmed_at"] = at
+            props["status"] = new_status
+            self.facts.update_object(oid, props, None, new_status, at)
+            self.facts.add_event(oid, "CONFIRMED", at, actor, {"role": role})
+            result["message"] = "分包单已确认。"
 
         else:
             raise BusinessReject(f"动作 {action_id} 尚无运行时实现。", "NOT_IMPLEMENTED")

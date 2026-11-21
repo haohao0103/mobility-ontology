@@ -1012,6 +1012,82 @@ def check_state_machines(root: str) -> dict:
     return item
 
 
+def check_abox_coverage(root: str) -> dict:
+    """P2-6：ABox 深度校验（深水区覆盖）——本体「能表达」之外，还要「被业务证明过」。
+
+    判据内核在 `freight/abox.py`：
+    - V1 深水区每个类型至少有 1 个对象实例；
+    - V2 深水区每个类型不是孤岛（至少出现在一条关系实例的一端）；
+    - V3 每个迁移动作至少有 1 条 APPROVED 审计（动作真被执行过，不是只声明）。
+
+    度量跑在「种子数据 + 核心业务剧本」上（`freight/scenarios.py`），
+    所以测到的是真跑过的覆盖，不是声明出来的覆盖。
+    """
+    target = "freight/semantic_layer.json#abox_targets"
+    item: dict = {"target": target, "ok": True, "issues": []}
+    from freight import abox
+
+    layer_path = os.path.join(root, "freight", "semantic_layer.json")
+    sem = SemanticLayer(layer_path)
+    db_path = abox.build_db(prefix="abox_gate_")
+    try:
+        metrics = abox.measure(sem, db_path)
+        for iss in abox.check(sem, db_path):
+            item["ok"] = False
+            item["issues"].append({"code": iss["code"], "path": iss["path"],
+                                   "message": iss["message"]})
+        item["coverage"] = {
+            "class_coverage": metrics["class_coverage"],
+            "edge_coverage": metrics["edge_coverage"],
+            "action_coverage": metrics["action_coverage"],
+            "core_types": metrics["core_types"],
+        }
+
+        # 负向用例：删掉实例 / 删掉边 / 删掉审计，必须分别被抓出来
+        negatives = [
+            ("删掉深水区类型的全部实例",
+             "DELETE FROM objects WHERE type='Carrier'",
+             "ABOX_CLASS_NO_INSTANCE"),
+            # 必须删两端：只删出边时该类型仍有入边，不算孤岛（负向用例本身要成立）
+            ("删掉某类型的全部关系实例",
+             "DELETE FROM relations WHERE subject_type='Stop' OR object_type='Stop'",
+             "ABOX_CLASS_ISOLATED"),
+            ("删掉动作的 APPROVED 审计",
+             "DELETE FROM audit WHERE action_id='issue_quote' AND decision='APPROVED'",
+             "ABOX_ACTION_UNEXERCISED"),
+            ("把审计里的迁移结果改成与声明不符",
+             "UPDATE audit SET result='{\"after_status\":\"WRONG\"}' "
+             "WHERE action_id='accept_order' AND decision='APPROVED'",
+             "ABOX_TRANSITION_MISMATCH"),
+        ]
+        import sqlite3
+        for label, sql, expect_code in negatives:
+            probe_db = abox.build_db(prefix="abox_neg_")
+            try:
+                conn = sqlite3.connect(probe_db)
+                conn.execute(sql)
+                conn.commit()
+                conn.close()
+                codes = {i["code"] for i in abox.check(sem, probe_db)}
+            except Exception as exc:  # noqa: BLE001 - 负向用例崩了也算没拦住
+                codes = set()
+                item["issues"].append({
+                    "code": "ABOX_NEGATIVE_CRASH", "path": target,
+                    "message": f"负向用例执行异常: {exc}"})
+            finally:
+                if os.path.exists(probe_db):
+                    os.remove(probe_db)
+            if expect_code not in codes:
+                item["ok"] = False
+                item["issues"].append({
+                    "code": "ABOX_NEGATIVE_LEAKED", "path": target,
+                    "message": f"负向用例未被拦截（期望 {expect_code}）: {label}"})
+    finally:
+        if os.path.exists(db_path):
+            os.remove(db_path)
+    return item
+
+
 def main() -> int:
     results = [check_schema(CURRENT, "freight/semantic_layer.json")]
     results.append(check_metadata(CURRENT, "freight/semantic_layer.json"))
@@ -1029,6 +1105,7 @@ def main() -> int:
     results.append(check_display_metadata(ROOT))
     results.append(check_breaking_changes(ROOT))
     results.append(check_state_machines(ROOT))
+    results.append(check_abox_coverage(ROOT))
     results.append(check_query_schema(ROOT))
     for manifest in list_manifests():
         version = manifest["version"]
@@ -1085,6 +1162,7 @@ def main() -> int:
         "display_metadata": "freight/semantic_layer.json#display",
         "breaking_changes": "freight/semantic_layer.json#breaking",
         "state_machines": "freight/semantic_layer.json#state_machines",
+        "abox_coverage": "freight/semantic_layer.json#abox_targets",
     }
     coverage = {
         name: {"target": target, "ok": bool(by_target.get(target))}

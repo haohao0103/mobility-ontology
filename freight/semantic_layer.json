@@ -68483,5 +68483,39 @@
     "EXCEPTION"
    ]
   }
+ },
+ "abox_targets": {
+  "id": "waybill-fee-core",
+  "label": "运单-费用主链路（ABox 深度校验区）",
+  "description": "深水区：声明了 data_sources、迁移动作或状态机的对象类型。门禁第 26 项据此校验：每个类有实例(V1)、不是孤岛(V2)、有动作的类双向有边、每个迁移动作被真实执行过(V3)。core_types 可显式覆写，默认由 data_sources/actions/state_machines 派生。",
+  "derive_from": [
+   "data_sources",
+   "actions",
+   "state_machines"
+  ],
+  "core_types": [
+   "Cargo",
+   "Carrier",
+   "Driver",
+   "Evidence",
+   "ExceptionTicket",
+   "FeeItem",
+   "Invoice",
+   "Order",
+   "PricingRule",
+   "Quote",
+   "QuoteItem",
+   "Settlement",
+   "Shipper",
+   "Stop",
+   "SubcontractOrder",
+   "Track",
+   "Vehicle",
+   "Waybill"
+  ],
+  "require_instance": true,
+  "require_action_exercised": true,
+  "require_not_isolated": true,
+  "require_action_class_edges": true
  }
 }

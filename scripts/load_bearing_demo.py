@@ -235,6 +235,31 @@ def probe_action_param(root: str, args: dict) -> dict:
                 "code": getattr(exc, "code", None), "message": str(exc)[:200]}
 
 
+
+def probe_abox(root: str, args: dict) -> dict:
+    """ABox 深度校验（门禁第 26 项）：深水区覆盖 + 迁移一致性。"""
+    from freight import abox
+    from freight.semantic import SemanticLayer
+
+    layer_path = os.path.join(root, "freight", "semantic_layer.json")
+    sem = SemanticLayer(layer_path)
+    db = abox.build_db(prefix="lb_abox_")
+    try:
+        issues = abox.check(sem, db)
+        m = abox.measure(sem, db)
+        return {
+            "ok": not issues,
+            "codes": sorted({i["code"] for i in issues}),
+            "class_coverage": m["class_coverage"]["ratio"],
+            "class_total": m["class_coverage"]["total"],
+            "action_coverage": m["action_coverage"]["ratio"],
+            "action_total": m["action_coverage"]["total"],
+        }
+    finally:
+        if os.path.exists(db):
+            os.remove(db)
+
+
 PROBES = {
     "gate": probe_gate,
     "gate_full": probe_gate_full,
@@ -247,6 +272,7 @@ PROBES = {
     "review": probe_review,
     "projection": probe_projection,
     "action_param": probe_action_param,
+    "abox": probe_abox,
 }
 
 
@@ -376,6 +402,23 @@ def mut_param_type_number(raw):
             for p in a.get("params") or []:
                 if p["name"] == "reason":
                     p["type"] = "number"
+    return raw
+
+
+
+def mut_abox_core_types(raw):
+    """把一个没有实例的类塞进深水区清单 -> 覆盖率判定必须报警。"""
+    raw.setdefault("abox_targets", {}).setdefault("core_types", [])
+    raw["abox_targets"]["core_types"] = list(
+        raw["abox_targets"]["core_types"]) + ["WaybillCost"]
+    return raw
+
+
+def mut_drop_core_type(raw):
+    """把深水区清单里的一类删掉 -> 覆盖判定的分母必须跟着变（清单是活的）。"""
+    types = list((raw.get("abox_targets") or {}).get("core_types") or [])
+    types = [t for t in types if t != "FeeItem"]
+    raw.setdefault("abox_targets", {})["core_types"] = types
     return raw
 
 
@@ -545,7 +588,26 @@ CASES = [
         "check": lambda b, m: b["ok"] and not m["ok"]
         and m["code"] == "VALIDATION_ERROR",
     },
+    {
+        "id": "L18", "gap": "P2-6 ABox 深度校验",
+        "change": f"{LAYER} abox_targets.core_types 加入无实例的 WaybillCost",
+        "file": LAYER, "mut": mut_abox_core_types,
+        "probe": ("abox", {}),
+        "expect": "门禁变 FAIL 报 ABOX_CLASS_NO_INSTANCE（清单改了，覆盖判定必须跟着变）",
+        "check": lambda b, m: b["ok"] and not m["ok"]
+        and "ABOX_CLASS_NO_INSTANCE" in m["codes"],
+    },
+    {
+        "id": "L19", "gap": "P2-6 覆盖判定随本体变",
+        "change": f"{LAYER} abox_targets.core_types 去掉 FeeItem",
+        "file": LAYER, "mut": mut_drop_core_type,
+        "probe": ("abox", {}),
+        "expect": "覆盖判定的分母从 18 变 17（清单在本体里，改一处判一处）",
+        "check": lambda b, m: b["class_total"] == 18 and m["class_total"] == 17
+        and m["ok"],
+    },
 ]
+
 
 
 

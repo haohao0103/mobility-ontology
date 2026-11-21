@@ -47,7 +47,7 @@ LEGACY_CARDINALITY = {
 # 旧本体里要保留的非类/关系字段
 PRESERVED_KEYS = ("meta", "catalog", "closure", "diagnosis", "pricing", "primitives",
                   "functions", "data_sources", "relation_source", "rules", "actions",
-                  "derived_types", "state_machines")
+                  "derived_types", "state_machines", "abox_targets")
 
 
 def load_domain_modules() -> tuple[list[dict], list[dict], list[dict]]:

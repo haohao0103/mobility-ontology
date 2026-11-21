@@ -43,7 +43,7 @@
 | P-07 | Action 应用与副作用 | applyAction / batch apply、前置校验、edits（增删改对象与链接）、副作用（通知 / webhook / 触发器）、action log 审计、幂等 | **v3.2 更正（上一版此处写「无 apply、无 edits」是错的）**：`freight/engine.py::execute_action/_apply_action` 已实现 apply —— 前置校验（角色 / 状态 / 规则）、edits（属性写回 + 关系与事件写入）、action log 审计（APPROVED / REJECTED 双写 + 失败回滚）、**幂等键 replay**（`audit_by_key`）、证据记录。**缺**：batch apply、跨对象 edits、webhook / 通知 / 触发器等副作用 | 无本体级 | 中 | **自研 apply 已完成**；批量与副作用暂缓 |
 | P-08 | Functions | 类型化函数运行时，输入输出绑定本体类型，支持 function-backed actions，供 Workshop / AIP 调用 | **v3.1 已类型化**：4 个确定性函数（fee_breakdown、quote_reconcile、evidence_chain、action_preflight）注册在扩展层 `function_registry`，参数走标量类型校验（与属性写入同一判据）、返回值按 `result_types`（FeeBreakdown / QuoteReconcile / FeeBreakdownBatch）校验缺失/多余/类型（`RETURN_FIELD_*`）；`enhancements/sandbox` 子进程 + timeout + 内存限制；`function-backed action` 已有 | 无本体专用；任意沙箱/serverless 可承载 | 小 | **自研类型绑定 + 引入沙箱执行（已成）** |
 | P-09 | 强制访问控制 | markings（组织 / 分级 / 隔舱 / need-to-know）+ 行级 / 列级权限 + 标记沿数据传播继承 + 拒绝审计 | **已落地（v3.1）**：markings 四类 + 行级 `object_security_policies` + 列级 `property_security_policies` + **传播继承**（`marking_trace()`：数据源级 / 类级 → 对象，行级要求持有全部标记）+ `deny_reason()` 拒绝原因 + `guard_output()` Agent 输出闸 + scope token 工具面过滤。**边界**：属性 marking 只管列（置 null），不提升为整行不可见 | OpenFGA（ReBAC）、OPA / Cedar（ABAC/PBAC）；无 marking 传播模型 | 大 | **自研 marking 传播已完成**；授权引擎骨架（OpenFGA/OPA）仍未引入 |
-| P-10 | Lineage | 数据源 → 对象 → 动作 → 消费的全链路血缘，可按对象类型/属性追溯 | 已有 `evidence_chain` 函数、`evidence` / `audit` / `events` 三张表与 `usage_graph` 反向引用（类被谁引用）；**v3.2 增补对象状态轨迹**（`state_history`，只取状态变更事件）。**缺**：系统级血缘图（数据源 → 对象 → 动作 → 消费），不可按属性追溯 | OpenLineage / Marquez（数据级） | 中 | **引入 OpenLineage 采集 + 自研本体级映射** |
+| P-10 | Lineage | 数据源 → 对象 → 动作 → 消费的全链路血缘，可按对象类型/属性追溯 | **v3.2 有推进（2026-11-20 拉取）**：`data_sources` 扩到 20 条，费用类新增**多源连接器契约**（`fee_types` 口径归属 / `freshness_hours` 新鲜度 / `evidence_sources` / `require_evidence`）；`collect_fee_sources()` 按声明逐源认领费用明细，认领不到的进 `unresolved_ids` **缺口显式化**（不静默丢弃）；报价侧 `quote_contains_item` 逐项取数并做**三口径校验**（明细合计 / 报价单总额 / 运单快照），`FeeBreakdown` 契约新增 `quote` / `source_coverage` / `quoted_total_source`；另有 `evidence_chain`、`evidence`/`audit`/`events` 三表与 `usage_graph`。**仍缺**：① 全链路血缘图（数据源 → 对象 → 动作 → 消费）；② 按属性追溯；③ **连接器目前只做口径分流**——TMS/ETC 两个连接器从计费中心的同一批费用索引里按 `source_system` 过滤，没有真实对接外部系统 | OpenLineage / Marquez（数据级） | 中 | **引入 OpenLineage 采集 + 自研本体级映射**；先把一个连接器真接出去 |
 | P-11 | OSDK / Ontology API | 由本体生成类型化 SDK（TS/Python/Java）+ REST/GraphQL API | **v3.1 已有**：`tools/gen_osdk.py` 由本体生成 TS + Python 强类型客户端（接基础属性注册表，1961 属性不再退化成 `str`；`decimal→Decimal`）；REST 为 FastAPI + MCP 工具面。**缺**：Java SDK、GraphQL | LinkML generators、OpenAPI 生成器 | 小 | **拼装**：canonical schema → 类型与 SDK 生成 |
 | P-12 | Agent 工具面 | 对象、动作、函数统一作为 AIP 工具，带权限、可评测、可观测 | 已成型：本体原语 10 个（catalog / object_type_search / schema / path / query / traverse / search_around / aggregate / sql / **state_machine**）+ 动作 `action.plan` / `action.execute` + 函数；scope token 按令牌裁剪工具面；`guard_output()` 卡 Agent 输出越权。**缺**：工具级评测集与调用观测 | MCP 生态；无本体工具治理 | 中 | **自研**：工具注册、权限、评测、token 预算检索 |
 | P-13 | Ontology Manager / 变更治理 | 图形化编辑、审批流、变更预览、影响面分析、冲突检测 | **v3.1/v3.2 治理内核已有**：JSON + Git + CI 门禁（25 项）+ `freight/change_gate.py`（类/属性/类型/基数/状态机变更分类 + 引用影响回溯：函数/规则/动作/数据源/接口/派生类型/OSDK 生成物）+ 逐条签字（`breaking_approvals.json`，路径完全一致才算）+ `tools/proposal.py` 评审 `verdict`；承重实验 18 条（只改 JSON、代码零改动、行为必变）。**缺**：图形化编辑器、审批流 UI | 无等价；Git + CI + schema diff 可拼 | 小 | **拼装 Git/CI + 自研影响面分析**（UI 可暂缓） |
@@ -109,6 +109,26 @@ Palantir 的 Object Type 自带状态机（状态 + 迁移 + 事件），Agent �
 代价与收益：代价是每类多写一小段声明（当前 8 类）；收益是"这个对象怎么走"从
 散落在 15 个动作里的隐含知识，变成可查询、可校验、可渲染的一等公民。
 
+### 3.5 ABox 覆盖率：本矩阵之外最该盯的一项
+
+Palantir 模式的本体之所以有价值，不在于定义得多，而在于**它是活的**：每个类背后有真实业务对象、
+每条链路有真实边、每个动作每天在被执行。我们已经把这套"活"的机制都造出来了
+（状态机 / 动作写回 / marking 传播 / 变更签字 / 承重实验），但：
+
+| 维度 | 现状（2026-11-21 实测 runs/freight_facts.db） |
+|---|---|
+| TBox | 500 类 / 503 链接 / 1961 属性 / 20 数据源 —— 定义完整 |
+| **ABox** | **48 个对象实例，只有 15/500 类有实例（3.0%），485 个零实例** |
+| 关系实例 | 67 条（503 个链接类型里绝大多数没有真实边） |
+| 有状态机的类 | 8 个（其余 492 类没有状态流转，属正常） |
+
+结论：**我们证明了「本体能表达」，没证明「本体是真的」**。
+零实例类的问题不是建模质量（v3.0 已清掉 540 个生成器假类），而是**没有业务证据**——
+这些类到底有没有真实业务对象，仓库里拿不出证据。
+
+建议把「核心域类 ABox 覆盖率」变成门禁项：声明了状态机的类 100% 有实例；
+选定深水区（运单 + 费用链路）内每个类至少 1 个实例、每条链路至少 1 条真实边。
+
 ## 4. 拼装清单汇总
 
 ### 4.1 可以拼装或引入（约 30–40% 工作量）
@@ -151,7 +171,9 @@ Palantir 的 Object Type 自带状态机（状态 + 迁移 + 事件），Agent �
 - **平台件仍缺**：OSv2 全量物化（P-04 轻量档）、Object Set 完备代数（P-05）、
   系统级血缘（P-10）、版本分支与回滚（P-03）、批量动作与副作用（P-07）、工具评测集（P-12）；
 - 结论：**能力声明层与运行时已够用，剩余差距集中在 Foundry 的平台工程量，不在本体方法论。**
-  下一轮优先级：P-10 血缘 → P-03 变更集 → P-05 pivot。
+  下一轮优先级：**P-10 收尾（真接一个外部连接器 + 全链路血缘图）→ P-03 变更集 → P-05 pivot**。
+  另有一项比以上都重要、但不属于本矩阵：**ABox 覆盖率**——当前 500 类里只有 15 类有实例（3.0%），
+  485 个零实例类意味着这些类「能表达」但「没被业务证明过」。详见 §3.5。
 
 ## 7. 维护规则
 

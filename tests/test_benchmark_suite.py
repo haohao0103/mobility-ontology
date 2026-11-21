@@ -122,7 +122,8 @@ class TestThirdPartyIsolation:
 
     def _audit(self, runner, code: str):
         import tempfile
-        with tempfile.TemporaryDirectory(dir=str(ROOT / ".tmp_bench")) as td:
+        # 用系统临时目录：仓库内的临时目录可能被清掉，也不该成为测试前提
+        with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "impl.py"
             path.write_text(code, encoding="utf-8")
             return runner.audit_impl(path)

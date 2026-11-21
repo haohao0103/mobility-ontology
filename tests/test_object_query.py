@@ -341,7 +341,10 @@ class TestPageContract:
         assert len(seen) == len(set(seen))
         assert len(set_ids) == 1 and len(snapshots) == 1
         assert out["object_set_id"] == out["set_id"]
-        assert out["consistent"] is True
+        # 一致性字段曾经恒为 True（无校验在背后），现已改为如实暴露投影新鲜度
+        assert "consistent" not in out
+        assert isinstance(out["projection_fresh"], bool)
+        assert out["plan"] in ("projection", "full_scan")
 
     def test_token_query_mismatch(self, engine, sys_mod):
         eng, _ = engine

@@ -5435,14 +5435,15 @@ async function runObjectSet(chain) {
         method: 'POST', body: JSON.stringify(body)
       });
       verdict.innerHTML = labChecks([
-        { ok: page.consistent === true, text: `consistent=${page.consistent}` },
+        { ok: page.projection_fresh === true || page.plan === 'full_scan',
+          text: `取数路径=${page.plan} 投影新鲜=${page.projection_fresh}` },
         { ok: page.set_id === page.object_set_id, text: `set_id === object_set_id (${page.set_id})` },
         { ok: !!page.snapshot_id, text: `snapshot_id=${page.snapshot_id}` },
         { ok: page.objects.length === Math.min(limit, page.total), text: `本页 ${page.objects.length} 条 / 总数 ${page.total}` },
         { ok: page.total > limit ? !!page.next_page_token : !page.next_page_token, text: `next_page_token ${page.next_page_token ? '已签发' : '为空（已到末页）'}` }
       ]);
       out.innerHTML = objectRows(page.objects, [order]) +
-        `<pre class="lab-json">${esc(JSON.stringify({ request: body, response: { set_id: page.set_id, snapshot_id: page.snapshot_id, total: page.total, offset: page.offset, consistent: page.consistent, next_page_token: page.next_page_token ? page.next_page_token.slice(0, 46) + '…' : null } }, null, 2))}</pre>`;
+        `<pre class="lab-json">${esc(JSON.stringify({ request: body, response: { set_id: page.set_id, snapshot_id: page.snapshot_id, total: page.total, offset: page.offset, projection_fresh: page.projection_fresh, plan: page.plan, next_page_token: page.next_page_token ? page.next_page_token.slice(0, 46) + '…' : null } }, null, 2))}</pre>`;
       return;
     }
     const oneShot = await api(`/object-set/query?user=ops&roles=${OS_ROLES}`, {
@@ -5527,7 +5528,7 @@ async function queryDerived(id, btn) {
     });
     const checks = [
       { ok: page.total > 0, text: `派生集合非空：${page.total} 个对象` },
-      { ok: page.consistent === true, text: `派生查询同样遵守快照一致性（snapshot=${page.snapshot_id}）` }
+      { ok: !!page.snapshot_id, text: `派生查询同源快照（snapshot=${page.snapshot_id}，路径=${page.plan}）` }
     ];
     if (id === 'CarrierResource') {
       const [drivers, vehicles] = await Promise.all([
@@ -6093,7 +6094,8 @@ const COMP_SCENARIOS = [
           body: { set: { from: 'FeeItem', where: { status: { $eq: 'DISPUTED' } } }, page: { limit: 5 } } }),
         render: (d) => compKV([
           ['集合 ID', d.object_set_id], ['快照 ID', d.snapshot_id],
-          ['命中', d.total], ['一致', d.consistent ? '是' : '否'],
+          ['命中', d.total], ['投影新鲜', d.projection_fresh === false ? '否' : '是'],
+          ['取数路径', d.plan || '—'],
           ['计划', JSON.stringify(d.plan || {}).slice(0, 90)],
         ]) + compTable(['对象', '类型'], (d.objects || []).slice(0, 5).map((o) => [o.object_id, o.type]))
           + compVerdict(`查询用的是<b>本体类型 FeeItem 和本体属性 status</b>，不是数据库表名和列名。换个数据源，查询语义不变。`)
@@ -6106,7 +6108,8 @@ const COMP_SCENARIOS = [
         request: () => ({ method: 'POST', path: '/object-set/sql', body: { sql: 'SELECT * FROM FeeItem LIMIT 5' } }),
         render: (d) => compKV([
           ['SQL', 'SELECT * FROM FeeItem LIMIT 5'],
-          ['命中', d.total], ['一致', d.consistent ? '是' : '否'],
+          ['命中', d.total], ['投影新鲜', d.projection_fresh === false ? '否' : '是'],
+          ['取数路径', d.plan || '—'],
           ['计划', JSON.stringify(d.plan || {}).slice(0, 90)],
         ]) + compVerdict(`SQL 里的 <code>FeeItem</code> 是<b>本体类型名</b>，编译器把它翻译成对本体属性与关系的查询，底下的数据源可以随时替换。`, true)
       },

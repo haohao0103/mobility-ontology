@@ -11,7 +11,8 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
-BASE = "http://127.0.0.1:8765"
+import os
+BASE = os.environ.get("DEMO_BASE", "http://127.0.0.1:8765")
 OUT = Path(__file__).parent / "_out"
 OUT.mkdir(exist_ok=True)
 

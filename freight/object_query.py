@@ -271,6 +271,10 @@ class ObjectQueryEngine:
         self.last_projection_stale = False
         # OSv2 自适应计划选路结果（可观测性）
         self.last_plan = projection_v2.PLAN_FULL_SCAN
+        # 投影新鲜度（查询开始时实测）：如实暴露给调用方，不写死 True
+        self.last_projection_fresh = False
+        # 投影新鲜度（查询开始时实测）：如实暴露给调用方，不写死 True
+        self.last_projection_fresh = False
 
     def _derived_of(self, type_id: str, stack: tuple = ()) -> dict | None:
         """取派生类型定义；带循环检测（派生链不得指回自身）。"""
@@ -861,6 +865,8 @@ class ObjectQueryEngine:
         main_type = self.validate_set(set_node)
         checker = getattr(store, "projection_is_fresh", None)
         fresh = bool(checker()) if checker is not None else False
+        # 存到实例，供结果体如实暴露（以前这个信息只用于选计划，用完就丢）
+        self.last_projection_fresh = fresh
         self.last_plan = projection_v2.choose_plan(
             set_node, query.get("aggregate"), store.conn, fresh)
         rows = self._resolve_set(set_node, store)
@@ -961,7 +967,11 @@ class ObjectQueryEngine:
             "limit": limit,
             "objects": out_objects,
             "next_page_token": next_page_token,
-            "consistent": True,
+            # 一致性不再写死 True：以前这个字段恒为 True、没有任何校验在背后，
+            # 等于给"结果一致"发了一张假通行证。现在把真实状态暴露出来——
+            # projection_fresh = 投影是否与源表一致（false 时本条查询已回退全表），
+            # plan = 本次实际走的取数路径（projection / full_scan）。
+            "projection_fresh": bool(self.last_projection_fresh),
             "plan": self.last_plan,
         }
 

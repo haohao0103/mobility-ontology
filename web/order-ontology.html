@@ -872,7 +872,7 @@
   .kb-zoom{display:flex;align-items:center;gap:4px}
   .kb-zbtn{font-family:var(--mono);font-size:11px;line-height:1;color:#5f6672;border:1px solid #e0d8cc;background:#faf7f1;border-radius:3px;padding:4px 7px;cursor:pointer}
   .kb-zbtn:hover{border-color:var(--orange);color:#a93c00}
-  .kb-canvas{cursor:grab;touch-action:none}
+  .kb-canvas{cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none}
   .kb-canvas.kb-panning{cursor:grabbing}
   .kb-canvas.kb-panning .kb-node,.kb-canvas.kb-panning [data-kb-edge]{cursor:grabbing}
   .kb-zoom-hint{font-family:var(--mono);font-size:9px;color:#a39b8d;letter-spacing:.02em}
@@ -4204,9 +4204,55 @@ function bindKnowledgeGraph() {
 /* ── 本体知识图：拖拽平移 + 滚轮/双指缩放 + 按钮缩放 ─────────────────────
    实现取 viewBox 操控（不动 DOM 结构）：平移改 viewBox 原点，缩放按光标
    锚点收放宽高。好处是节点 hover / 选中 / 下钻等既有交互零改动；
-   画布尺寸在建图时钉死（px），避免 viewBox 宽高比变化引起布局抖动。 */
+   画布尺寸在建图时钉死（px），避免 viewBox 宽高比变化引起布局抖动。
+   交互语义：任何位置起拖都平移（位移超 5px 才算拖，抑制随后 click；
+   没位移就是点击→下钻）；滚轮/按钮/双击缩放复位；触屏双指捏合。 */
 const KB_ZOOM_MIN = 0.25;   // 最小缩放（k = 基准宽 / 视图宽）
 const KB_ZOOM_MAX = 6;      // 最大缩放
+const KB_PAN_THRESHOLD = 5; // 位移超此值才算拖拽（px）
+
+/* 平移状态放在模块级：document 级监听只绑一次，重绘换 svg 后状态继续
+   指向新图（旧 svg 随 innerHTML 丢弃，其监听器一起回收，不泄漏）。 */
+const kbPan = {
+  svg: null, canvas: null, docBound: false, touchActive: false,
+  armed: false, panning: false,
+  startX: 0, startY: 0, originX: 0, originY: 0,
+  suppressClick: false,   // 一次性：拖拽后吞掉紧接着的那次 click
+};
+
+function kbBeginPan(clientX, clientY) {
+  kbPan.armed = true;
+  kbPan.panning = false;
+  kbPan.suppressClick = false;
+  kbPan.startX = clientX;
+  kbPan.startY = clientY;
+  const v = kbState.view;
+  kbPan.originX = v.x;
+  kbPan.originY = v.y;
+}
+
+function kbMovePan(clientX, clientY) {
+  if (!kbPan.armed) return;
+  const moved = Math.abs(clientX - kbPan.startX) + Math.abs(clientY - kbPan.startY);
+  if (!kbPan.panning && moved < KB_PAN_THRESHOLD) return;
+  kbPan.panning = true;
+  kbPan.suppressClick = true;   // 一旦真的拖了，随后的 click 作废
+  kbPan.canvas && kbPan.canvas.classList.add('kb-panning');
+  const ctm = kbPan.svg.getScreenCTM();
+  if (!ctm) return;
+  kbState.view.x = kbPan.originX - (clientX - kbPan.startX) * ctm.a;
+  kbState.view.y = kbPan.originY - (clientY - kbPan.startY) * ctm.d;
+  kbApplyView(kbPan.svg);
+}
+
+function kbEndPan() {
+  kbPan.armed = false;
+  kbPan.panning = false;
+  kbPan.canvas && kbPan.canvas.classList.remove('kb-panning');
+  // 抑制标志的兜底清零：拖拽后 click 没落回 svg（拖出画布外）时，
+  // 下次 mousedown 或 600ms 后必然重置，绝不跨交互泄漏
+  setTimeout(() => { kbPan.suppressClick = false; }, 600);
+}
 
 function kbViewBase(svg) {
   return { w: Number(svg.dataset.kbW) || 1180, h: Number(svg.dataset.kbH) || 1240 };
@@ -4273,84 +4319,83 @@ function bindKbPanZoom(svg) {
     kbApplyView(svg);
   }
 
-  svg.addEventListener('wheel', (event) => {
+  // 滚轮缩放：绑 svg 也绑容器（捕获相），嵌入式浏览器里事件有时落在容器上
+  const onWheel = (event) => {
     event.preventDefault();
     kbZoomAt(svg, kbToUser(svg, event.clientX, event.clientY),
              Math.exp(-event.deltaY * 0.0016));
-  }, { passive: false });
+  };
+  svg.addEventListener('wheel', onWheel, { passive: false });
+  if (canvas) canvas.addEventListener('wheel', onWheel, { passive: false, capture: true });
 
   svg.addEventListener('dblclick', (event) => {
     if (event.target.closest('[data-kb-node], [data-kb-edge], [data-kb-back]')) return;
     kbFitView(svg);
   });
 
-  // 拖拽平移（按在空白处才平移；节点/连线保留点选与下钻）
-  const pointers = new Map();
-  let panning = false;
-  let startX = 0, startY = 0, originX = 0, originY = 0, moved = 0;
-  let pinchDist = 0;
+  // ── 拖拽平移（模块级状态 + document 单绑）────────────────────────────
+  // 三个 ENGINE 原则：
+  // ① 用**鼠标事件**（mousedown/mousemove/mouseup）做单指平移——全浏览器
+  //    通用；指针事件只在双指捏合时用（部分嵌入式浏览器对 SVG 指针事件
+  //    支持有坑，鼠标事件没有）。
+  // ② **任何位置起拖都平移**（包括节点上）：位移超阈值才算拖拽，没位移
+  //    就是点击（下钻）。用户对"拖拽"的预期是"抓住哪里都能挪"。
+  // ③ 抑制点击是**一次性标志**（kbPan.suppressClick），不是位移累加值——
+  //    累加值会跨交互泄漏：拖拽后 click 没落回 svg（拖出画布外）时标志
+  //    没被清零，会把下一次点击也吞掉（踩过：下钻突然失灵）。
+  kbPan.svg = svg;
+  kbPan.canvas = canvas;
 
+  svg.addEventListener('mousedown', (event) => {
+    if (event.button !== 0 || kbPan.touchActive) return;
+    if (event.target.closest('.kb-zbtn, [data-kb-back]')) return;
+    kbBeginPan(event.clientX, event.clientY);
+  });
+
+  // document 级监听只绑一次（状态在模块级，永远指向最新 svg）
+  if (!kbPan.docBound) {
+    kbPan.docBound = true;
+    document.addEventListener('mousemove', (event) => {
+      kbMovePan(event.clientX, event.clientY);
+    });
+    document.addEventListener('mouseup', kbEndPan);
+  }
+
+  // 双指捏合（指针事件，仅触屏）
+  const pointers = new Map();
+  let pinchDist = 0;
   svg.addEventListener('pointerdown', (event) => {
-    if (event.target.closest('[data-kb-node], [data-kb-edge], [data-kb-back], .kb-zbtn')) return;
+    if (event.pointerType === 'touch') kbPan.touchActive = true;
     pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
     if (pointers.size === 2) {
       const [a, b] = [...pointers.values()];
       pinchDist = Math.hypot(a.x - b.x, a.y - b.y);
-      panning = false;
-      return;
     }
-    panning = true;
-    moved = 0;
-    startX = event.clientX;
-    startY = event.clientY;
-    const v = kbState.view;
-    originX = v.x;
-    originY = v.y;
-    svg.setPointerCapture(event.pointerId);
-    canvas && canvas.classList.add('kb-panning');
   });
-
   svg.addEventListener('pointermove', (event) => {
     if (!pointers.has(event.pointerId)) return;
     pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
-    if (pointers.size === 2) {
-      const [a, b] = [...pointers.values()];
-      const dist = Math.hypot(a.x - b.x, a.y - b.y);
-      if (pinchDist > 0 && dist > 0) {
-        kbZoomAt(svg, kbToUser(svg, (a.x + b.x) / 2, (a.y + b.y) / 2),
-                 dist / pinchDist);
-      }
-      pinchDist = dist;
-      return;
+    if (pointers.size !== 2) return;
+    const [a, b] = [...pointers.values()];
+    const dist = Math.hypot(a.x - b.x, a.y - b.y);
+    if (pinchDist > 0 && dist > 0) {
+      kbZoomAt(svg, kbToUser(svg, (a.x + b.x) / 2, (a.y + b.y) / 2),
+               dist / pinchDist);
     }
-    if (!panning) return;
-    const ctm = svg.getScreenCTM();
-    if (!ctm) return;
-    const dx = (event.clientX - startX) * ctm.a;
-    const dy = (event.clientY - startY) * ctm.d;
-    moved = Math.max(moved, Math.abs(event.clientX - startX) + Math.abs(event.clientY - startY));
-    kbState.view.x = originX - dx;
-    kbState.view.y = originY - dy;
-    kbApplyView(svg);
+    pinchDist = dist;
   });
-
   const endPointer = (event) => {
     pointers.delete(event.pointerId);
     if (pointers.size < 2) pinchDist = 0;
-    if (pointers.size === 0) {
-      panning = false;
-      canvas && canvas.classList.remove('kb-panning');
-    }
-    if (svg.hasPointerCapture(event.pointerId)) svg.releasePointerCapture(event.pointerId);
+    if (pointers.size === 0 && event.pointerType === 'touch') kbPan.touchActive = false;
   };
   svg.addEventListener('pointerup', endPointer);
   svg.addEventListener('pointercancel', endPointer);
 
-  // 拖拽后抑制误触点击（位移超 4px 视为平移，不触发节点/连线选中）
+  // 拖拽后抑制**紧接着的那一次**点击（一次性，用完即弃）
   svg.addEventListener('click', (event) => {
-    const suppress = moved > 4;
-    moved = 0;
-    if (!suppress) return;
+    if (!kbPan.suppressClick) return;
+    kbPan.suppressClick = false;
     event.stopPropagation();
     event.preventDefault();
   }, true);

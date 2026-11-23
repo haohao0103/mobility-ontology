@@ -2541,6 +2541,9 @@ async function openDiagnostic(kind, objectId, question) {
         + `?question=${encodeURIComponent(question)}`,
         { method: 'POST' }
       );
+      chainState.waybillId = objectId;
+      chainState.question = question;
+      chainState.maxSteps = 6;
       modalBody.innerHTML = renderReasoningChain(data);
       mountReasoningChain();
       return;
@@ -2639,8 +2642,27 @@ function renderDiagnostic(kind, data) {
 /* ---------------- 诊断推理链：每步取什么数、做什么判断、下一步做什么 ---------------- */
 const chainState = {
   data: null, index: 0, all: false, loading: false,
-  executed: {}, readback: {}, lastResult: {}
+  executed: {}, readback: {}, lastResult: {},
+  // 会话参数：过期时用于自动重建（演示现场听讲解超过 TTL 是常态）
+  waybillId: '', question: '', maxSteps: 6
 };
+
+// 会话过期识别 + 自动重建：不让领导看到「会话不存在」的报错
+function chainSessionExpired(err) {
+  return String((err && err.message) || '').includes('不存在或已过期');
+}
+
+async function chainRebuildSession() {
+  const st = chainState;
+  if (!st.waybillId) return null;
+  const fresh = await api(
+    `/waybills/${encodeURIComponent(st.waybillId)}/reasoning-chain/start`
+    + `?question=${encodeURIComponent(st.question || '')}`
+    + `&max_steps=${st.maxSteps}`,
+    { method: 'POST' }
+  );
+  return fresh;
+}
 
 function renderChainRun(step, data) {
   const agent = data.agent || {};
@@ -2864,6 +2886,27 @@ async function runChainToEnd() {
   } catch (err) {
     chainState.loading = false;
     if (btn) btn.textContent = '⚡ 一键跑到底';
+    // 会话过期：自动重建后重试「一键跑到底」
+    if (chainSessionExpired(err)) {
+      try {
+        const fresh = await chainRebuildSession();
+        if (fresh && fresh.session_id) {
+          showToast('会话已自动续期，正在重试…');
+          const retry = await api(
+            `/reasoning-chain/${encodeURIComponent(fresh.session_id)}/run`,
+            { method: 'POST' }
+          );
+          retry.session_id = fresh.session_id;
+          chainState.data = retry;
+          modalBody.innerHTML = renderReasoningChain(retry);
+          chainState.index = (retry.steps || []).length - 1;
+          mountReasoningChain();
+          return true;
+        }
+      } catch (retryErr) {
+        showToast(`会话续期失败：${retryErr.message}`);
+      }
+    }
     paintReasoningChain();
     showToast(`一键跑到底失败：${err.message}`);
     return false;
@@ -2895,6 +2938,27 @@ async function advanceChain() {
     return true;
   } catch (err) {
     chainState.loading = false;
+    // 会话过期（演示现场听讲解超时是常态）：自动重建并以新会话重试本步
+    if (chainSessionExpired(err)) {
+      try {
+        const fresh = await chainRebuildSession();
+        if (fresh && fresh.session_id) {
+          showToast('会话已自动续期，正在重试本步…');
+          const retry = await api(
+            `/reasoning-chain/${encodeURIComponent(fresh.session_id)}/next`,
+            { method: 'POST' }
+          );
+          retry.session_id = fresh.session_id;
+          chainState.data = retry;
+          modalBody.innerHTML = renderReasoningChain(retry);
+          chainState.index = (retry.steps || []).length - 1;
+          mountReasoningChain();
+          return true;
+        }
+      } catch (retryErr) {
+        showToast(`会话续期失败：${retryErr.message}`);
+      }
+    }
     paintReasoningChain();
     showToast(`执行下一步失败：${err.message}`);
     return false;

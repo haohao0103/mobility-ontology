@@ -39,7 +39,10 @@ _AGENT_SESSIONS: dict[str, tuple[float, object, threading.RLock]] = {}
 # 注册表本身也会被并发读写（两个 start 同时清理/淘汰时会撞 dict 迭代），
 # 用短临界区保护，不覆盖 Agent.next 的耗时执行。
 _AGENT_SESSIONS_LOCK = threading.RLock()
-_AGENT_SESSION_TTL = 600
+# 会话 TTL：演示现场「看总览→听讲解→点下一步」经常超过 10 分钟，
+# 600 秒会让领导点到过期会话直接报错；放宽到 30 分钟（滑动过期：
+# 每次 next/run 都刷新时间戳），上限 200 不变。
+_AGENT_SESSION_TTL = 1800
 _AGENT_SESSION_MAX = 200
 
 

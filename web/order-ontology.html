@@ -302,7 +302,7 @@
   footer .wrap{display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap}
 
   .toast{
-    position:fixed;left:50%;bottom:30px;transform:translate(-50%,16px);z-index:80;
+    position:fixed;left:50%;bottom:30px;transform:translate(-50%,16px);z-index:120;
     background:#171412;color:#fff;padding:10px 16px;border-radius:4px;font-size:12.5px;
     opacity:0;pointer-events:none;transition:.22s;box-shadow:0 12px 32px rgba(0,0,0,.25);max-width:90vw;
   }
@@ -699,7 +699,8 @@
   .chain-ask textarea:focus{border-color:#4f6fd8;box-shadow:0 0 0 3px rgba(79,111,216,.12)}
   .chain-ask-actions{display:flex;align-items:center;gap:10px;margin-top:12px}
   .chain-ask-actions span{font-size:10.5px;color:#8592ad}
-  .chain-layers{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
+  /* TBox 改用图可视化：单列铺满，给图谱留够可读宽度 */
+  .chain-layers{display:grid;grid-template-columns:1fr;gap:8px;margin-top:8px}
   .layer-card{border:1px solid;border-radius:5px;padding:8px 9px;min-width:0}
   .layer-card.tbox{border-color:#cdd9f5;background:#f8faff}
   .layer-card.abox{border-color:#cfe6d6;background:#f7fcf8}
@@ -729,6 +730,15 @@
   .layer-item b{font-weight:600;color:#2c3a58}
   .layer-detail{flex-basis:100%;font-size:10px;line-height:1.55;color:#6d7b99;word-break:break-word}
   .layer-note{margin-top:6px;font-size:10px;line-height:1.6;color:#8592ad}
+  .tbox-vis{margin-top:8px;cursor:pointer}
+  .tbox-vis-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;font-size:10px;color:#6d7b99}
+  .tbox-vis-head b{font-size:10px;letter-spacing:.04em;color:#43506b}
+  .tbox-vis-open{color:#2456f5;white-space:nowrap}
+  .tbox-vis:hover .tbox-vis-open{text-decoration:underline}
+  .tbox-vis .tg-preview{
+    width:100%;height:auto;display:block;margin:4px 0 2px;
+    border:1px solid #e2e9f8;border-radius:4px;background:#fbfcff;
+  }
   .layer-query,.layer-returned{
     display:flex;gap:5px;align-items:baseline;flex-wrap:wrap;
     margin-top:6px;font-size:10.5px;line-height:1.6;color:#3d4a66;word-break:break-word;
@@ -1881,6 +1891,7 @@
   </div>
 </div>
 
+<script src="/tbox-graph.js"></script>
 <script>
 const OBJECTS = {
   waybill: {
@@ -2316,6 +2327,20 @@ modalMask.addEventListener('click', (event) => {
 document.getElementById('modalClose').addEventListener('click', closeModal);
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && !modalMask.hidden) closeModal();
+});
+
+// TBox 图预览：点击 / 回车跳转独立图谱页
+modalBody.addEventListener('click', (event) => {
+  const trigger = event.target.closest('[data-tbox-graph]');
+  if (!trigger) return;
+  openTboxGraphPage(Number(trigger.getAttribute('data-tbox-graph')));
+});
+modalBody.addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter' && event.key !== ' ') return;
+  const trigger = event.target.closest('[data-tbox-graph]');
+  if (!trigger) return;
+  event.preventDefault();
+  openTboxGraphPage(Number(trigger.getAttribute('data-tbox-graph')));
 });
 
 function paramField(param, drivers) {
@@ -2840,6 +2865,7 @@ async function runChainToEnd() {
     chainState.loading = false;
     if (btn) btn.textContent = '⚡ 一键跑到底';
     paintReasoningChain();
+    showToast(`一键跑到底失败：${err.message}`);
     return false;
   }
 }
@@ -2986,7 +3012,7 @@ function renderChainLayers(step) {
           <b>返回结果</b><span>${esc(tbox.returned || '—')}</span>
           <span class="layer-explain">${esc(tbox.returned_explain || '')}</span>
         </div>
-        <ul>${items(tbox.items)}</ul>
+        ${renderTboxLayerGraph(tbox, step)}
         <div class="layer-note">${esc(tbox.note || '')}</div>
       </div>
       <div class="layer-card abox">
@@ -3008,6 +3034,74 @@ function renderChainLayers(step) {
     </div>
     <div class="chain-join"><b>两层拼接</b>${esc(layers.join || '')}</div>
   `;
+}
+
+function renderTboxLayerGraph(tbox, step) {
+  const list = (tbox && tbox.items) || [];
+  if (!list.length) return '<div class="layer-note">本步没有 TBox 返回条目。</div>';
+  if (!window.TboxGraph) return '<div class="layer-note">图可视化组件未加载，请刷新页面。</div>';
+  const graph = window.TboxGraph.buildGraph(list, knowledgeState.data, {
+    returned: tbox.returned || ''
+  });
+  return `
+    <div class="tbox-vis" data-tbox-graph="${esc(step.index)}" role="button" tabindex="0"
+      title="点击打开完整图谱可视化">
+      <div class="tbox-vis-head">
+        <b>图可视化 · ${esc(window.TboxGraph.countsText(graph))}</b>
+        <span class="tbox-vis-open">点击打开完整图谱 →</span>
+      </div>
+      ${window.TboxGraph.renderPreview(graph, { width: 960, height: 420 })}
+    </div>`;
+}
+
+// 本体 schema 晚于弹窗到达时，补一次预览图，避免图里只有孤点
+function refreshTboxPreviews() {
+  if (!chainState.data || modalMask.hidden) return;
+  const steps = chainState.data.steps || [];
+  modalBody.querySelectorAll('[data-tbox-graph]').forEach((el) => {
+    const step = steps.find((item) => Number(item.index) === Number(el.getAttribute('data-tbox-graph')));
+    if (!step) return;
+    const tbox = (step.layers && step.layers.tbox) || {};
+    const holder = document.createElement('div');
+    holder.innerHTML = renderTboxLayerGraph(tbox, step);
+    if (holder.firstElementChild) el.replaceWith(holder.firstElementChild);
+  });
+}
+
+function openTboxGraphPage(stepIndex) {
+  const data = chainState.data || {};
+  const steps = data.steps || [];
+  const step = steps.find((item) => Number(item.index) === Number(stepIndex));
+  if (!step) {
+    showToast('没有找到这一步的推理记录');
+    return;
+  }
+  const tbox = (step.layers && step.layers.tbox) || {};
+  const list = tbox.items || [];
+  if (!list.length) {
+    showToast('本步没有 TBox 返回数据');
+    return;
+  }
+  const payload = {
+    title: step.title || 'TBox 本体图谱',
+    tag: step.tag || 'TBox',
+    index: step.index,
+    question: (step.layers && step.layers.question) || data.question || '',
+    waybill_id: data.waybill_id || '',
+    query: tbox.query || ((step.query && step.query.expression) || ''),
+    returned: tbox.returned || '',
+    returned_explain: tbox.returned_explain || '',
+    items: list,
+    generated_at: new Date().toISOString()
+  };
+  try {
+    sessionStorage.setItem('mobility.tboxGraph', JSON.stringify(payload));
+  } catch (err) {
+    showToast('本步图数据过大，无法暂存');
+    return;
+  }
+  const win = window.open('/tbox-graph.html', '_blank');
+  if (!win) showToast('浏览器拦截了新窗口，请允许本站弹窗后重试');
 }
 
 function actionReadbackValue(obj) {
@@ -3467,6 +3561,7 @@ async function loadKnowledge() {
   try {
     knowledgeState.data = await api('/ontology');
     knowledgeState.error = null;
+    refreshTboxPreviews();
   } catch (err) {
     knowledgeState.error = err;
   }

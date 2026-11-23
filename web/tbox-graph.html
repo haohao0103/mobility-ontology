@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>TBox 本体图谱 · 诊断推理链</title>
+<style>
+  :root{
+    --paper:#f7f5f0;
+    --card:#fffdf8;
+    --ink:#171412;
+    --muted:#6f675e;
+    --line:#ded8ce;
+    --line-strong:#c9c1b5;
+    --orange:#ff5a00;
+    --blue:#2456f5;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;background:var(--paper);color:var(--ink);min-height:100vh;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    -webkit-font-smoothing:antialiased;line-height:1.6;display:flex;flex-direction:column;
+  }
+  button{font:inherit;cursor:pointer}
+  code{font-family:var(--mono)}
+  .tg-top{
+    display:flex;align-items:flex-end;justify-content:space-between;gap:20px;
+    padding:20px 28px 14px;border-bottom:1px solid var(--line);background:rgba(247,245,240,.96);
+  }
+  .tg-kicker{font-family:var(--mono);font-size:10px;letter-spacing:.18em;color:var(--orange);margin-bottom:4px}
+  .tg-top h1{margin:0;font-size:23px;line-height:1.25;letter-spacing:.01em}
+  .tg-meta{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:8px;font-size:11.5px;color:var(--muted)}
+  .tg-chip{
+    display:inline-flex;align-items:center;gap:5px;border:1px solid #d9e3f5;background:#f8fbff;
+    color:#33507f;border-radius:999px;padding:2px 9px;font-family:var(--mono);font-size:10px;
+  }
+  .tg-question{font-size:12px;color:#4c453d}
+  .tg-actions{display:flex;gap:6px;flex:0 0 auto}
+  .tg-btn{
+    border:1px solid var(--line-strong);background:transparent;color:var(--ink);
+    border-radius:6px;padding:6px 12px;font-size:12px;transition:.18s;
+  }
+  .tg-btn:hover{border-color:var(--ink);background:#fff}
+  .tg-btn.primary{border-color:var(--ink);background:var(--ink);color:#fff}
+  .tg-btn.primary:hover{background:#000}
+  .tg-query{
+    padding:10px 28px 12px;border-bottom:1px solid var(--line);
+    display:flex;flex-direction:column;gap:4px;background:#fbfaf6;
+  }
+  .tg-query-line{display:flex;gap:8px;align-items:baseline;font-size:11.5px;color:#3d362f;flex-wrap:wrap}
+  .tg-query-line b{flex:0 0 auto;font-size:10px;letter-spacing:.08em;color:#8a8177}
+  .tg-query-line code{
+    font-size:10.5px;background:#fff;border:1px solid #e6e0d6;border-radius:4px;padding:1px 6px;
+    word-break:break-all;color:#24408f;
+  }
+  .tg-explain{font-size:10.5px;color:#7a7268}
+  .tg-legend{
+    display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:8px 28px;
+    border-bottom:1px solid var(--line);background:#fffdf8;font-size:11px;color:#5f574e;
+  }
+  .tg-legend-item{display:inline-flex;align-items:center;gap:5px;white-space:nowrap;
+    border:0;background:none;padding:2px 4px;border-radius:4px;font:inherit;color:inherit;cursor:pointer}
+  .tg-legend-item:hover{background:#f1eee7}
+  .tg-legend-item.is-off{opacity:.38;text-decoration:line-through}
+  .tg-legend-item i{width:9px;height:9px;border-radius:2px;display:inline-block}
+  .tg-legend-item b{font-weight:600;color:var(--ink)}
+  .tg-counts{margin-left:auto;font-family:var(--mono);font-size:10px;color:#8a8177}
+  .tg-body{flex:1;display:flex;min-height:0;gap:0}
+  .tg-canvas{flex:1;position:relative;min-width:0;background:#fbfcff}
+  .tg-canvas svg{width:100%;height:100%;display:block;touch-action:none}
+  .tg-hint{
+    position:absolute;left:14px;bottom:12px;font-size:10.5px;color:#8a93a8;
+    background:rgba(255,255,255,.86);border:1px solid #e3e8f2;border-radius:999px;padding:3px 10px;
+    pointer-events:none;backdrop-filter:blur(4px);
+  }
+  .tg-panel{
+    width:336px;flex:0 0 336px;border-left:1px solid var(--line);background:var(--card);
+    padding:18px 18px 26px;overflow:auto;
+  }
+  .tg-panel-empty b{font-size:13.5px}
+  .tg-panel-empty p{margin:8px 0 0;font-size:11.5px;color:#5f574e}
+  .tg-panel-empty .tg-note{font-size:10.5px;color:#8a8177}
+  .tg-panel-head{display:flex;align-items:center;gap:6px;margin-bottom:8px}
+  .tg-kind{
+    font-size:9.5px;letter-spacing:.06em;border:1px solid;border-radius:3px;padding:1px 6px;
+  }
+  .tg-ghost{font-size:9.5px;color:#8a8177;border:1px dashed #cfc7ba;border-radius:3px;padding:1px 6px}
+  .tg-panel h2{margin:0 0 6px;font-size:16px;line-height:1.4}
+  .tg-id{
+    display:inline-block;font-size:10px;color:#24408f;background:#f4f7ff;border:1px solid #e2e9f8;
+    border-radius:3px;padding:1px 6px;word-break:break-all;
+  }
+  .tg-detail{margin:12px 0 0;font-size:12px;color:#4c453d;line-height:1.75;word-break:break-word}
+  .tg-rel{margin-top:18px;border-top:1px solid var(--line);padding-top:12px}
+  .tg-rel b{font-size:11px;letter-spacing:.04em;color:#6f675e}
+  .tg-rel ul{list-style:none;margin:8px 0 0;padding:0;display:flex;flex-direction:column;gap:6px}
+  .tg-rel li{font-size:11.5px;color:#3d362f;display:flex;gap:6px;align-items:baseline;flex-wrap:wrap}
+  .tg-edge-kind{font-family:var(--mono);font-size:9.5px;color:#8a8177;flex:0 0 auto}
+  .tg-rel a{color:#24408f;text-decoration:none;border-bottom:1px dashed #b9c8ea}
+  .tg-rel a:hover{border-bottom-style:solid}
+  .tg-panel-actions{display:flex;gap:6px;margin-top:16px}
+  .tg-panel-actions button{
+    border:1px solid var(--line-strong);background:#fff;color:var(--ink);
+    border-radius:6px;padding:5px 10px;font-size:11px;
+  }
+  .tg-panel-actions button:hover{border-color:var(--ink)}
+  .tg-panel-actions button.primary{border-color:var(--orange);color:var(--orange)}
+  .tg-empty{
+    max-width:560px;margin:12vh auto;padding:28px 30px;border:1px solid var(--line);
+    background:var(--card);border-radius:8px;text-align:center;
+  }
+  .tg-empty h2{margin:0 0 8px;font-size:18px}
+  .tg-empty p{margin:6px 0;font-size:12.5px;color:#5f574e}
+  .tg-empty a{color:var(--orange);text-decoration:none}
+  .tg-loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    font-size:12px;color:#8a93a8;pointer-events:none}
+  svg .tg-node{cursor:grab}
+  svg .tg-node rect{transition:stroke-width .12s,filter .12s}
+  svg .tg-node:hover rect{filter:drop-shadow(0 2px 6px rgba(23,20,18,.16))}
+  svg .tg-node.is-selected rect{stroke-width:2.4;filter:drop-shadow(0 0 0 3px rgba(255,90,0,.22))}
+  svg .tg-node.tg-dim{opacity:.12;cursor:default;pointer-events:none}
+  svg .tg-node.tg-hidden{display:none}
+  svg .tg-edge{pointer-events:none}
+  svg .tg-edge.tg-dim{opacity:.08}
+  svg .tg-edge.tg-hidden{display:none}
+  svg .tg-edge text{pointer-events:none}
+  @media (max-width:900px){
+    .tg-body{flex-direction:column}
+    .tg-panel{width:auto;flex:0 0 auto;border-left:0;border-top:1px solid var(--line);max-height:40vh}
+    .tg-canvas{min-height:52vh}
+  }
+</style>
+</head>
+<body>
+<header class="tg-top">
+  <div>
+    <div class="tg-kicker">DIAGNOSTIC · TBOX GRAPH</div>
+    <h1 id="tgTitle">TBox 本体图谱</h1>
+    <div class="tg-meta" id="tgMeta"></div>
+  </div>
+  <div class="tg-actions">
+    <button class="tg-btn" type="button" data-zoom-in title="放大">＋</button>
+    <button class="tg-btn" type="button" data-zoom-out title="缩小">－</button>
+    <button class="tg-btn" type="button" data-fit>适配画布</button>
+    <button class="tg-btn" type="button" data-reset-view>重置视图</button>
+    <button class="tg-btn primary" type="button" data-close>关闭本页</button>
+  </div>
+</header>
+<div class="tg-query" id="tgQuery" hidden></div>
+<div class="tg-legend" id="tgLegend" hidden></div>
+<main class="tg-body" id="tgMain" hidden>
+  <section class="tg-canvas">
+    <svg id="tgSvg" role="img" aria-label="TBox 本体图谱"></svg>
+    <div class="tg-hint">拖动节点可手动分开 · 拖动空白平移 · 滚轮缩放 · 点图例筛选类型</div>
+    <div class="tg-loading" id="tgLoading">正在加载本体定义…</div>
+  </section>
+  <aside class="tg-panel" id="tgPanel"></aside>
+</main>
+<section class="tg-empty" id="tgEmpty" hidden>
+  <h2>没有可展示的 TBox 图数据</h2>
+  <p>请回到诊断推理链，点开某一步的 TBox 卡片后再进入图谱。</p>
+  <p><a href="/profile/order-ontology">返回订单本体诊断页</a></p>
+</section>
+<script src="/tbox-graph.js"></script>
+<script>
+(function () {
+  'use strict';
+  const STORAGE_KEY = 'mobility.tboxGraph';
+  const $ = (id) => document.getElementById(id);
+  const panel = $('tgPanel');
+
+  function esc(value) {
+    return String(value == null ? '' : value)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  let payload = null;
+  try {
+    payload = JSON.parse(sessionStorage.getItem(STORAGE_KEY) || 'null');
+  } catch (err) {
+    payload = null;
+  }
+  if (!payload || !Array.isArray(payload.items) || !payload.items.length) {
+    $('tgEmpty').hidden = false;
+    return;
+  }
+
+  document.title = `${payload.title || 'TBox 本体图谱'} · TBox 图谱`;
+  $('tgTitle').textContent = payload.title || 'TBox 本体图谱';
+  const step = payload.index != null ? `步骤 ${payload.index}` : '';
+  $('tgMeta').innerHTML = [
+    step ? `<span class="tg-chip">${esc(step)}${payload.tag ? ' · ' + esc(payload.tag) : ''}</span>` : '',
+    payload.waybill_id ? `<span class="tg-chip">运单 ${esc(payload.waybill_id)}</span>` : '',
+    payload.question ? `<span class="tg-question">${esc(payload.question)}</span>` : ''
+  ].join('');
+
+  if (payload.query || payload.returned) {
+    $('tgQuery').hidden = false;
+    $('tgQuery').innerHTML = `
+      ${payload.query ? `<div class="tg-query-line"><b>查询语句</b><code>${esc(payload.query)}</code></div>` : ''}
+      ${payload.returned ? `<div class="tg-query-line"><b>返回结果</b><span>${esc(payload.returned)}</span></div>` : ''}
+      ${payload.returned_explain ? `<div class="tg-explain">${esc(payload.returned_explain)}</div>` : ''}
+    `;
+  }
+
+  $('tgMain').hidden = false;
+
+  let graph = null;
+  let view = null;
+
+  function renderSummary() {
+    if (!graph) return;
+    const counts = window.TboxGraph.countsByKind(graph);
+    const parts = Object.keys(counts).map(
+      (kind) => `${window.TboxGraph.kindMeta(kind).label} ${counts[kind]}`);
+    panel.innerHTML = `
+      <div class="tg-panel-empty">
+        <b>本步 TBox 返回 ${graph.sourceCount} 项定义</b>
+        <p>${esc(parts.join(' · ') || '暂无分类统计')}</p>
+        <p class="tg-note">虚线节点是本次查询没有直接返回、但被关系牵出来的本体定义，用于把边补全。</p>
+        <p class="tg-note">点击图上任意节点，查看定义、来源与关联边。</p>
+      </div>`;
+  }
+
+  function renderNode(node, related) {
+    if (!node) { renderSummary(); return; }
+    const meta = window.TboxGraph.kindMeta(node.kind);
+    const rows = related.map((edge) => {
+      const outgoing = edge.from === node.id;
+      const otherId = outgoing ? edge.to : edge.from;
+      const other = graph.nodes.find((item) => item.id === otherId);
+      const label = edge.label || (edge.kind === 'hub' ? '属于本步查询' : '关联');
+      return `<li>
+        <span class="tg-edge-kind">${outgoing ? '→' : '←'} ${esc(label)}</span>
+        <a href="#" data-goto="${esc(otherId)}">${esc(other ? other.label : otherId)}</a>
+      </li>`;
+    }).join('');
+    panel.innerHTML = `
+      <div class="tg-panel-head">
+        <span class="tg-kind" style="background:${meta.fill};color:${meta.ink};border-color:${meta.color}">${esc(meta.label)}</span>
+        ${node.ghost ? '<span class="tg-ghost">邻接补全</span>' : ''}
+      </div>
+      <h2>${esc(node.label)}</h2>
+      <code class="tg-id">${esc(node.id)}</code>
+      <p class="tg-detail">${esc(node.detail || '该定义没有更多说明。')}</p>
+      <div class="tg-rel">
+        <b>关联边 ${related.length}</b>
+        <ul>${rows || '<li class="tg-note">无关联边</li>'}</ul>
+      </div>
+      <div class="tg-panel-actions">
+        <button type="button" class="primary" data-isolate="${esc(node.id)}">只看直接关联</button>
+        <button type="button" data-reset>恢复全部</button>
+      </div>`;
+  }
+
+  panel.addEventListener('click', (event) => {
+    const isolateBtn = event.target.closest('[data-isolate]');
+    if (isolateBtn && view) {
+      view.isolate(isolateBtn.getAttribute('data-isolate'));
+      return;
+    }
+    if (event.target.closest('[data-reset]')) {
+      resetView();
+      return;
+    }
+    const link = event.target.closest('[data-goto]');
+    if (!link || !view) return;
+    event.preventDefault();
+    view.select(link.getAttribute('data-goto'));
+  });
+
+  async function load() {
+    let ontology = null;
+    try {
+      const res = await fetch('/freight/ontology', { headers: { Accept: 'application/json' } });
+      if (res.ok) ontology = await res.json();
+    } catch (err) {
+      ontology = null;
+    }
+    if (!window.TboxGraph) {
+      $('tgLoading').textContent = '图组件加载失败，请刷新重试。';
+      return;
+    }
+    graph = window.TboxGraph.buildGraph(payload.items, ontology, { returned: payload.returned || '' });
+    $('tgLegend').hidden = false;
+    $('tgLegend').innerHTML = `${window.TboxGraph.legendHtml(graph)}
+      <span class="tg-counts">${window.TboxGraph.countsText(graph)}</span>`;
+    view = window.TboxGraph.mountInteractive($('tgSvg'), graph, {
+      width: 1260,
+      height: 760,
+      onSelect: renderNode
+    });
+    $('tgLegend').addEventListener('click', (event) => {
+      const item = event.target.closest('[data-kind]');
+      if (!item || !view) return;
+      const visible = view.toggleKind(item.getAttribute('data-kind'));
+      item.classList.toggle('is-off', !visible);
+    });
+    $('tgLoading').remove();
+    renderSummary();
+  }
+
+  function resetView() {
+    if (!view) return;
+    view.clearIsolation();
+    view.showAllKinds();
+    $('tgLegend').querySelectorAll('[data-kind]').forEach((item) => item.classList.remove('is-off'));
+  }
+
+  document.querySelector('[data-fit]').addEventListener('click', () => view && view.fit());
+  document.querySelector('[data-reset-view]').addEventListener('click', resetView);
+  document.querySelector('[data-zoom-in]').addEventListener('click', () => view && view.zoomIn());
+  document.querySelector('[data-zoom-out]').addEventListener('click', () => view && view.zoomOut());
+  document.querySelector('[data-close]').addEventListener('click', () => {
+    window.close();
+    window.setTimeout(() => {
+      if (!window.closed) window.location.href = '/profile/order-ontology';
+    }, 150);
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') document.querySelector('[data-close]').click();
+  });
+
+  load();
+})();
+</script>
+</body>
+</html>

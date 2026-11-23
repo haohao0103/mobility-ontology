@@ -2,13 +2,15 @@
 from __future__ import annotations
 
 import os
-import threading
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from .agent import LLMError
+from .concurrency import (
+    ConcurrencyLimit, SessionBusy, WRITE_LOCK, reasoning_slot,
+)
 from .engine import FreightSystem
 from .semantic import BusinessReject, OntologyViolation
 
@@ -16,17 +18,23 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # 外部业务事实的演示替身；本体知识在 freight/semantic_layer.json。
 DEFAULT_FACT_DB = os.path.join(ROOT, "runs", "freight_facts.db")
 WB_DEFAULT = "waybill:WB20261105001"  # 演示剧本运单，负向实验默认目标
-_LOCK = threading.Lock()
+# 写事务锁与 Agent 运行时共用同一把：普通 HTTP 写路径和 Agent 内部动作
+# 不会各自为战，SQLite 单写连接始终只有一个事务在推进。
+_LOCK = WRITE_LOCK
 _SYSTEM: FreightSystem | None = None
 
 
 def get_system() -> FreightSystem:
     global _SYSTEM
     if _SYSTEM is None:
-        # with_scenario=True：服务启动即带上核心业务剧本（15 个迁移动作真实执行），
-        # 于是运行中的服务与门禁第 26 项度量的是同一份数据。
-        _SYSTEM = FreightSystem(DEFAULT_FACT_DB, fresh=False, seed=True,
-                                with_scenario=True)
+        # 首次两个请求同时进来时不能各构造一个 FreightSystem（会重复执行剧本
+        # 写库），初始化也放进同一把写锁里做双检。
+        with _LOCK:
+            if _SYSTEM is None:
+                # with_scenario=True：服务启动即带上核心业务剧本（15 个迁移动作真实执行），
+                # 于是运行中的服务与门禁第 26 项度量的是同一份数据。
+                _SYSTEM = FreightSystem(DEFAULT_FACT_DB, fresh=False, seed=True,
+                                        with_scenario=True)
     return _SYSTEM
 
 
@@ -57,12 +65,29 @@ def guard(fn):
 
 def agent_guard(fn):
     # Agent 会多次调用大模型与 MCP，不能长时间占用全局锁，避免阻塞其他接口。
+    # 写库动作在 FreightSystem.execute_action 内部借用写锁串行。
     return translate(fn)
+
+
+def reasoning_guard(fn):
+    # 给真正调用大模型的入口限流；名额拿不到立即 429，不把请求挂到超时。
+    def run():
+        with reasoning_slot():
+            return fn()
+    return translate(run)
 
 
 def translate(fn):
     try:
         return fn()
+    except SessionBusy as e:
+        raise HTTPException(status_code=409, detail={
+            "code": "SESSION_BUSY", "message": str(e),
+        })
+    except ConcurrencyLimit as e:
+        raise HTTPException(status_code=429, detail={
+            "code": "REASONING_BUSY", "message": str(e),
+        })
     except LLMError as e:
         raise HTTPException(status_code=503, detail={
             "code": "LLM_UNAVAILABLE", "message": str(e),
@@ -355,14 +380,14 @@ def reasoning_chain_start(waybill_id: str,
 
 @router.post("/reasoning-chain/{session_id}/next")
 def reasoning_chain_next(session_id: str):
-    return agent_guard(lambda: get_system().agent_chain_next(session_id))
+    return reasoning_guard(lambda: get_system().agent_chain_next(session_id))
 
 
 @router.post("/reasoning-chain/{session_id}/run")
 def reasoning_chain_run(session_id: str,
                         max_wait: float = Query(240.0, ge=5.0, le=900.0)):
     """一次跑到结论（演示用）：连续推进推理链，返回最终答案与全程 stage。"""
-    return agent_guard(lambda: get_system().agent_chain_run(
+    return reasoning_guard(lambda: get_system().agent_chain_run(
         session_id, max_wait=max_wait))
 
 
@@ -370,7 +395,7 @@ def reasoning_chain_run(session_id: str,
 def reasoning_chain(waybill_id: str,
                     max_steps: int = Query(6, ge=2, le=10),
                     question: str = Query("", max_length=300)):
-    return agent_guard(lambda: get_system().reasoning_chain(
+    return reasoning_guard(lambda: get_system().reasoning_chain(
         waybill_id, max_steps=max_steps, question=question,
     ))
 

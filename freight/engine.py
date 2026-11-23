@@ -11,11 +11,13 @@ import hashlib
 import json
 import math
 import os
+import threading
 import time
 import uuid
 from collections import deque
 from datetime import datetime
 
+from .concurrency import SessionBusy, WRITE_LOCK
 from .fact_mcp import FactMCP
 from .fact_store import FactStore as Store
 from .observability import ToolObservability
@@ -30,8 +32,15 @@ CAUSAL_RELATIONS = {
     "waybill_produces_fee", "fee_included_in_settlement", "settlement_generates_invoice",
     "waybill_has_exception", "invoice_billed_to_shipper",
 }
-_AGENT_SESSIONS: dict[str, tuple[float, object]] = {}
+# 进程内诊断会话：session_id -> (最近活跃时间, Agent, 会话锁)。
+# 锁的作用不是持久化，而是防止双击/两个标签页同时推进同一条推理链，
+# 把 Agent 的 steps/pending 状态踩乱。
+_AGENT_SESSIONS: dict[str, tuple[float, object, threading.RLock]] = {}
+# 注册表本身也会被并发读写（两个 start 同时清理/淘汰时会撞 dict 迭代），
+# 用短临界区保护，不覆盖 Agent.next 的耗时执行。
+_AGENT_SESSIONS_LOCK = threading.RLock()
 _AGENT_SESSION_TTL = 600
+_AGENT_SESSION_MAX = 200
 
 
 def now_iso() -> str:
@@ -2359,23 +2368,45 @@ class FreightSystem:
         agent = ReasoningAgent(self, waybill_id, max_steps, question=question)
         result = agent.start()
         session_id = uuid.uuid4().hex
-        _AGENT_SESSIONS[session_id] = (time.time(), agent)
-        self._prune_agent_sessions()
+        with _AGENT_SESSIONS_LOCK:
+            self._prune_agent_sessions()
+            # 会话只存内存，必须有上限，否则被反复点击 start 就能把进程撑爆。
+            if len(_AGENT_SESSIONS) >= _AGENT_SESSION_MAX:
+                oldest = min(_AGENT_SESSIONS.items(), key=lambda kv: kv[1][0])[0]
+                _AGENT_SESSIONS.pop(oldest, None)
+            _AGENT_SESSIONS[session_id] = (time.time(), agent, threading.RLock())
         result["session_id"] = session_id
         return result
 
+    @staticmethod
+    def _agent_session(session_id: str):
+        with _AGENT_SESSIONS_LOCK:
+            item = _AGENT_SESSIONS.get(session_id)
+            if not item or time.time() - item[0] >= _AGENT_SESSION_TTL:
+                _AGENT_SESSIONS.pop(session_id, None)
+                raise ValueError("诊断会话不存在或已过期，请重新提问")
+            return item
+
     def agent_chain_next(self, session_id: str) -> dict:
         """只执行一个动作：一次大模型调用、一次本体查询或一次事实查询。"""
-        item = _AGENT_SESSIONS.get(session_id)
-        if not item or time.time() - item[0] >= _AGENT_SESSION_TTL:
-            _AGENT_SESSIONS.pop(session_id, None)
-            raise ValueError("诊断会话不存在或已过期，请重新提问")
-        agent = item[1]
-        result = agent.next()
-        result["session_id"] = session_id
-        _AGENT_SESSIONS[session_id] = (time.time(), agent)
-        self._prune_agent_sessions()
-        return result
+        item = self._agent_session(session_id)
+        agent, lock = item[1], item[2]
+        # 同一个会话只允许一个推进者；双击或两个标签页同时点下一步会直接
+        # 返回 409，而不是交叉修改 Agent 的 steps/pending。
+        if not lock.acquire(blocking=False):
+            raise SessionBusy("该诊断会话正在执行上一步，请稍候再试。")
+        try:
+            result = agent.next()
+            with _AGENT_SESSIONS_LOCK:
+                current = _AGENT_SESSIONS.get(session_id)
+                if current is None or current[1] is not agent:
+                    raise ValueError("诊断会话不存在或已过期，请重新提问")
+                _AGENT_SESSIONS[session_id] = (time.time(), agent, lock)
+                self._prune_agent_sessions()
+            result["session_id"] = session_id
+            return result
+        finally:
+            lock.release()
 
     def agent_chain_run(self, session_id: str, max_wait: float = 240.0,
                         max_steps: int = 40) -> dict:
@@ -2387,34 +2418,45 @@ class FreightSystem:
         超时不是失败：超时也返回已推进到的结果——演示时可以退而求其次，
         展示"推理到一半的中间结论"，而不是一片空白。
         """
-        started = time.perf_counter()
-        steps = 0
-        result: dict = {}
-        while steps < max_steps:
-            result = self.agent_chain_next(session_id)
-            steps += 1
-            if result.get("finished"):
-                break
-            if time.perf_counter() - started > max_wait:
-                result = dict(result)
-                result["timeout"] = True
-                result["elapsed_ms"] = round(
-                    (time.perf_counter() - started) * 1000)
-                break
-        result = dict(result)
-        result.setdefault("elapsed_ms", round((time.perf_counter() - started) * 1000))
-        result["auto_steps"] = steps
-        return result
+        item = self._agent_session(session_id)
+        lock = item[2]
+        # 整条「跑到底」期间持有会话锁（RLock 允许内部 next 重入），
+        # 其他标签页不能再插入推进同一条链。
+        if not lock.acquire(blocking=False):
+            raise SessionBusy("该诊断会话正在执行，请勿重复提交。")
+        try:
+            started = time.perf_counter()
+            steps = 0
+            result: dict = {}
+            while steps < max_steps:
+                result = self.agent_chain_next(session_id)
+                steps += 1
+                if result.get("finished"):
+                    break
+                if time.perf_counter() - started > max_wait:
+                    result = dict(result)
+                    result["timeout"] = True
+                    result["elapsed_ms"] = round(
+                        (time.perf_counter() - started) * 1000)
+                    break
+            result = dict(result)
+            result.setdefault("elapsed_ms",
+                              round((time.perf_counter() - started) * 1000))
+            result["auto_steps"] = steps
+            return result
+        finally:
+            lock.release()
 
     @staticmethod
     def _prune_agent_sessions() -> None:
         now = time.time()
-        expired = [
-            key for key, (ts, _) in _AGENT_SESSIONS.items()
-            if now - ts >= _AGENT_SESSION_TTL
-        ]
-        for key in expired:
-            _AGENT_SESSIONS.pop(key, None)
+        with _AGENT_SESSIONS_LOCK:
+            expired = [
+                key for key, (ts, _agent, _lock) in _AGENT_SESSIONS.items()
+                if now - ts >= _AGENT_SESSION_TTL
+            ]
+            for key in expired:
+                _AGENT_SESSIONS.pop(key, None)
 
     def impact(self, object_id: str, max_depth: int = 5) -> dict:
         if not self.facts.get_row(object_id):
@@ -2538,6 +2580,20 @@ class FreightSystem:
                        idempotency_key: str | None = None,
                        defer_commit: bool = False) -> dict:
         """执行单笔动作。defer_commit=True 供批量执行在外层事务中编排。"""
+        # 普通 API 有路由级串行锁，但 Agent 的 MCP 动作不经过那层；写事务必须
+        # 在运行时收口，否则两个线程会把语句交错到同一个 SQLite 写连接上。
+        with WRITE_LOCK:
+            return self._execute_action_locked(
+                action_id, object_id, actor, role,
+                payload=payload,
+                idempotency_key=idempotency_key,
+                defer_commit=defer_commit,
+            )
+
+    def _execute_action_locked(self, action_id: str, object_id: str, actor: str,
+                               role: str, payload: dict | None = None,
+                               idempotency_key: str | None = None,
+                               defer_commit: bool = False) -> dict:
         payload = payload or {}
         if idempotency_key:
             old = self.facts.audit_by_key(idempotency_key)

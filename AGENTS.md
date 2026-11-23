@@ -11,5 +11,5 @@
   - **STG 出网需放行** `api.xiaomimimo.com`（否则推理链会 503 LLM 网关不可用）；
   - STG 网关 `http://bdi-gpt-stg.myhll.cn/v1`（`qwen3.6-plus`）保留为**备用**，仅在 MiMo 不可用时由运维切换；
   - 注意：`mimo-v2.5-pro` / `mimo-v2.5` 已于 2026-10-21 下线，不要再写。
-- 部署步骤：`rsync` 同步代码（排除 `.env`、`runs/`）→ `sudo systemctl restart mobility-ontology.service` → 校验 `http://127.0.0.1:8765/freight/health`。
+- 部署步骤：`rsync` 同步代码（排除 `.env`、`runs/`、`logs/`、`.venv/`）→ `sudo systemctl restart mobility-ontology.service` → 校验 `http://127.0.0.1:8765/freight/health`。
 - 任何验收、页面操作、脚本运行都必须在 STG 上执行，并如实报告真实结果；LLM 失败即失败，不得用本地替身或固定链路兜底。

@@ -21,6 +21,7 @@ from enhancements.function_registry import FunctionRegistryError  # noqa: E402
 from enhancements.property_registry import RegistryViolation  # noqa: E402
 from enhancements.interfaces import InterfaceViolation  # noqa: E402
 from enhancements import sandbox  # noqa: E402
+from freight.concurrency import WRITE_LOCK, write_guard  # noqa: E402
 
 router = APIRouter(prefix="/enh", tags=["enhancements"])
 
@@ -30,8 +31,10 @@ _SYSTEM: EnhancedSystem | None = None
 def get_enh() -> EnhancedSystem:
     global _SYSTEM  # noqa: PLW0603
     if _SYSTEM is None:
-        from freight.api import get_system
-        _SYSTEM = EnhancedSystem(get_system())
+        with WRITE_LOCK:
+            if _SYSTEM is None:
+                from freight.api import get_system
+                _SYSTEM = EnhancedSystem(get_system())
     return _SYSTEM
 
 
@@ -76,6 +79,7 @@ def storage_v2():
 
 
 @router.post("/storage/v2/sync")
+@write_guard
 def storage_v2_sync():
     return get_enh().sync_materialization()
 
@@ -127,11 +131,13 @@ def changesets():
 
 
 @router.post("/changesets")
+@write_guard
 def changeset_create(body: ChangeSetIn):
     return get_enh().changes.create(body.id, body.label, body.author)
 
 
 @router.post("/changesets/{change_id}/items")
+@write_guard
 def changeset_plan(change_id: str, body: ChangeItemIn):
     return get_enh().changes.plan(
         change_id, body.op, body.object_id, body.prop, body.after, body.payload)
@@ -143,11 +149,13 @@ def changeset_preview(change_id: str):
 
 
 @router.post("/changesets/{change_id}/apply")
+@write_guard
 def changeset_apply(change_id: str):
     return get_enh().changes.apply(change_id)
 
 
 @router.post("/changesets/{change_id}/rollback")
+@write_guard
 def changeset_rollback(change_id: str):
     return get_enh().changes.rollback(change_id)
 
@@ -158,11 +166,13 @@ def branches():
 
 
 @router.post("/branches")
+@write_guard
 def branch_create(body: BranchIn):
     return get_enh().changes.create_branch(body.name, body.note)
 
 
 @router.post("/branches/{name}/restore")
+@write_guard
 def branch_restore(name: str):
     return get_enh().changes.restore_branch(name)
 
@@ -368,16 +378,19 @@ class ApprovalIn(BaseModel):
 
 
 @router.post("/workflows/{workflow_id}/start")
+@write_guard
 def workflow_start(workflow_id: str, body: WorkflowStartIn):
     return get_enh().workflow.start(workflow_id, body.run_id, body.context)
 
 
 @router.post("/workflows/runs/{run_id}/advance")
+@write_guard
 def workflow_advance(run_id: str):
     return get_enh().workflow.advance(run_id)
 
 
 @router.post("/workflows/runs/{run_id}/approve")
+@write_guard
 def workflow_approve(run_id: str, body: ApprovalIn):
     return get_enh().workflow.approve(run_id, body.approver)
 
@@ -436,6 +449,7 @@ class SimulationIn(BaseModel):
 
 
 @router.post("/actions/batch")
+@write_guard
 def actions_batch(body: BatchIn):
     return get_enh().batch.apply(body.actions, body.batch_key)
 
@@ -446,6 +460,7 @@ def actions_batch_plan(body: BatchIn):
 
 
 @router.post("/edits")
+@write_guard
 def multi_edits(body: EditsIn):
     return get_enh().batch.edits(body.edits, body.actor)
 

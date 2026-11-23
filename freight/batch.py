@@ -13,6 +13,8 @@ import json
 import time
 from typing import Any
 
+from .concurrency import WRITE_LOCK
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS batch_audits (
   batch_key TEXT PRIMARY KEY,
@@ -57,6 +59,10 @@ class BatchExecutor:
                 "items": items}
 
     def apply(self, actions: list[dict], batch_key: str | None = None) -> dict:
+        with WRITE_LOCK:
+            return self._apply_locked(actions, batch_key)
+
+    def _apply_locked(self, actions: list[dict], batch_key: str | None = None) -> dict:
         if not actions:
             raise BatchError("批量动作不能为空")
         conn = self.system.conn
@@ -111,6 +117,10 @@ class BatchExecutor:
 
     def edits(self, edits: list[dict], actor: str = "system") -> dict:
         """跨对象 edits：同一事务内修改多个对象的属性（含投影同步）。"""
+        with WRITE_LOCK:
+            return self._edits_locked(edits, actor)
+
+    def _edits_locked(self, edits: list[dict], actor: str = "system") -> dict:
         if not edits:
             raise BatchError("edits 不能为空")
         conn = self.system.conn

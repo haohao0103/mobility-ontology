@@ -9,8 +9,9 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from freight.agent import LLMError
+from freight.concurrency import WRITE_LOCK, ConcurrencyLimit, SessionBusy, reasoning_slot
 
-from .agent import ProfileReasoningAgent, get_session, put_session
+from .agent import ProfileReasoningAgent, put_session, run_session_step
 from .hugegraph import HugeGraphError
 from .seed import seed_profile
 from .service import AssetNotFound, ProfileError, ProfileService
@@ -72,13 +73,28 @@ def get_service() -> ProfileService:
     """进程内单例，构造时不访问网络。"""
     global _service
     if _service is None:
-        _service = ProfileService()
+        with WRITE_LOCK:
+            if _service is None:
+                _service = ProfileService()
     return _service
+
+
+def _write_guard(fn):
+    # 画像侧的 provision/seed/提案确认都会改 HugeGraph；与 SQLite 一样在
+    # 进程内串行，避免两个人同时确认/写入产生交叉结果。
+    def run():
+        with WRITE_LOCK:
+            return fn()
+    return _guard(run)
 
 
 def _guard(fn):
     try:
         return fn()
+    except SessionBusy as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except ConcurrencyLimit as e:
+        raise HTTPException(status_code=429, detail=str(e))
     except AssetNotFound as e:
         raise HTTPException(status_code=404, detail=str(e))
     except ProfileError as e:
@@ -128,8 +144,10 @@ def profile_chain_start(body: ChainStartIn):
 @router.post("/reasoning-chain/{session_id}/next")
 def profile_chain_next(session_id: str):
     """每次只执行一个动作：一次大模型决策或一次语义层工具调用。"""
-    agent = _guard(lambda: get_session(session_id))
-    result = _guard(agent.next)
+    def fn():
+        with reasoning_slot():
+            return run_session_step(session_id)
+    result = _guard(fn)
     result["session_id"] = session_id
     return result
 
@@ -158,7 +176,7 @@ def profile_health():
 @router.post("/provision")
 def profile_provision():
     """幂等创建 graphspace / graph / schema。"""
-    return _guard(lambda: get_service().provision())
+    return _write_guard(lambda: get_service().provision())
 
 
 @router.get("/dictionary")
@@ -169,7 +187,7 @@ def profile_dictionary():
 @router.post("/seed")
 def profile_seed():
     """写入演示资产（8 类顶点 + 10 类时态边），失败时返回违规明细。"""
-    return _guard(lambda: seed_profile(get_service()))
+    return _write_guard(lambda: seed_profile(get_service()))
 
 
 @router.get("/assets")
@@ -245,7 +263,7 @@ def profile_metrics(asset_id: Optional[str] = None,
 
 @router.post("/proposals")
 def profile_propose(body: ProposeIn):
-    return _guard(lambda: get_service().propose_change(
+    return _write_guard(lambda: get_service().propose_change(
         action=body.action, asset_id=body.asset_id, payload=body.payload,
         reason=body.reason, actor=body.actor))
 
@@ -257,7 +275,7 @@ def profile_proposals(status: Optional[str] = None, limit: int = 50):
 
 @router.post("/proposals/{proposal_id}/confirm")
 def profile_confirm(proposal_id: str, body: ConfirmIn):
-    return _guard(lambda: get_service().confirm_change(
+    return _write_guard(lambda: get_service().confirm_change(
         proposal_id, approver=body.approver, approve=body.approve))
 
 

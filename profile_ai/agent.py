@@ -9,11 +9,13 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 import time
 from typing import Any, Dict, List, Optional
 from urllib.parse import quote
 
 from freight.agent import LLMClient, LLMError
+from freight.concurrency import SessionBusy
 
 from .service import ProfileService, now_iso
 
@@ -404,21 +406,51 @@ class ProfileReasoningAgent:
 
 
 # 会话只保存在进程内，TTL 与货运诊断链保持一致。
+# 每个会话带一把锁，防止同一 session_id 被双击或两个标签页同时推进。
 _SESSIONS: Dict[str, tuple] = {}
+_SESSIONS_LOCK = threading.RLock()
 SESSION_TTL = 3600
+SESSION_MAX = 200
 
 
 def put_session(session_id: str, agent: ProfileReasoningAgent) -> None:
-    _SESSIONS[session_id] = (time.time(), agent)
     now = time.time()
-    for key, (ts, _) in list(_SESSIONS.items()):
-        if now - ts >= SESSION_TTL:
-            _SESSIONS.pop(key, None)
+    with _SESSIONS_LOCK:
+        for key, (ts, _agent, _lock) in list(_SESSIONS.items()):
+            if now - ts >= SESSION_TTL:
+                _SESSIONS.pop(key, None)
+        if len(_SESSIONS) >= SESSION_MAX:
+            oldest = min(_SESSIONS.items(), key=lambda kv: kv[1][0])[0]
+            _SESSIONS.pop(oldest, None)
+        _SESSIONS[session_id] = (time.time(), agent, threading.RLock())
+
+
+def _session_item(session_id: str) -> tuple:
+    with _SESSIONS_LOCK:
+        item = _SESSIONS.get(session_id)
+        if not item or time.time() - item[0] >= SESSION_TTL:
+            _SESSIONS.pop(session_id, None)
+            raise ValueError("诊断会话不存在或已过期，请重新开始")
+        return item
 
 
 def get_session(session_id: str) -> ProfileReasoningAgent:
-    item = _SESSIONS.get(session_id)
-    if not item or time.time() - item[0] >= SESSION_TTL:
-        _SESSIONS.pop(session_id, None)
-        raise ValueError("诊断会话不存在或已过期，请重新开始")
-    return item[1]
+    return _session_item(session_id)[1]
+
+
+def run_session_step(session_id: str) -> dict:
+    """推进一个会话；同一会话同时只允许一个推进者。"""
+    item = _session_item(session_id)
+    agent, lock = item[1], item[2]
+    if not lock.acquire(blocking=False):
+        raise SessionBusy("该诊断会话正在执行上一步，请稍候再试。")
+    try:
+        result = agent.next()
+        with _SESSIONS_LOCK:
+            current = _SESSIONS.get(session_id)
+            if current is None or current[1] is not agent:
+                raise ValueError("诊断会话不存在或已过期，请重新开始")
+            _SESSIONS[session_id] = (time.time(), agent, lock)
+        return result
+    finally:
+        lock.release()

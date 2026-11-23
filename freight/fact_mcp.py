@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 import time
 from datetime import datetime
 from typing import Any, Callable
@@ -169,7 +170,9 @@ class FactMCP:
         self.conn = sqlite3.connect(db_path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         self.store = FactStore(self.conn, db_path)
-        self._trace: list[dict] = []
+        # 调用轨迹按线程隔离：两个用户同时跑 Agent 时，如果共用一条 trace，
+        # 各自的 since(start) 会读到对方的工具结果，观察记录直接串台。
+        self._trace_local = threading.local()
         self.runtime: Any = None
         self.conn.commit()
 
@@ -243,18 +246,27 @@ class FactMCP:
         return FactStore.decode(row)
 
     # ------------------------------------------------------------ 调用轨迹
+    def _trace(self) -> list[dict]:
+        trace = getattr(self._trace_local, "items", None)
+        if trace is None:
+            trace = []
+            self._trace_local.items = trace
+        return trace
+
     def begin(self) -> int:
-        return len(self._trace)
+        return len(self._trace())
 
     def since(self, start: int) -> list[dict]:
-        return list(self._trace[start:])
+        return list(self._trace()[start:])
 
     def recent_trace(self, limit: int = 50) -> list[dict]:
-        return list(self._trace[-limit:])
+        trace = self._trace()
+        return list(trace[-limit:])
 
     def _record(self, tool: str, args: dict, source: str, fn: Callable[[], Any]):
         started_at = now_iso()
-        seq = len(self._trace) + 1
+        trace = self._trace()
+        seq = len(trace) + 1
         t0 = time.perf_counter()
         result: Any = None
         ok = True
@@ -268,7 +280,7 @@ class FactMCP:
             raise
         finally:
             elapsed = round((time.perf_counter() - t0) * 1000, 2)
-            self._trace.append({
+            trace.append({
                 "seq": seq,
                 "tool": tool,
                 "source_system": source,
@@ -279,8 +291,8 @@ class FactMCP:
                 "ok": ok,
                 "error": error,
             })
-            if len(self._trace) > 1000:
-                del self._trace[:200]
+            if len(trace) > 1000:
+                del trace[:200]
 
     @staticmethod
     def _count_rows(result: Any) -> int:

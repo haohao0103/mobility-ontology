@@ -3169,16 +3169,23 @@ tbox.describe|按类型读取类定义、邻接关系、作用域规则、动作
             })
         for fee_type, pricing in described["pricing"].items():
             if fee_type == "waiting":
-                tariffs = pricing.get("by_vehicle_type") or {}
-                detail = (
-                    f'默认免费 {pricing.get("free_minutes")} 分钟 · '
-                    f'每 {pricing.get("block_minutes")} 分钟 {pricing.get("per_block")} 元'
-                )
-                if tariffs:
-                    detail += f' · 车型口径 {len(tariffs)} 套'
+                matrix = pricing.get("matrix") or []
+                dims = pricing.get("dimensions") or []
+                detail = json.dumps(pricing, ensure_ascii=False)
+                if matrix:
+                    detail = (
+                        f'决策表 {len(matrix)} 行 · 维度 {" × ".join(dims) or "—"}'
+                        f' · 首行命中'
+                    )
                 label = "等候费定价参数"
             elif fee_type == "highway":
-                detail = f'来源 {pricing.get("source", "ETC")}'
+                # 来源参数也在决策表默认行里——顶层 source 是迁移后的死键，
+                # 读不到会静默回退成硬编码 "ETC"（猜对了也是猜）
+                source = "ETC"
+                for row in pricing.get("matrix") or []:
+                    if not (row.get("conditions") or {}):
+                        source = (row.get("params") or {}).get("source", source)
+                detail = f'来源 {source}'
                 label = "高速费定价参数"
             else:
                 detail = json.dumps(pricing, ensure_ascii=False)

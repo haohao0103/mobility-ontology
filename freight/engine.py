@@ -59,6 +59,24 @@ def _parse_timestamp(value) -> datetime | None:
         return None
 
 
+def _matrix_row_vehicle_type(row: dict) -> str:
+    """取决策表行条件里的 vehicle_type 等值条件（没有则返回空串）。
+
+    行条件形如 {"all": [{"field": "vehicle_type", "op": "eq", "value": "大货车"}]}；
+    只认 all 列表里的等值原子，any/嵌套组合不猜（返回空 = 该行不参与
+    车型对照，由首行命中在真实求值里自然覆盖）。
+    """
+    cond = (row or {}).get("conditions") or {}
+    atoms = cond.get("all") if isinstance(cond, dict) else None
+    if not isinstance(atoms, list):
+        return ""
+    for atom in atoms:
+        if (isinstance(atom, dict) and atom.get("field") == "vehicle_type"
+                and atom.get("op") == "eq" and atom.get("value")):
+            return str(atom["value"])
+    return ""
+
+
 class FreightSystem:
     def __init__(self, db_path: str, fresh: bool = False, seed: bool = True,
                  with_scenario: bool = False, semantic: "SemanticLayer | None" = None):
@@ -86,6 +104,9 @@ class FreightSystem:
                 from freight import scenarios
 
                 scenarios.run_core_scenario(self)
+                # 决策表计价样本（天气维度）幂等补齐：存量库 seed() 不会再跑，
+                # 不补的话诊断推理链里看不到 truck-rain 行这一维变化。
+                scenarios.ensure_pricing_samples(self)
             self.conn.commit()
 
     # ------------------------------------------------------------------ 写入原语
@@ -190,6 +211,7 @@ class FreightSystem:
             "driver_id": "D001", "vehicle_id": "V001", "estimated_fee": 480.0,
             "actual_fee": 518.0, "variance": 38.0, "waiting_minutes": 53,
             "free_wait_minutes": 30, "accepted_at": t_accept,
+            "weather": "normal",
             "arrival_at": t_arrive, "loading_started_at": t_load,
             "loading_ended_at": "2026-11-05T10:35:00+08:00",
             "loading_confirmed_at": t_load,
@@ -245,23 +267,16 @@ class FreightSystem:
                           "cargo:CG001", t_order)
 
         # 定价规则版本：费用与报价都要能追溯到当时生效的费率版本。
+        # 实例只存版本元信息，参数唯一源是本体的 pricing matrix（决策表）——
+        # 实例里再抄一份参数就是双口径，改矩阵时副本会漂移。
         for rid, ftype, params in [
-            ("PR-BASE-01", "base", {"base_fare_by_vehicle_type": {"4.2米厢货": 380.0}}),
-            ("PR-MILEAGE-01", "mileage", {"per_km": 1.5}),
-            ("PR-WAIT-01", "waiting", {
-                "free_minutes": 30, "block_minutes": 5, "per_block": 2.4,
-                "by_vehicle_type": {
-                    "4.2米厢货": {"free_minutes": 30, "block_minutes": 5, "per_block": 2.4},
-                    "面包车": {"free_minutes": 20, "block_minutes": 5, "per_block": 1.8},
-                    "小货车": {"free_minutes": 30, "block_minutes": 5, "per_block": 2.4},
-                    "大货车": {"free_minutes": 40, "block_minutes": 10, "per_block": 4.0},
-                    "跑腿": {"free_minutes": 10, "block_minutes": 5, "per_block": 1.0},
-                },
-            }),
-            ("PR-HIGHWAY-01", "highway", {"source": "ETC"}),
-            ("PR-LOADING-01", "loading", {"per_order": 20.0}),
-            ("PR-INSURANCE-01", "insurance", {"per_order": 10.0}),
-            ("PR-OTHER-01", "other", {"per_order": 10.0}),
+            ("PR-BASE-01", "base", {}),
+            ("PR-MILEAGE-01", "mileage", {}),
+            ("PR-WAIT-01", "waiting", {}),
+            ("PR-HIGHWAY-01", "highway", {}),
+            ("PR-LOADING-01", "loading", {}),
+            ("PR-INSURANCE-01", "insurance", {}),
+            ("PR-OTHER-01", "other", {}),
         ]:
             self.add_object("PricingRule", f"pricing_rule:{rid}", f"定价规则 {rid}", "ACTIVE", {
                 "rule_id": rid, "fee_type": ftype, "city": "上海",
@@ -406,14 +421,17 @@ class FreightSystem:
         self.add_object("Order", "order:HL20261106002", "订单 HL20261106002", "DISPATCHED", {
             "order_id": "HL20261106002", "shipper_id": "S001",
             "origin": "上海市青浦区华新仓", "destination": "上海市普陀区桃浦仓",
-            "cargo": "食品原料 12 托", "vehicle_type": "4.2米厢货",
+            "cargo": "食品原料 12 托", "vehicle_type": "大货车",
             "estimated_fee": 180.0, "created_at": "2026-11-06T07:50:00+08:00",
         }, "2026-11-06T07:50:00+08:00")
+        # 多维计价样本：大货车 + 雨天（命中 waiting matrix 的 truck-rain 行，
+        # per_block 4.0 -> 4.8）；等候 53 分钟应计 ceil(13/10)*4.8 = 9.6 元。
         self.add_object("Waybill", "waybill:WB20261106002", "运单 WB20261106002", "LOADED", {
             "waybill_id": "WB20261106002", "order_id": "HL20261106002",
             "driver_id": "D003", "vehicle_id": "V003", "estimated_fee": 180.0,
-            "actual_fee": 0.0, "variance": 0.0, "waiting_minutes": 0,
-            "free_wait_minutes": 30, "accepted_at": "2026-11-06T08:00:00+08:00",
+            "actual_fee": 0.0, "variance": 0.0, "waiting_minutes": 53,
+            "free_wait_minutes": 40, "accepted_at": "2026-11-06T08:00:00+08:00",
+            "weather": "rain",
             "loading_confirmed_at": "2026-11-06T10:00:00+08:00",
             "delivered_at": None, "proof_of_delivery": None,
         }, "2026-11-06T08:00:00+08:00")
@@ -422,8 +440,8 @@ class FreightSystem:
             "qualification": "道路运输从业资格证有效至 2027-03",
         }, "2026-11-06T08:00:00+08:00")
         self.add_object("Vehicle", "vehicle:V003", "沪C·8N52P", "IN_USE", {
-            "vehicle_id": "V003", "plate": "沪C·8N52P", "vehicle_type": "4.2米厢货",
-            "capacity_t": 4.5, "fleet": "沪西车队",
+            "vehicle_id": "V003", "plate": "沪C·8N52P", "vehicle_type": "大货车",
+            "capacity_t": 12.0, "fleet": "沪西车队",
         }, "2026-11-06T08:00:00+08:00")
         self.add_relation("shipper_places_order", "shipper:S001",
                           "order:HL20261106002", "2026-11-06T07:50:00+08:00")
@@ -1040,14 +1058,23 @@ class FreightSystem:
         props = rule.get("props") or {}
         rule_id = str(props.get("rule_id") or "")
         findings = []
-        if not isinstance(props.get("params"), dict) or not props.get("params"):
+        fee_type = str(fee.get("fee_type") or "")
+        # 参数唯一源是本体 pricing 决策表（matrix），实例 params 只是历史回放
+        # 覆盖通道——要求实例携带参数副本就是双口径，改矩阵时副本会漂移。
+        # 这里校验真正的参数源：语义层能为该费用类型解出参数。
+        config = self.sem.pricing.get(fee_type) or {}
+        matrix = config.get("matrix")
+        has_default = any(k in config for k in
+                          ("free_minutes", "block_minutes", "per_block",
+                           "per_km", "per_order"))
+        if not (isinstance(matrix, list) and matrix) and not has_default:
             findings.append({
                 "code": "PRICING_RULE_PARAMS_MISSING", "severity": "HIGH",
                 "fee_id": fee_id, "rule_id": "R-PRICE-01", "pricing_rule_id": rule_id,
                 "title": f"定价规则 {rule_id} 缺少计算公式参数",
-                "message": f"规则实例 {rule_id} 没有 params，无法按规则公式核算 {fee_id}。",
+                "message": (f"语义层 pricing.{fee_type} 既无决策表 matrix 也无默认"
+                            f"参数标量，无法按规则公式核算 {fee_id}。"),
             })
-        fee_type = str(fee.get("fee_type") or "")
         rule_fee_type = str(props.get("fee_type") or "")
         if rule_fee_type and rule_fee_type != fee_type:
             findings.append({
@@ -1132,25 +1159,39 @@ class FreightSystem:
         """
         return semantic.compute_fee(fee_type, params, waybill, vehicle_type)
 
-    def _waiting_tariffs(self, config: dict, wait_minutes: float,
-                         selected: str) -> list[dict]:
-        """把同一等候时长套到各车型费率上，供演示对照和影响面排查。"""
-        by_vehicle_type = config.get("by_vehicle_type") or {}
+    def _waiting_tariffs(self, semantic: SemanticLayer, config: dict,
+                         wait_minutes: float, selected: str,
+                         waybill: dict | None = None) -> list[dict]:
+        """把同一等候时长套到各车型费率上，供演示对照和影响面排查。
+
+        费率唯一源是 pricing 决策表 matrix：从行条件里收集出现过的车型，
+        逐个走与真实计价同一个 _fee_context 首行命中求值——
+        在这里重算一套平行口径就会和 matrix 漂移（旧版 by_vehicle_type
+        副本正是这么过时的）。
+        """
+        matrix = config.get("matrix") or []
+        candidates: list[str] = []
+        for row in matrix:
+            vt = _matrix_row_vehicle_type(row)
+            if vt and vt not in candidates:
+                candidates.append(vt)
         rows = []
-        for vehicle_type, override in by_vehicle_type.items():
-            effective = {**config, **(override or {})}
-            free = float(effective.get("free_minutes") or 0)
-            block = float(effective.get("block_minutes") or 0)
-            per = float(effective.get("per_block") or 0)
+        for vt in candidates:
+            ctx = semantic._fee_context("waiting", {}, dict(waybill or {}), vt)
+            tariff = ctx["tariff"]
+            free = float(tariff.get("free_minutes") or 0)
+            block = float(tariff.get("block_minutes") or 0)
+            per = float(tariff.get("per_block") or 0)
             blocks = math.ceil(max(0.0, wait_minutes - free) / block) if block > 0 else 0
             rows.append({
-                "vehicle_type": vehicle_type,
+                "vehicle_type": vt,
+                "matched_row": ctx.get("tariff_row"),
                 "free_minutes": free,
                 "block_minutes": block,
                 "per_block": per,
                 "blocks": blocks,
                 "expected": round(blocks * per, 2),
-                "selected": vehicle_type == selected,
+                "selected": vt == selected,
             })
         return rows
 
@@ -1205,11 +1246,14 @@ class FreightSystem:
 
         waiting_config = semantic.pricing.get("waiting") or {}
         vehicle_type = self._vehicle_type_for_waybill(waybill_id, wprops)
-        historical = os.path.abspath(semantic.path) != os.path.abspath(self.base_sem.path)
         wait_minutes = float(wprops.get("waiting_minutes") or 0)
-        free_minutes = float(waiting_config.get("free_minutes") or 0)
-        block_minutes = float(waiting_config.get("block_minutes") or 0)
-        per_block = float(waiting_config.get("per_block") or 0)
+        # 兜底口径同样走决策表：按当前车型首行命中，没有命中行才退回默认行。
+        # 旧版从顶层标量取，迁移后顶层标量已删（唯一源是 matrix）。
+        _ctx = semantic._fee_context("waiting", {}, dict(wprops), vehicle_type)
+        _tariff = _ctx["tariff"]
+        free_minutes = float(_tariff.get("free_minutes") or 0)
+        block_minutes = float(_tariff.get("block_minutes") or 0)
+        per_block = float(_tariff.get("per_block") or 0)
         blocks = (
             math.ceil(max(0.0, wait_minutes - free_minutes) / block_minutes)
             if block_minutes > 0 else 0
@@ -1225,7 +1269,8 @@ class FreightSystem:
             f"ceil(max(0, waiting_minutes - {free_minutes:g}) / {block_minutes:g})"
             f" * {per_block:g}"
         )
-        waiting_tariffs = self._waiting_tariffs(waiting_config, wait_minutes, vehicle_type)
+        waiting_tariffs = self._waiting_tariffs(
+            semantic, waiting_config, wait_minutes, vehicle_type, wprops)
         waiting_rule_meta: dict = {}
 
         breakdown = []
@@ -1269,16 +1314,13 @@ class FreightSystem:
             rule_props = (pricing_rule or {}).get("props") or {}
             rule_findings = self._validate_pricing_rule(p, pricing_rule)
             findings.extend(rule_findings)
-            params = dict(rule_props.get("params") or {})
-            if p["fee_type"] == "waiting":
-                semantic_waiting = dict(semantic.pricing.get("waiting") or {})
-                if historical:
-                    # 回放历史版本时，以该发布快照的费率为准，避免今天的规则实例覆盖历史标准。
-                    for key in ("free_minutes", "block_minutes", "per_block", "by_vehicle_type"):
-                        if key in semantic_waiting:
-                            params[key] = semantic_waiting[key]
-                elif not params:
-                    params = semantic_waiting
+            # 参数唯一源是语义层定价决策表：规则实例只供版本元信息（rule_id /
+            # 生效期 / fee_type 校验），**不再把实例 params 喂进计算**——
+            # 实例副本一旦喂进去就会覆盖 matrix（存量库踩过：大货车+雨天被
+            # 旧副本盖回 12.00）。历史版本回放同理：旧快照无 matrix 时
+            # _resolve_tariff 的 legacy 分支从旧配置取当时值，喂实例 params
+            # 反而会让今天的副本覆盖历史标准。
+            params = {}
             computed, rule_meta = self._expected_from_rule(
                 semantic, p["fee_type"], params, wprops, vehicle_type
             )

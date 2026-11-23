@@ -64,14 +64,19 @@ class TestOntologyIsTheSourceOfTruth:
         """改本体里的计价参数 → 同一笔费用的应计值随之改变（代码零改动）。"""
         from freight.semantic import SemanticLayer, evaluate_rule_ast
         raw = json.loads(json.dumps(SemanticLayer().raw))
-        raw["pricing"]["waiting"]["per_block"] = 3.0     # 2.4 -> 3.0
+        # 改决策表命中行的参数：matrix 是唯一源。顶层标量是迁移后的死键，
+        # 改它不生效——必须落到 4.2米厢货行（首行命中算这条）。
+        for row in raw["pricing"]["waiting"]["matrix"]:
+            if row.get("id") == "vehicle:4.2米厢货":
+                row["params"]["per_block"] = 3.0     # 2.4 -> 3.0
         td = tempfile.mkdtemp(prefix="pv_mut_")
         path = os.path.join(td, "layer.json")
         with open(path, "w", encoding="utf-8") as fh:
             json.dump(raw, fh, ensure_ascii=False)
         mutated = SemanticLayer(path)
         wprops = json.loads(system.facts.get_row("waybill:WB20261105001")["props"])
-        ctx = mutated._fee_context("waiting", {"per_block": 3.0}, wprops, "4.2米厢货")
+        # 不传显式参数：参数必须从声明来，不能由调用方塞
+        ctx = mutated._fee_context("waiting", {}, wprops, "4.2米厢货")
         ast_node = (mutated.rules["R-WAIT-01"].get("judge") or {}).get("ast")
         value = evaluate_rule_ast(ast_node, ctx)
         assert value == 15.0, f"改本体参数后应计值应为 15.0（5 块 × 3.0），实际 {value}"

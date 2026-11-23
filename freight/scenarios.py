@@ -24,6 +24,8 @@
 """
 from __future__ import annotations
 
+from freight.fact_store import FactStore as Store
+
 T0 = "2026-11-21T09:00:00+08:00"
 T1 = "2026-11-21T10:00:00+08:00"
 T2 = "2026-11-21T11:00:00+08:00"
@@ -227,6 +229,109 @@ def run_core_scenario(system) -> dict:
         "object_count": len(created),
         "relation_count": len(edges),
     }
+
+
+# ======================================================================
+# 决策表计价样本：天气维度（truck-rain 行）
+# ======================================================================
+#
+# seed() 只在空库上跑，存量演示库（如 11-21 建的 runs/freight_facts.db）
+# 拿不到迁移后新增的天气维度——诊断推理链里因此看不到「大货车+雨天」
+# 命中 truck-rain 行、每 10 分钟 4.8 元这条变化。本函数把样本补齐：
+# 幂等（缺什么补什么，已在的不动），每次带场景启动都会收敛。
+PRICING_SAMPLE_WAYBILL = "waybill:WB20261106002"
+PRICING_SAMPLE_FEE = "fee:F101"
+PRICING_SAMPLE_EVIDENCE = "evidence:E101"
+PRICING_SAMPLE_AT = "2026-11-06T12:00:00+08:00"
+
+
+def _merge_props(system, object_id: str, extra: dict) -> bool:
+    """把 extra 合并进对象现有 props 写回（update_object 是整体替换）。"""
+    row = system.facts.get_row(object_id)
+    if not row:
+        return False
+    props = dict(Store.decode(row)["props"])
+    if all(props.get(k) == v for k, v in extra.items()):
+        return False
+    props.update(extra)
+    system.facts.update_object(object_id, props, None,
+                               props.get("status"), PRICING_SAMPLE_AT)
+    return True
+
+
+def _has_relation(system, subject_id: str, predicate: str,
+                  object_id: str) -> bool:
+    return bool(system.facts.scalar(
+        "SELECT COUNT(*) FROM relations WHERE subject_id=? AND predicate=? "
+        "AND object_id=? AND valid_to IS NULL", (subject_id, predicate, object_id)))
+
+
+def ensure_pricing_samples(system) -> dict:
+    """补齐决策表计价样本（天气维度）。返回本步做了什么。"""
+    done = []
+    # 主运单显式声明 normal：缺省时 weather=None 也能正确落到车型行，
+    # 但演示与推理链里要把「天气是一维」摆到明面上。
+    if _merge_props(system, "waybill:WB20261105001", {"weather": "normal"}):
+        done.append("WB20261105001.weather=normal")
+    # 多维样本：大货车 + 雨天 + 等候 53 分钟 → 命中 truck-rain 行，
+    # 应计 ceil(13/10)×4.8 = 9.60；结算按旧口径（4.0）实收 8.00，
+    # 诊断里呈现「天气加价行少收 1.60 元」。
+    if _merge_props(system, PRICING_SAMPLE_WAYBILL,
+                    {"weather": "rain", "waiting_minutes": 53,
+                     "free_wait_minutes": 40}):
+        done.append("WB20261106002.weather=rain")
+    # 样本车也要对齐当前 seed 定义：存量库里 V003 还是旧的 4.2米厢货，
+    # 车型解析走 waybill_uses_vehicle → V003，不对齐就命不中 truck-rain 行
+    # （4.2米厢货行 30/5/2.4 会算出 12.00，天气维度白补）。
+    if _merge_props(system, "vehicle:V003",
+                    {"vehicle_type": "大货车", "capacity_t": 12.0}):
+        done.append("V003.vehicle_type=大货车")
+    # 清掉存量规则实例上的参数副本：实例 params 非空时会**覆盖**决策表
+    # （_fee_context 的显式参数通道），旧库 PR-WAIT-01 还带着
+    # by_vehicle_type + 30/5/2.4，会把 truck-rain 的 40/10/4.8 盖回 12.00。
+    # 新 seed 已不写副本，这里把存量库收敛到同一口径。
+    for row in system.facts.all(
+            "SELECT object_id, props FROM objects WHERE type='PricingRule'"):
+        props = dict(Store.decode(row)["props"])
+        if props.get("params"):
+            if _merge_props(system, row["object_id"], {"params": {}}):
+                done.append(f"{row['object_id']}.params cleared")
+    if not system.facts.get_row(PRICING_SAMPLE_FEE):
+        system.add_object("FeeItem", PRICING_SAMPLE_FEE,
+                          "等候费（大货车·雨天样本）", "DISPUTED", {
+            "fee_id": "F101", "fee_type": "waiting", "fee_label": "等候费",
+            "quoted_amount": 0.0, "expected_amount": 9.6,
+            "actual_amount": 8.0, "waived_amount": 0.0,
+            "calc_basis": "等候 53 分钟，大货车+雨天命中 truck-rain 行："
+                          "40 分钟免费、每 10 分钟 4.8 元，应计 9.60；"
+                          "结算按旧口径（每 10 分钟 4.0 元）实收 8.00",
+            "pricing_rule_id": "PR-WAIT-01",
+            "pricing_rule_version": "2026.10",
+            "occurred_at": PRICING_SAMPLE_AT,
+            "source_system": "TMS", "status": "DISPUTED",
+        }, PRICING_SAMPLE_AT)
+        done.append("fee:F101 created")
+    if not _has_relation(system, PRICING_SAMPLE_WAYBILL,
+                         "waybill_produces_fee", PRICING_SAMPLE_FEE):
+        system.add_relation("waybill_produces_fee", PRICING_SAMPLE_WAYBILL,
+                            PRICING_SAMPLE_FEE, PRICING_SAMPLE_AT)
+        done.append("waybill_produces_fee -> F101")
+    if not _has_relation(system, PRICING_SAMPLE_FEE, "fee_priced_by_rule",
+                         "pricing_rule:PR-WAIT-01"):
+        system.add_relation("fee_priced_by_rule", PRICING_SAMPLE_FEE,
+                            "pricing_rule:PR-WAIT-01", PRICING_SAMPLE_AT)
+        done.append("fee_priced_by_rule -> PR-WAIT-01")
+    if not system.facts.get_row(PRICING_SAMPLE_EVIDENCE):
+        system.add_evidence(PRICING_SAMPLE_EVIDENCE, PRICING_SAMPLE_FEE,
+                            "PRICING_RULE", "BILLING", PRICING_SAMPLE_AT,
+                            "2026.10",
+                            "等候费规则：大货车雨天 40 分钟免费，每 10 分钟 4.8 元",
+                            {"free_minutes": 40, "block_minutes": 10,
+                             "per_block": 4.8, "matched_row": "truck-rain"},
+                            "fee_supported_by_evidence")
+        done.append("evidence:E101 created")
+    system.conn.commit()
+    return {"done": done, "skipped": not done}
 
 
 # ======================================================================

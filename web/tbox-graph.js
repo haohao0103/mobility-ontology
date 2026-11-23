@@ -179,6 +179,29 @@
         ensureRule(ruleId);
         addEdge(item.id, ruleId, '绑定规则', 'pricing');
       }
+      // 决策表信息上节点：维度 + 行数 + 命中优先级说明（首行命中）
+      const dims = Array.isArray(config.dimensions) ? config.dimensions : [];
+      const rows = Array.isArray(config.matrix) ? config.matrix : [];
+      const dimText = dims.length ? `维度: ${dims.join(' × ')}` : '';
+      const rowText = rows.length
+        ? `决策表 ${rows.length} 行（首行命中，具体行优先）`
+        : '';
+      const labelBits = [item.label || item.id];
+      if (rows.length) labelBits.push(`${rows.length} 行`);
+      const node = addNode(item.id, {
+        kind: 'pricing',
+        label: labelBits.join(' · '),
+        detail: [dimText, rowText,
+                 'matrix: 条件组合(车型/时段/天气) → 费率参数，默认行兜底']
+          .filter(Boolean).join('；'),
+      });
+      if (node && rows.length) {
+        node.matrix_summary = rows.map((row) => ({
+          id: row.id || '',
+          conditions: row.conditions || {},
+          params: row.params || {},
+        }));
+      }
     });
 
     list.forEach((item) => {

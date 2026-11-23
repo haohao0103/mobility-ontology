@@ -1384,10 +1384,18 @@ def check_demo_current_values(root: str) -> dict:
 
     def resolve(path: str):
         cur = pricing
-        for part in path.split("."):
-            if not isinstance(cur, dict) or part not in cur:
-                return None
-            cur = cur[part]
+        parts = path.split(".")
+        for i, part in enumerate(parts):
+            if isinstance(cur, dict) and part in cur:
+                cur = cur[part]
+                continue
+            # 决策表迁移后：pricing.<fee>.<param> 落在 matrix 默认行
+            # （conditions 为空的行）的 params 里——当前值口径取默认档
+            if i == 1 and isinstance(cur, dict) and isinstance(cur.get("matrix"), list):
+                default = next((r for r in cur["matrix"] if not r.get("conditions")), None)
+                if default and part in (default.get("params") or {}):
+                    return default["params"][part]
+            return None
         return cur
 
     html_path = os.path.join(root, "web", "order-ontology.html")
@@ -1429,6 +1437,77 @@ def check_demo_current_values(root: str) -> dict:
     return item
 
 
+def _cond_atoms(cond: dict, out: set | None = None) -> set:
+    """提取条件树的所有原子 (field, op, value)。"""
+    out = out if out is not None else set()
+    if not isinstance(cond, dict):
+        return out
+    for key in ("all", "any"):
+        for sub in cond.get(key) or []:
+            _cond_atoms(sub, out)
+    if "field" in cond and "op" in cond:
+        out.add((cond["field"], cond["op"], json.dumps(cond.get("value"),
+                                                        ensure_ascii=False)))
+    return out
+
+
+def check_pricing_matrix(root: str) -> dict:
+    """决策表结构：matrix 行序必须「具体行在前」。
+
+    决策表首行命中，若更具体的行（条件超集）排在更通用的行后面，
+    具体行永远命不中——这类 bug 运行时静默（结果用通用行的参数），
+    只有行序校验能发现。
+
+    同页第二判据：**死键**。有 matrix 的费用类型若还把参数写在顶层
+    （by_vehicle_type / free_minutes / per_km / source …），这些键不生效
+    却会被当成"改过价"——存量库就是这么把 truck-rain 盖回 12.00 的。
+    """
+    target = "freight/semantic_layer.json#pricing.matrix"
+    item: dict = {"target": target, "ok": True, "issues": []}
+    with open(os.path.join(root, "freight", "semantic_layer.json"),
+              encoding="utf-8") as fh:
+        pricing = (json.load(fh).get("pricing") or {})
+    structural = {"rule_id", "matrix", "dimensions", "time_windows",
+                  "time_source", "by_vehicle_type"}
+    for fee_type, config in pricing.items():
+        matrix = (config or {}).get("matrix")
+        if not isinstance(matrix, list):
+            continue
+        # 死键：matrix 化之后顶层参数键不生效，是第二口径
+        for key in config:
+            if key not in structural:
+                item["ok"] = False
+                item["issues"].append({
+                    "code": "MATRIX_DEAD_PARAM_KEY",
+                    "path": f"{target}[{fee_type}]",
+                    "message": (f"pricing.{fee_type} 已有决策表 matrix，顶层键 "
+                                f"'{key}' 不生效（死键）——参数唯一源是 matrix 行，"
+                                f"请把 '{key}' 移进对应行的 params")})
+        atoms = [_cond_atoms(row.get("conditions") or {}) for row in matrix]
+        for i in range(len(matrix)):
+            if not atoms[i]:  # 默认行
+                if i != len(matrix) - 1:
+                    item["ok"] = False
+                    item["issues"].append({
+                        "code": "MATRIX_DEFAULT_NOT_LAST",
+                        "path": f"{target}[{fee_type}]",
+                        "message": "默认行（conditions 为空）必须放在最后"})
+                continue
+            for j in range(i + 1, len(matrix)):
+                # atoms[j] 是 atoms[i] 的超集 = 第 j 行更具体却排在后面
+                # （首行命中会先命中第 i 行，第 j 行永远命不中）
+                if atoms[i] and atoms[j] and atoms[j] > atoms[i]:
+                    item["ok"] = False
+                    item["issues"].append({
+                        "code": "MATRIX_ROW_ORDER",
+                        "path": f"{target}[{fee_type}]",
+                        "message": (f"第 {j+1} 行（{matrix[j].get('id')}，"
+                                    f"{len(atoms[j])} 条件）比第 {i+1} 行"
+                                    f"（{matrix[i].get('id')}，{len(atoms[i])} 条件）"
+                                    f"更具体却排在后面——首行命中会挡住它")})
+    return item
+
+
 def main() -> int:
     results = [check_schema(CURRENT, "freight/semantic_layer.json")]
     results.append(check_metadata(CURRENT, "freight/semantic_layer.json"))
@@ -1449,6 +1528,7 @@ def main() -> int:
     results.append(check_abox_coverage(ROOT))
     results.append(check_source_contracts(ROOT))
     results.append(check_gap_detection(ROOT))
+    results.append(check_pricing_matrix(ROOT))
     results.append(check_honesty(ROOT))
     results.append(check_demo_current_values(ROOT))
     results.append(check_query_schema(ROOT))

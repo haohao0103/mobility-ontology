@@ -1,5 +1,105 @@
 # Changelog
 
+## 3.6.0 (2026-11-23) — 计价决策表（pricing matrix 唯一参数源）+ 多维计价实验室
+
+真实计价是「车型 × 时段 × 天气」多维组合，单公式+单维覆盖表达不了；而参数过去
+存在三处（实例副本、`by_vehicle_type`、顶层标量），改一处漏一处就会漂移。这一版把
+定价参数收敛成**本体声明的一张决策表**，并让演示能当场翻转维度看命中行变化。
+
+### 新增
+- **决策表 `pricing.<fee_type>.matrix`**（`freight/semantic_layer.json`）：行 =
+  条件组合（`conditions`）+ 参数（`params`），**首行命中**，`conditions` 为空的行是
+  默认行（必须放最后）。`dimensions` 声明计价维度，`time_windows` 声明时段
+  （peak/night/normal，按 `accepted_at` 归窗）。`waiting` 新增大货车·雨天行
+  （`per_block` 4.0 → 4.8，恶劣天气等候加价），排在单车种行之前。
+- **多维计价实验室**（`freight/demo_labs.py::pricing_lab`，API `POST /pricing/lab`）：
+  只读求值零写库，展示当前维度组合命中的行与参数，翻转一个维度（晴/雨、跨车型）
+  应计当场变——大货车 53 分钟：晴天 8.0 元 → 雨天 9.6 元。
+- 门禁新增 `check_pricing_matrix`：决策表行序校验——默认行不在最后、
+  或更具体的行（条件超集）排在更通用的行之后，一律拦下。这类 bug 运行时静默
+  （首行命中先挡住具体行），只有行序校验能发现。
+- TBox 图谱（`web/tbox-graph.js`）pricing 节点展示维度、行数与「首行命中」说明。
+
+### 修正（承认并清理）
+- **参数三处存放 = 双口径**：定价规则实例曾抄一份参数副本（`PR-WAIT-01` 等 7 条），
+  seed 已改为只存版本元信息；`by_vehicle_type` 与顶层重复标量随迁移删除
+  （`scripts/_migrate_pricing_matrix.py`，一次性）。**教训：清副本不能用固定
+  键名名单**——`per_km`/`base_fare_by_vehicle_type`/`source` 同样是参数，
+  首版迁移漏删这三个，已在矩阵默认行之外留下第二口径，按「默认行携带的全部
+  非结构键」规则清掉。
+- **「实例没有 params」误报**：`_validate_pricing_rule` 还按旧口径要求实例携带
+  参数副本，迁移后主运单一次诊断报 8 条 `PRICING_RULE_PARAMS_MISSING`（假警报）。
+  改为校验真正的参数源：语义层 `pricing.<fee_type>` 解不出参数（无 matrix 且无
+  默认标量）才报——删掉 matrix 会立刻现形。
+- **车型费率对照表清空**：`_waiting_tariffs` 读 `by_vehicle_type`，迁移后返回 0 行。
+  改为从 matrix 行条件收集车型，走与真实计价同一个 `_fee_context` 首行命中求值——
+  对照表不再可能和计价漂移。
+
+### 兼容（历史回放不漂移）
+- 无 matrix 的历史发布快照（如 `releases/1.3.1-demo`）按旧口径回放：默认标量 +
+  `by_vehicle_type` 覆盖，逐值一致——1.3.1 的 4.2米厢货 `per_block=3.0` 与当前
+  工作副本的 2.4 不同，回放必须用当时值。
+
+### 补齐（存量演示库收敛到决策表口径）
+诊断推理链里看不到变化的三处遗留，本轮全部收口：
+- **规则说明还是旧口径**：`R-WAIT-01.judge.explain` 只描述「按车型取费率」，
+  推理链第 3 步（tbox.describe）直接展示它——已改写为决策表口径
+  （车型 × 天气首行命中、truck-rain 行、公式不变），版本 2.1.0 → 2.2.0。
+- **天气样本落不进存量库**：`seed()` 只在空库上跑，11-21 建的演示库拿不到
+  迁移后新增的天气维度。新增 `scenarios.ensure_pricing_samples`（幂等，每次带
+  场景启动都收敛）：主运单显式 `weather=normal`；WB20261106002 补
+  `weather=rain`/等候 53 分钟 + 等候费 F101（实收 8.00）+ 证据 E101；
+  V003 车型对齐当前 seed（大货车）。
+- **★实例参数副本覆盖决策表（最隐蔽）**：存量库 7 个 PricingRule 实例还带着
+  参数副本（`by_vehicle_type` + 30/5/2.4），而 `_fee_context` 的显式参数通道
+  **优先级高于 matrix**——大货车+雨天样本被盖回 12.00（4.2米厢货行），
+  天气维度白补。ensure 现在清空全部实例副本（新 seed 已不写），诊断恢复
+  **应计 9.60**（truck-rain 行：40 分钟免费、每 10 分钟 4.8 元）。
+  教训：迁移只改声明不够，**存量数据里的副本同样是第二口径**，且它的优先级
+  比新口径高——不清就会静默盖掉矩阵。
+
+### 全面复查（同型问题全仓扫荡）
+死键 / 第二口径 / 假承诺三类，逐一定位并清除：
+- **计算不再供实例参数**：`fee_analysis` 曾把 PricingRule 实例 params 喂进
+  `compute_fee`，优先级高于 matrix——上面那起事故的传导链。现在计算只认声明
+  （`params={}`），实例仅供版本元信息校验（rule_id / 生效期 / fee_type）。
+  历史回放同理改由旧快照自己的 legacy 解析供数：喂实例参数反而会让**今天的
+  副本覆盖历史标准**。
+- **legacy 回退键收全**：`_resolve_tariff` 旧声明分支原先只收
+  free/block/per 三个键，`per_km`/`per_order`/`base_fare_by_vehicle_type`
+  会被静默丢弃——无 matrix 的新费用类型（如验收注入的 remote_area）靠它供数。
+  已改为收全部非结构顶层键。
+- **四处「改本体参数」演示/测试改的是死键**：`parity_lab` Q6、漂移实验、
+  `prevention_demo`、`test_prevention` 都写 `pricing.waiting.free_minutes=20`
+  再靠显式参数通道算——层内改动空转，翻转来自参数通道，「只改一处 JSON」
+  的叙事是假的。已全部改为**改 matrix 命中行 + 不传显式参数**，翻转真正
+  来自声明（漂移实验现状：本体侧 16.8/16.8 同源，属性图侧 16.8/12.0 漂移）。
+- **验收场景 2 原测的是被删掉的口径**：给规则实例打 params 副本期望金额
+  跟着变——正是第二口径。已改为改决策表行参数，断言随声明变（12/12 保持）。
+- **发布工具死键拦截**：`build_release.py` 的 `--set` 示例还在教人写
+  `pricing.waiting.free_minutes=20`（死键，不报错不生效）。新增
+  `dead_param_keys` 检查直接拒发，示例改为 matrix 行路径。
+- **门禁死键判据**：`check_pricing_matrix` 增加 `MATRIX_DEAD_PARAM_KEY`——
+  有 matrix 还把参数写在顶层即拦（附负向单测）。
+- **维度承诺对齐**：`dimensions` 原先给所有费用类型都写 `vehicle_type`，
+  多数只有默认行、没有任何行按车型分支——假承诺。改为从行条件实际字段推导
+  （waiting: `[vehicle_type, weather]`，其余: `[]`）；时段归窗机制在位但
+  当前无行按时段分支，规则说明明说「预留维度」，不虚报。
+- **highway 来源回退**：Agent 目录里「来源 ETC」读顶层 `source`（已迁进
+  matrix 默认行），原代码靠硬编码默认值巧合蒙对；改为从默认行取。
+
+### 验证
+- 零漂移：主运单 `fee_analysis` 与迁移前**逐键一致**（应计 12.00 / 实收 25.00 /
+  差异 13.00，findings 仅 `WAITING_FEE_MISMATCH`；车型对照表 5 行数值不变，
+  行序随决策表优先级）。
+- 新增 `tests/test_pricing_matrix.py` 27 断言：零漂移 / 首行命中（truck-rain 压过
+  单车种行）/ 默认行兜底 / 时段归窗（工作日早高峰、周末、夜间、坏时间戳）/
+  旧版回放 / pricing_lab 翻转与零写库 / 门禁行序与死键负向用例 /
+  参数源被删现形 / **存量副本不再覆盖矩阵 + ensure 清理 + 幂等**。
+- 全量 258 passed；门禁 31 项全绿；`freight_acceptance` 12/12；
+  迁移脚本从 HEAD 原件**完整复现**当前产物（含 weather 属性、规则说明改写、
+  维度推导）。
+
 ## 3.5.0 (2026-11-21) — 缺口检测门禁（第 28 项）+ LLM 退避重试 + 本地部署复测
 
 上一版把来源契约变成门禁（第 27 项），这一版补齐**缺口检测能力**的验证，并把

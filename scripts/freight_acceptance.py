@@ -134,18 +134,25 @@ def scenario_rule_binding_and_generic_conclusion(system: FreightSystem) -> None:
         assert "18.00" in changed["conclusion"], changed["conclusion"]
         assert "38.00" not in changed["conclusion"], changed["conclusion"]
 
-        # 2) 改规则实例参数后，应计金额必须随 fee_priced_by_rule 解析结果变化。
+        # 2) 改本体声明（决策表命中行）后，应计金额必须随之变化；
+        #    规则实例只供版本元信息，不再供参数（唯一源是 matrix）。
         patch_props(system, fee_id, {"actual_amount": 25.0})
-        patch_props(system, rule_id, {
-            "params": {"free_minutes": 30, "block_minutes": 5, "per_block": 3.0}
-        })
-        rebound = call(system, "function.fee_breakdown", {"waybill_id": WAYBILL_ID})
-        waiting = next(
-            row for row in rebound["breakdown"] if row["fee_type"] == "waiting"
-        )
-        assert rebound["waiting_rule"]["pricing_rule_id"] == "PR-WAIT-01"
-        assert waiting["rule_expected"] == 15.0, waiting
-        assert rebound["waiting_rule"]["expected"] == 15.0, rebound["waiting_rule"]
+        waiting_matrix = system.sem.pricing["waiting"]["matrix"]
+        hit_row = next(r for r in waiting_matrix
+                       if r.get("id") == "vehicle:4.2米厢货")
+        original_per_block = hit_row["params"]["per_block"]
+        try:
+            hit_row["params"]["per_block"] = 3.0
+            rebound = call(system, "function.fee_breakdown",
+                           {"waybill_id": WAYBILL_ID})
+            waiting = next(
+                row for row in rebound["breakdown"] if row["fee_type"] == "waiting"
+            )
+            assert rebound["waiting_rule"]["pricing_rule_id"] == "PR-WAIT-01"
+            assert waiting["rule_expected"] == 15.0, waiting
+            assert rebound["waiting_rule"]["expected"] == 15.0, rebound["waiting_rule"]
+        finally:
+            hit_row["params"]["per_block"] = original_per_block
 
         # 3) 费用发生时间超出规则生效期时，R-PRICE-01 必须给出拒绝性 finding。
         patch_props(system, rule_id, {"params": rule_props["params"],

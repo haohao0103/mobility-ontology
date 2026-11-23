@@ -289,13 +289,17 @@ def run_ontology() -> dict:
         # 变更实验：改本体参数，重算应计
         from freight.semantic import SemanticLayer, evaluate_rule_ast
         raw = json.loads(json.dumps(SemanticLayer().raw))
-        raw["pricing"]["waiting"]["free_minutes"] = 20
+        # 改的是决策表命中行（4.2米厢货行）的参数——matrix 是唯一源，
+        # 改顶层标量是死键（迁移后已不存在），不能这么演示
+        for row in raw["pricing"]["waiting"]["matrix"]:
+            if row.get("id") == "vehicle:4.2米厢货":
+                row["params"]["free_minutes"] = 20
         tmp = os.path.join(td, "mut_layer.json")
         with open(tmp, "w", encoding="utf-8") as fh:
             json.dump(raw, fh, ensure_ascii=False)
         mutated = SemanticLayer(tmp)
         wprops = json.loads(system.facts.get_row(WAYBILL)["props"])
-        ctx = mutated._fee_context("waiting", {"free_minutes": 20}, wprops, "4.2米厢货")
+        ctx = mutated._fee_context("waiting", {}, wprops, "4.2米厢货")
         ast_node = (mutated.rules["R-WAIT-01"].get("judge") or {}).get("ast")
         new_expected = evaluate_rule_ast(ast_node, ctx)
         out["Q6"] = {
@@ -370,17 +374,19 @@ def drift_experiment(svc: PropertyGraphService) -> dict:
         "detectable": False,
     }
 
-    # 本体侧：改声明一处
+    # 本体侧：改声明一处（决策表命中行，唯一源）
     from freight.semantic import SemanticLayer, evaluate_rule_ast
     raw = json.loads(json.dumps(SemanticLayer().raw))
-    raw["pricing"]["waiting"]["free_minutes"] = 20
+    for row in raw["pricing"]["waiting"]["matrix"]:
+        if row.get("id") == "vehicle:4.2米厢货":
+            row["params"]["free_minutes"] = 20
     td = tempfile.mkdtemp(prefix="parity_drift_")
     path = os.path.join(td, "layer.json")
     with open(path, "w", encoding="utf-8") as fh:
         json.dump(raw, fh, ensure_ascii=False)
     mutated = SemanticLayer(path)
     wprops = {"waiting_minutes": minutes, "free_wait_minutes": 30}
-    ctx = mutated._fee_context("waiting", {"free_minutes": 20}, wprops, "4.2米厢货")
+    ctx = mutated._fee_context("waiting", {}, wprops, "4.2米厢货")
     ast_node = (mutated.rules["R-WAIT-01"].get("judge") or {}).get("ast")
     value = evaluate_rule_ast(ast_node, ctx)
     ont_drift = {

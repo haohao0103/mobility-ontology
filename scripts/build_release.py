@@ -2,11 +2,15 @@
 
 示例：
   python scripts/build_release.py \
-    --version 1.1.0-demo \
-    --label "演示：免费等候 30→20 分钟" \
-    --set pricing.waiting.free_minutes=20 \
-    --set 'pricing.waiting.by_vehicle_type["4.2米厢货"].per_block=3.0' \
+    --version 1.4.0-demo \
+    --label "演示：4.2米厢货免费等候 30→20 分钟" \
+    --set 'pricing.waiting.matrix[vehicle:4.2米厢货].params.free_minutes=20' \
+    --set 'pricing.waiting.matrix[vehicle:4.2米厢货].params.per_block=3.0' \
     --set rules.R-WAIT-01.judge.explain="等候 20 分钟免费..."
+
+注意：定价参数唯一源是 pricing.<fee>.matrix（决策表）。顶层标量与
+by_vehicle_type 是迁移前的旧式声明，对已决策表化的费用类型是**死键**——
+--set 写它们不报错但不生效，本脚本会拦截（见 _dead_param_keys）。
 """
 from __future__ import annotations
 
@@ -84,6 +88,28 @@ def set_path(node, parts: list[str], value) -> None:
     raise ValueError(f"路径无法解析: {key}")
 
 
+# 决策表化之后，这些键只应出现在 matrix 行里；出现在顶层就是第二口径（死键）
+_PRICING_STRUCTURAL = {"rule_id", "matrix", "dimensions", "time_windows",
+                       "time_source", "by_vehicle_type"}
+
+
+def dead_param_keys(manifest: dict) -> list[str]:
+    """列出「有 matrix 却又把参数写在顶层」的死键。
+
+    这类键不报错、不生效，却会被当成改过价——发布带上它，
+    上线后计价按旧值跑，没有任何机制会发现。宁可发不出去。
+    """
+    dead = []
+    for fee_type, config in (manifest.get("pricing") or {}).items():
+        if not isinstance(config, dict) or not isinstance(
+                config.get("matrix"), list):
+            continue
+        for key in config:
+            if key not in _PRICING_STRUCTURAL:
+                dead.append(f"pricing.{fee_type}.{key}")
+    return dead
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--version", required=True)
@@ -106,6 +132,20 @@ def main() -> int:
             raise SystemExit(f"--set 需要 PATH=VALUE: {assignment}")
         path, raw = assignment.split("=", 1)
         set_path(manifest, parse_path(path), parse_value(raw))
+
+    dead = dead_param_keys(manifest)
+    if dead:
+        print(json.dumps({
+            "ok": False,
+            "issues": [{
+                "code": "PRICING_DEAD_PARAM_KEY",
+                "path": key,
+                "message": ("该费用类型已有决策表 matrix，顶层参数键不生效"
+                            "（死键）——请改 matrix 行内参数，如 "
+                            "pricing.waiting.matrix[vehicle:4.2米厢货].params.per_block"),
+            } for key in dead],
+        }, ensure_ascii=False, indent=2))
+        return 1
 
     issues = validate_semantic(manifest)
     if issues:

@@ -87,19 +87,23 @@ def main() -> int:
     import json
     raw = json.loads(json.dumps(SemanticLayer().raw))
     pricing = raw["pricing"]["waiting"]
-    pricing["per_block"] = 3.0          # 2.4 -> 3.0
+    # 改决策表命中行的参数（matrix 唯一源）；顶层标量是迁移后的死键，
+    # 改它不生效——必须落到 4.2米厢货行上
+    for row in pricing["matrix"]:
+        if row.get("id") == "vehicle:4.2米厢货":
+            row["params"]["per_block"] = 3.0          # 2.4 -> 3.0
     tmp = os.path.join(td, "mutated_layer.json")
     with open(tmp, "w", encoding="utf-8") as fh:
         json.dump(raw, fh, ensure_ascii=False)
     mutated = SemanticLayer(tmp)
     base = system.fee_analysis("waybill:WB20261105001")
-    # 用同一份规则参数在 mutated 语义层上重算等候费应计
+    # 用改后的声明重算等候费应计（不传显式参数——参数唯一源是声明）
     from freight.semantic import evaluate_rule_ast
     rule = mutated.rules["R-WAIT-01"]
     ast_node = (rule.get("judge") or {}).get("ast")
     import json as _json
     wprops = _json.loads(system.facts.get_row("waybill:WB20261105001")["props"])
-    ctx = mutated._fee_context("waiting", {"per_block": 3.0}, wprops, "4.2米厢货")
+    ctx = mutated._fee_context("waiting", {}, wprops, "4.2米厢货")
     value = evaluate_rule_ast(ast_node, ctx) if ast_node else None
     cases.append((
         "改本体参数 → 行为随之变（最小承重）",

@@ -278,6 +278,24 @@ def ontology_property_graph_parity():
     return guard(lambda: build_report())
 
 
+@router.post("/pricing/lab")
+def pricing_lab_api(body: dict):
+    """多维计价实验室：车型×时段×天气 决策表演示（只读求值，零写库）。
+
+    body: {case: truck_rain|vehicle, vehicle_type, weather,
+           waiting_minutes, time_at}
+    """
+    from freight.demo_labs import pricing_lab
+    return guard(lambda: pricing_lab(
+        get_system(),
+        case=body.get("case") or "truck_rain",
+        vehicle_type=body.get("vehicle_type") or "大货车",
+        weather=body.get("weather") or "rain",
+        waiting_minutes=float(body.get("waiting_minutes") or 53),
+        time_at=body.get("time_at") or "",
+    ))
+
+
 
 @router.post("/ontology/activate")
 def ontology_activate(body: VersionIn):

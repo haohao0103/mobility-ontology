@@ -379,3 +379,75 @@ def declaration_check(system: FreightSystem, omit_tool: str | None = None,
     after = _with_sem(system, sem, probe)
     before_probe = probe()  # 在恢复原始 sem 后调用
     return result("declaration_check", before_probe, after, paths)
+
+def pricing_lab(system, case: str = "truck_rain",
+                vehicle_type: str = "大货车", weather: str = "rain",
+                waiting_minutes: float = 53, time_at: str = "") -> dict:
+    """多维计价实验室：同一条规则，换维度组合看命中行翻转。
+
+    真实计价是「车型 × 时段 × 天气」多维组合（decision table 首行命中）。
+    本 lab 不写任何库，只读求值，展示：
+      - 当前维度组合命中的 matrix 行与参数；
+      - 翻转对照（晴/雨、跨车型）——改一个维度值，应计当场变；
+      - 决策表行序校验由 semantic_gate 的 check_pricing_matrix 负责。
+
+    case:
+      truck_rain  大货车+雨天 vs 大货车+晴天（默认，演示天气加价）
+      vehicle     4.2米厢货 vs 大货车（演示车型分档）
+    """
+    from .semantic import evaluate_rule_ast
+
+    sem = system.sem
+    config = sem.pricing.get("waiting") or {}
+    ast_node = (sem.rules.get(str(config.get("rule_id")) or {}) or {}).get(
+        "judge", {}).get("ast")
+
+    def evaluate(vt: str, wx: str, minutes: float, at: str) -> dict:
+        ctx = sem._fee_context(
+            "waiting", {},
+            {"waiting_minutes": minutes, "weather": wx,
+             "accepted_at": at or "2026-11-06T08:00:00+08:00"}, vt)
+        value = evaluate_rule_ast(ast_node, ctx) if ast_node else None
+        return {
+            "vehicle_type": vt, "weather": wx, "waiting_minutes": minutes,
+            "time_window": ctx.get("time_window"),
+            "matched_row": ctx.get("tariff_row"),
+            "free_minutes": ctx["tariff"].get("free_minutes"),
+            "block_minutes": ctx["tariff"].get("block_minutes"),
+            "per_block": ctx["tariff"].get("per_block"),
+            "expected": round(float(value), 2) if value is not None else None,
+        }
+
+    if case == "vehicle":
+        before = evaluate("4.2米厢货", "normal", waiting_minutes, time_at)
+        after = evaluate("大货车", "normal", waiting_minutes, time_at)
+        dimension = "vehicle_type"
+    else:  # truck_rain：天气维度翻转
+        before = evaluate(vehicle_type, "normal", waiting_minutes, time_at)
+        after = evaluate(vehicle_type, "rain", waiting_minutes, time_at)
+        dimension = "weather"
+
+    flips = []
+    if before["matched_row"] != after["matched_row"]:
+        flips.append({"code": "TARIFF_ROW_FLIP",
+                      "action": f"{before['matched_row']} → {after['matched_row']}"})
+    if before["expected"] != after["expected"]:
+        flips.append({"code": "EXPECTED_AMOUNT_FLIP",
+                      "action": f"{before['expected']} → {after['expected']} 元"})
+    if before["time_window"] != after["time_window"]:
+        flips.append({"code": "TIME_WINDOW_FLIP",
+                      "action": f"{before['time_window']} → {after['time_window']}"})
+
+    return {
+        "case": case, "dimension": dimension,
+        "dimensions": config.get("dimensions") or [],
+        "before": before, "after": after,
+        "flips": flips,
+        "declaration_paths": [
+            "pricing.waiting.matrix（决策表：条件组合 → 参数，首行命中）",
+            "pricing.waiting.dimensions（计价维度：车型/时段/天气）",
+            "pricing.waiting.time_windows（时段定义）",
+            "rules.R-WAIT-01.judge.ast（公式不变，tariff.* 取命中行参数）",
+        ],
+        "persisted": False,
+    }

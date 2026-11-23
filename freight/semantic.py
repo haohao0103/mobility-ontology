@@ -7,6 +7,7 @@ import math
 import os
 import re
 from collections import deque
+from datetime import datetime
 
 DEFAULT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "semantic_layer.json")
 
@@ -400,17 +401,82 @@ class SemanticLayer:
                 return rel["id"]
         return None
 
+    # 决策表（decision table）维度：真实计价是「车型 × 时段 × 天气」等多维组合，
+    # 单公式+单维覆盖表达不了。matrix 是参数唯一源：行=条件组合，列=参数，
+    # 首行命中（conditions 为空的行是默认行，必须放最后）。
+    _TIME_DIMS = ("time_window",)
+    _WEATHER_DIMS = ("weather",)
+
+    @staticmethod
+    def _parse_hhmm(text: str) -> int:
+        try:
+            hh, mm = str(text).split(":")
+            return int(hh) * 60 + int(mm)
+        except (ValueError, AttributeError):
+            return -1
+
+    def _resolve_time_window(self, config: dict, ctx: dict) -> str:
+        """按 time_windows 声明把时间戳归入时段窗口（peak/night/.../default）。"""
+        windows = config.get("time_windows") or {}
+        default = str(windows.get("default") or "normal")
+        raw = ctx.get("time_at") or ctx.get(config.get("time_source") or "") or ""
+        try:
+            dt = datetime.fromisoformat(str(raw))
+        except ValueError:
+            return default
+        minutes = dt.hour * 60 + dt.minute
+        is_weekend = dt.isoweekday() >= 6
+        best, best_key = None, default
+        for key, win in windows.items():
+            if not isinstance(win, dict):
+                continue
+            days = str(win.get("days") or "mon-sun").lower()
+            weekend_ok = any(d in days for d in ("sat", "sun"))
+            if is_weekend and not weekend_ok:
+                continue
+            if not is_weekend and days in ("sat", "sun"):
+                continue
+            frm = self._parse_hhmm(win.get("from", "00:00"))
+            to = self._parse_hhmm(win.get("to", "00:00"))
+            if frm < 0 or to < 0:
+                continue
+            hit = (frm <= minutes <= to) if frm <= to else (minutes >= frm or minutes <= to)
+            if hit and (best is None or frm > best):
+                best, best_key = frm, key
+        return best_key
+
+    def _resolve_tariff(self, config: dict, ctx: dict) -> tuple[dict, str]:
+        """决策表求值：返回 (命中行 params, 命中行标识)。
+
+        行顺序即优先级（首行命中）；conditions 为空的行是默认行。
+        无 matrix 的旧声明（历史发布快照回放）回退为「默认标量 +
+        by_vehicle_type 覆盖」，与迁移前口径逐值一致——历史结论绑定旧版本，
+        不能因为引擎升级而漂移。
+        """
+        matrix = config.get("matrix")
+        if not isinstance(matrix, list) or not matrix:
+            # 旧声明（无 matrix 的发布快照 / 新费用类型）：顶层全部非结构键都是
+            # 参数（不止 free/block/per——per_km/per_order/base_fare_by_vehicle_type
+            # 同样是参数，漏收就等于把参数源砍掉）。再叠 by_vehicle_type 覆盖，
+            # 与迁移前口径逐值一致——历史结论绑定旧版本，不能因引擎升级而漂移。
+            structural = {"rule_id", "matrix", "dimensions", "time_windows",
+                          "time_source", "by_vehicle_type"}
+            fallback = {k: v for k, v in config.items() if k not in structural}
+            legacy = config.get("by_vehicle_type")
+            if isinstance(legacy, dict):
+                override = legacy.get(ctx.get("vehicle_type"))
+                if isinstance(override, dict):
+                    fallback.update(override)
+            return fallback, "default"
+        for row in matrix:
+            if match_condition(row.get("conditions") or {}, ctx):
+                params = dict(row.get("params") or {})
+                return params, str(row.get("id") or "row")
+        return {}, "none"
+
     def _fee_context(self, fee_type: str, params: dict,
                      waybill: dict, vehicle_type: str = "") -> dict:
         config = dict(self.pricing.get(fee_type) or {})
-        effective = dict(config)
-        override = (config.get("by_vehicle_type") or {}).get(vehicle_type)
-        if isinstance(override, dict):
-            effective.update(override)
-        # 定价规则实例上的参数优先于静态价格表，保证历史版本回放口径一致。
-        for key in ("free_minutes", "block_minutes", "per_block"):
-            if params.get(key) is not None:
-                effective[key] = params[key]
         ctx = dict(waybill)
         ctx.update(params or {})
         ctx["vehicle_type"] = (
@@ -418,9 +484,23 @@ class SemanticLayer:
             if params.get("vehicle_type")
             else str(vehicle_type or waybill.get("vehicle_type") or "")
         )
+        # 计价维度进 ctx：时段由 time_windows 声明计算，天气等直接取事实字段
+        ctx["time_window"] = self._resolve_time_window(config, ctx)
         ctx["params"] = params or {}
         ctx["pricing"] = config
+        # tariff = 决策表命中行（车型/天气/时段多维组合）；matrix 是参数唯一源
+        tariff, matched_row = self._resolve_tariff(config, ctx)
+        # params 通道 = 命中行参数 + 调用方显式参数（后者优先，保留历史回放口径）；
+        # 规则 AST 的 params.* 引用因此从 matrix 取，实例不再供数（无双口径）
+        merged_params = {**tariff, **(params or {})}
+        effective = dict(merged_params)
+        # 定价规则实例上的标量参数仍可覆盖（历史版本回放口径），seed 已不再写副本
+        for key in ("free_minutes", "block_minutes", "per_block"):
+            if params.get(key) is not None:
+                effective[key] = params[key]
         ctx["tariff"] = effective
+        ctx["tariff_row"] = matched_row
+        ctx["params"] = merged_params
         ctx["rule"] = params or {}
         return ctx
 
@@ -1383,6 +1463,11 @@ def _atom(atom: dict, ctx: dict) -> bool:
         return left is not None and left < right
     if op == "lte":
         return left is not None and left <= right
+    if op == "between":
+        # 闭区间 [low, high]：货拉拉真实计价的分段里程/分档重量条件
+        rng = right or []
+        return (left is not None and isinstance(rng, list) and len(rng) == 2
+                and rng[0] <= left <= rng[1])
     raise ValueError(f"不支持的条件操作符: {op}")
 
 
@@ -2063,28 +2148,54 @@ def validate_semantic(raw: dict) -> list[dict]:
             add("PRICING_RULE_DOMAIN_INVALID", f"{path}.rule_id",
                 f"费用类型 {fee_type} 的规则 {rule_id} 必须作用于 FeeItem")
         if fee_type == "waiting":
-            for key in ("free_minutes", "block_minutes", "per_block"):
-                value = config.get(key)
-                if not isinstance(value, (int, float)) or value < 0:
-                    add("PRICING_NUMBER_INVALID", f"{path}.{key}",
-                        f"等候费参数 {key} 必须是非负数字")
-            by_vehicle_type = config.get("by_vehicle_type")
-            if by_vehicle_type is not None:
-                if not isinstance(by_vehicle_type, dict) or not by_vehicle_type:
-                    add("PRICING_VEHICLE_TYPE_INVALID", f"{path}.by_vehicle_type",
-                        "等候费车型差异化配置必须是非空对象")
-                else:
-                    for vehicle_type, override in by_vehicle_type.items():
-                        item_path = f"{path}.by_vehicle_type.{vehicle_type}"
-                        if not isinstance(override, dict):
-                            add("PRICING_VEHICLE_TYPE_INVALID", item_path,
-                                "车型等候费配置必须是对象")
+            # 决策表口径：参数在 matrix 行 params 里（唯一源）；
+            # 兼容旧声明：无 matrix 时退回顶层三参校验
+            matrix = config.get("matrix")
+            if isinstance(matrix, list):
+                if not matrix:
+                    add("PRICING_MATRIX_EMPTY", f"{path}.matrix",
+                        "决策表 matrix 不能为空（至少一行默认行）")
+                default_rows = [r for r in matrix
+                                if isinstance(r, dict) and not (r.get("conditions") or {})]
+                if len(default_rows) != 1 or matrix[-1] not in default_rows:
+                    add("MATRIX_DEFAULT_NOT_LAST", f"{path}.matrix",
+                        "决策表必须有且只有一行默认行（conditions 为空）且位于最后")
+                for row_index, row in enumerate(matrix):
+                    if not isinstance(row, dict):
+                        add("PRICING_MATRIX_ROW_INVALID", f"{path}.matrix[{row_index}]",
+                            "决策表行必须是对象")
+                        continue
+                    item_path = f"{path}.matrix[{row_index}]"
+                    for key in ("free_minutes", "block_minutes", "per_block"):
+                        value = (row.get("params") or {}).get(key)
+                        if value is None:
                             continue
-                        for key in ("free_minutes", "block_minutes", "per_block"):
-                            value = override.get(key)
-                            if not isinstance(value, (int, float)) or value < 0:
-                                add("PRICING_NUMBER_INVALID", f"{item_path}.{key}",
-                                    f"车型 {vehicle_type} 的等候费参数 {key} 必须是非负数字")
+                        if not isinstance(value, (int, float)) or value < 0:
+                            add("PRICING_NUMBER_INVALID", f"{item_path}.{key}",
+                                f"决策表行 {row.get('id') or row_index} 的参数 {key} 必须是非负数字")
+            else:
+                for key in ("free_minutes", "block_minutes", "per_block"):
+                    value = config.get(key)
+                    if not isinstance(value, (int, float)) or value < 0:
+                        add("PRICING_NUMBER_INVALID", f"{path}.{key}",
+                            f"等候费参数 {key} 必须是非负数字")
+                by_vehicle_type = config.get("by_vehicle_type")
+                if by_vehicle_type is not None:
+                    if not isinstance(by_vehicle_type, dict) or not by_vehicle_type:
+                        add("PRICING_VEHICLE_TYPE_INVALID", f"{path}.by_vehicle_type",
+                            "等候费车型差异化配置必须是非空对象")
+                    else:
+                        for vehicle_type, override in by_vehicle_type.items():
+                            item_path = f"{path}.by_vehicle_type.{vehicle_type}"
+                            if not isinstance(override, dict):
+                                add("PRICING_VEHICLE_TYPE_INVALID", item_path,
+                                    "车型等候费配置必须是对象")
+                                continue
+                            for key in ("free_minutes", "block_minutes", "per_block"):
+                                value = override.get(key)
+                                if not isinstance(value, (int, float)) or value < 0:
+                                    add("PRICING_NUMBER_INVALID", f"{item_path}.{key}",
+                                        f"车型 {vehicle_type} 的等候费参数 {key} 必须是非负数字")
 
     primitives = raw.get("primitives", [])
     if not isinstance(primitives, list):

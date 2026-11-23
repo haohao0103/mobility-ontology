@@ -2981,7 +2981,7 @@ tbox.describe|按类型读取类定义、邻接关系、作用域规则、动作
 2. 先定位运单，再按需要查费用项、关系、证据、结算、异常；根据实际返回决定下一步，不要机械重复。
 3. 只能调用工具目录里的 ontology.* 原语、function.* 确定性函数、action.plan 或 tbox.describe，arguments 严格使用对应参数名；不要编造不存在的工具，也不要调用 action.execute。
 4. 不要编造事实；工具返回 0 条时必须明确说明，不能假设存在。
-5. 遇到 SCHEMA_ERROR 时读取 allowed values，修正类型/属性/操作符后重试，不要重复同一非法查询。
+5. 遇到 SCHEMA_ERROR 时读取 allowed values，修正类型/属性/操作符后重试，不要重复同一非法查询。若报错字段是 evidence_id 这类关联对象主键（不在当前类型的 allowed_properties 内），说明它属于另一个对象，不要继续拿它过滤当前类型；改用 ontology.search_around / ontology.traverse 沿关系取关联对象（费用项证据走 FeeItem → Evidence 的 fee_supported_by_evidence），或优先调用对应 function.* 确定性函数。
 6. 最多执行 {self.max_steps} 次 MCP / 本体调用，之后必须输出 final。
 """
 

@@ -978,6 +978,7 @@
     background:#eef3fc;border:1px solid #d9e3f5;border-radius:4px;padding:7px 8px;
     word-break:break-word;
   }
+  .kb-formula-note{font-family:var(--mono);font-size:9.5px;color:#8592ad;margin-top:5px;line-height:1.6}
   .kb-arrow{color:#9aa3b2;font-size:10px}
   .kb-pill.on{background:#eef3fc;border-color:#b9c9ea;color:#1f3f9c}
   .kb-link{color:#1f3f9c;text-decoration:none;border-bottom:1px dotted #b9c9ea}
@@ -4560,10 +4561,37 @@ function kbWhenText(when) {
   return JSON.stringify(when);
 }
 
+/* judge.ast → 可读公式。规则的可执行部分是 AST（不是字符串），
+   不渲染的话详情面板的"判定"只能显示"—"——用户看到一段说明文字，
+   却不知道规则到底怎么算的。 */
+function kbAstText(node) {
+  if (node === null || node === undefined) return '—';
+  if (typeof node !== 'object') return String(node);
+  const args = (node.args || []).map(kbAstText);
+  switch (node.op) {
+    case 'const': return String(node.value);
+    case 'field': return String(node.path || '');
+    case 'mul': return args.join(' × ');
+    case 'div': return args.join(' / ');
+    case 'add': return args.join(' + ');
+    case 'sub': return args.join(' - ');
+    case 'ceil': return `ceil(${args[0]})`;
+    case 'floor': return `floor(${args[0]})`;
+    case 'max': return `max(${args.join(', ')})`;
+    case 'min': return `min(${args.join(', ')})`;
+    case 'round': return `round(${args[0]})`;
+    case 'abs': return `abs(${args[0]})`;
+    default: return node.op ? `${node.op}(${args.join(', ')})` : JSON.stringify(node);
+  }
+}
+
 function kbRuleDetail(rule) {
   const judge = rule.judge || {};
+  // 公式文本：优先声明里的 formula 字符串；AST 规则渲染成可读公式
+  const formulaText = judge.formula || (judge.ast ? kbAstText(judge.ast) : '');
+  const bindings = Object.keys((judge.calc && judge.calc.bindings) || {});
   return `
-    <div class="record-kicker">RULE · TBOX 声明式规则</div>
+    <div class="record-kicker">RULE · TBox 声明式规则</div>
     <h3>${esc(rule.name)}<span class="kb-code">${esc(rule.id)}</span></h3>
     <p class="record-sub">${esc(judge.explain || '—')}</p>
     <div class="record-counts">
@@ -4573,8 +4601,15 @@ function kbRuleDetail(rule) {
     <div class="kb-section"><h4>触发条件 when</h4>
       <div class="kb-formula">${esc(kbWhenText(rule.when))}</div>
     </div>
-    <div class="kb-section"><h4>判定 judge</h4>
-      <div class="kb-formula">${esc(judge.formula || '—')}</div>
+    <div class="kb-section"><h4>判定 judge（可执行公式）</h4>
+      <div class="kb-formula">${esc(formulaText || '—')}</div>
+      ${judge.calc && judge.calc.target
+        ? `<div class="kb-formula-note">应计目标 <span class="mono">${esc(judge.calc.target)}</span> · 引擎对 AST 求值，参数取自定价决策表命中行</div>`
+        : ''}
+      ${bindings.length
+        ? `<div class="chip-row">${bindings.map((b) => `<span class="kb-pill mono">${esc(b)}</span>`).join('')}</div>
+           <div class="kb-formula-note">中间量随结果回传，诊断结论里每个数字都可复核</div>`
+        : ''}
       ${judge.forbidden_actions ? `<div class="chip-row">${judge.forbidden_actions.map((item) => `<span class="kb-pill mono">禁止 ${esc(item)}</span>`).join('')}</div>` : ''}
     </div>
     <div class="kb-section"><h4>作用在哪个类</h4>

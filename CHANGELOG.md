@@ -39,6 +39,27 @@
   **拖拽后再次下钻（泄漏复现序列）** / 邻域图缩放复位 / 返回全量图 / 无 JS 报错。
 - `tests/` 全量与门禁不受影响（页面改动只涉及 kb 画布交互层）。
 
+## 3.6.2 (2026-11-23) — 规则详情面板展示可执行公式（judge.ast 渲染）
+
+点开「本体知识图」里的 R-WAIT-01，详情面板的「判定 JUDGE」显示"—"，
+只剩一大段说明文字——**规则到底怎么算的看不出来**。原因：面板只渲染
+`judge.formula` 字符串字段，而 R-WAIT-01 这类规则的可执行部分是
+`judge.ast`（AST 表达式），没有 formula 字符串。
+
+### 修正
+- 新增 `kbAstText`：把 judge.ast 递归渲染成可读公式。R-WAIT-01 现在显示
+  `ceil(max(0, waiting_minutes - tariff.free_minutes) / tariff.block_minutes)
+  × tariff.per_block`，与引擎 `evaluate_rule_ast` 实际求值的表达式一致。
+- 判定段补充：应计目标（`calc.target` = actual_amount）、中间量绑定
+  （blocks / free_minutes / block_minutes / per_block / vehicle_type），
+  并注明"引擎对 AST 求值，参数取自定价决策表命中行"。
+- 带 `judge.formula` 字符串的规则不受影响（优先用原字符串）。
+
+### 验证
+- Playwright 真实浏览器 6 项全过：点 R-WAIT-01 芯片后面板显示规则名 /
+  公式文本 / actual_amount / 中间量 / 触发条件，无 JS 报错。
+- `tests/` 全量与门禁不受影响。
+
 ## 3.6.0 (2026-11-23) — 计价决策表（pricing matrix 唯一参数源）+ 多维计价实验室
 
 真实计价是「车型 × 时段 × 天气」多维组合，单公式+单维覆盖表达不了；而参数过去

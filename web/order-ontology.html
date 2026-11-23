@@ -869,6 +869,13 @@
   .kb-head-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
   .kb-back{font-family:var(--mono);font-size:9.5px;color:#a93c00;border:1px solid #ffc6a3;background:var(--orange-soft);border-radius:3px;padding:4px 8px;cursor:pointer}
   .kb-back:hover{border-color:var(--orange)}
+  .kb-zoom{display:flex;align-items:center;gap:4px}
+  .kb-zbtn{font-family:var(--mono);font-size:11px;line-height:1;color:#5f6672;border:1px solid #e0d8cc;background:#faf7f1;border-radius:3px;padding:4px 7px;cursor:pointer}
+  .kb-zbtn:hover{border-color:var(--orange);color:#a93c00}
+  .kb-canvas{cursor:grab;touch-action:none}
+  .kb-canvas.kb-panning{cursor:grabbing}
+  .kb-canvas.kb-panning .kb-node,.kb-canvas.kb-panning [data-kb-edge]{cursor:grabbing}
+  .kb-zoom-hint{font-family:var(--mono);font-size:9px;color:#a39b8d;letter-spacing:.02em}
   .store-graph-canvas{position:relative;flex:1;min-height:392px;padding:4px 2px 2px;overflow-x:auto;background-image:radial-gradient(circle at 1px 1px,#e7e0d5 1px,transparent 0);background-size:22px 22px}
   .store-graph-canvas svg{display:block;width:100%;height:auto;min-width:700px}
   .store-graph-foot{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:9px 14px;border-top:1px solid #eee9e0;font-family:var(--mono);font-size:9.5px;color:#a39b8d}
@@ -3552,7 +3559,7 @@ const storeState = { data: null, error: null };
 const knowledgeState = { data: null, error: null, tab: 'classes', q: '' };
 const traceState = { tools: null, live: null, liveError: null, running: false };
 const storageState = { data: null, error: null };
-const kbState = { selected: 'Waybill', selectedRel: null, ego: false };
+const kbState = { selected: 'Waybill', selectedRel: null, ego: false, view: null, viewBase: '' };
 
 const KNOWLEDGE_TABS = [
   { key: 'classes', label: '类' },
@@ -4122,12 +4129,17 @@ function paintKnowledgeGraph() {
         </div>
         <div class="kb-head-actions">
           <span class="store-graph-badge">GET /freight/ontology</span>
+          <div class="kb-zoom" role="group" aria-label="图谱视图">
+            <button class="kb-zbtn" type="button" data-kb-zoom="in" title="放大">＋</button>
+            <button class="kb-zbtn" type="button" data-kb-zoom="out" title="缩小">－</button>
+            <button class="kb-zbtn" type="button" data-kb-zoom="reset" title="复位：适应画布">⤢</button>
+          </div>
           ${ego ? '<button class="kb-back" type="button" data-kb-back>返回全量图</button>' : ''}
         </div>
       </div>
       <div class="kb-dual">
         <div class="store-graph-canvas kb-canvas" id="kbCanvas">
-          <svg class="sg-graph kb-graph" viewBox="0 0 ${KB_CANVAS.w} ${canvasHeight}" role="img" aria-label="${ego ? '类关系邻域图' : '本体知识图：全量 TBox，包含类、关系、规则、动作、函数、定价参数、数据源映射和本体原语'}">
+          <svg class="sg-graph kb-graph" viewBox="0 0 ${KB_CANVAS.w} ${canvasHeight}" data-kb-w="${KB_CANVAS.w}" data-kb-h="${canvasHeight}" role="img" aria-label="${ego ? '类关系邻域图' : '本体知识图：全量 TBox，包含类、关系、规则、动作、函数、定价参数、数据源映射和本体原语'}">
             <defs>
               <marker id="kbArrow" markerWidth="8" markerHeight="8" refX="7" refY="3.5" orient="auto">
                 <path d="M0,0 L0,7 L7,3.5 z" fill="#c2b9ab"></path>
@@ -4143,6 +4155,7 @@ function paintKnowledgeGraph() {
       </div>
       <div class="store-graph-foot">
         <div class="kb-legend">${legend}</div>
+        <span class="kb-zoom-hint">滚轮缩放 · 拖拽平移 · 双击复位</span>
         <span>${ego
           ? `关系邻域 · ${esc(ego.relations.length)} 关系 · ${esc(ego.neighborIds.length)} 相邻类 · ${esc(visibleClasses.length)} 节点`
           : `全量 TBox · ${esc(stats.classes || classes.length)} 类 · ${esc(stats.relations || relations.length)} 关系 · ${esc(stats.rules || 0)} 规则 · ${esc(stats.actions || 0)} 动作 · ${esc(stats.pricing || 0)} 组定价 · ${esc(stats.data_sources || 0)} 数据源`}</span>
@@ -4163,6 +4176,7 @@ function paintKnowledgeGraph() {
 function bindKnowledgeGraph() {
   const svg = document.querySelector('#kbCanvas svg');
   if (!svg) return;
+  bindKbPanZoom(svg);
   svg.querySelectorAll('[data-kb-node]').forEach((node) => {
     node.addEventListener('click', (event) => {
       event.stopPropagation();
@@ -4185,6 +4199,173 @@ function bindKnowledgeGraph() {
     edge.addEventListener('mouseleave', refreshKbFocus);
   });
   svg.addEventListener('mouseleave', refreshKbFocus);
+}
+
+/* ── 本体知识图：拖拽平移 + 滚轮/双指缩放 + 按钮缩放 ─────────────────────
+   实现取 viewBox 操控（不动 DOM 结构）：平移改 viewBox 原点，缩放按光标
+   锚点收放宽高。好处是节点 hover / 选中 / 下钻等既有交互零改动；
+   画布尺寸在建图时钉死（px），避免 viewBox 宽高比变化引起布局抖动。 */
+const KB_ZOOM_MIN = 0.25;   // 最小缩放（k = 基准宽 / 视图宽）
+const KB_ZOOM_MAX = 6;      // 最大缩放
+
+function kbViewBase(svg) {
+  return { w: Number(svg.dataset.kbW) || 1180, h: Number(svg.dataset.kbH) || 1240 };
+}
+
+function kbApplyView(svg) {
+  const v = kbState.view;
+  if (!v) return;
+  svg.setAttribute('viewBox', `${v.x} ${v.y} ${v.w} ${v.h}`);
+}
+
+function kbFitView(svg) {
+  const base = kbViewBase(svg);
+  kbState.view = { x: 0, y: 0, w: base.w, h: base.h };
+  kbApplyView(svg);
+}
+
+function kbToUser(svg, clientX, clientY) {
+  const ctm = svg.getScreenCTM();
+  if (!ctm) return { x: 0, y: 0 };
+  const p = new DOMPoint(clientX, clientY).matrixTransform(ctm.inverse());
+  return { x: p.x, y: p.y };
+}
+
+function kbZoomAt(svg, user, factor) {
+  const base = kbViewBase(svg);
+  const v = kbState.view;
+  if (!v) return;
+  const k = base.w / v.w;
+  const nk = Math.min(KB_ZOOM_MAX, Math.max(KB_ZOOM_MIN, k * factor));
+  if (nk === k) return;
+  const nw = base.w / nk;
+  const nh = base.h / nk;
+  // 锚点不动：user 在视图中的相对位置保持不变
+  v.x = user.x - (user.x - v.x) * (nw / v.w);
+  v.y = user.y - (user.y - v.y) * (nh / v.h);
+  v.w = nw;
+  v.h = nh;
+  kbApplyView(svg);
+}
+
+function kbZoomCenter(svg, factor) {
+  const v = kbState.view;
+  if (!v) return;
+  kbZoomAt(svg, { x: v.x + v.w / 2, y: v.y + v.h / 2 }, factor);
+}
+
+function bindKbPanZoom(svg) {
+  const base = kbViewBase(svg);
+  const canvas = document.getElementById('kbCanvas');
+  // 画布尺寸钉死：viewBox 变化不再驱动布局（height:auto 会随宽高比抖动）
+  const rect = svg.getBoundingClientRect();
+  if (rect.width > 0) {
+    svg.style.width = `${rect.width}px`;
+    svg.style.height = `${rect.height}px`;
+    svg.style.minWidth = '0';
+    svg.style.maxWidth = '100%';
+  }
+  // 基准尺寸变了（全量图 ↔ 邻域图）才复位；否则保留用户当前视图
+  if (!kbState.view || kbState.viewBase !== `${base.w}x${base.h}`) {
+    kbState.viewBase = `${base.w}x${base.h}`;
+    kbFitView(svg);
+  } else {
+    kbApplyView(svg);
+  }
+
+  svg.addEventListener('wheel', (event) => {
+    event.preventDefault();
+    kbZoomAt(svg, kbToUser(svg, event.clientX, event.clientY),
+             Math.exp(-event.deltaY * 0.0016));
+  }, { passive: false });
+
+  svg.addEventListener('dblclick', (event) => {
+    if (event.target.closest('[data-kb-node], [data-kb-edge], [data-kb-back]')) return;
+    kbFitView(svg);
+  });
+
+  // 拖拽平移（按在空白处才平移；节点/连线保留点选与下钻）
+  const pointers = new Map();
+  let panning = false;
+  let startX = 0, startY = 0, originX = 0, originY = 0, moved = 0;
+  let pinchDist = 0;
+
+  svg.addEventListener('pointerdown', (event) => {
+    if (event.target.closest('[data-kb-node], [data-kb-edge], [data-kb-back], .kb-zbtn')) return;
+    pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (pointers.size === 2) {
+      const [a, b] = [...pointers.values()];
+      pinchDist = Math.hypot(a.x - b.x, a.y - b.y);
+      panning = false;
+      return;
+    }
+    panning = true;
+    moved = 0;
+    startX = event.clientX;
+    startY = event.clientY;
+    const v = kbState.view;
+    originX = v.x;
+    originY = v.y;
+    svg.setPointerCapture(event.pointerId);
+    canvas && canvas.classList.add('kb-panning');
+  });
+
+  svg.addEventListener('pointermove', (event) => {
+    if (!pointers.has(event.pointerId)) return;
+    pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (pointers.size === 2) {
+      const [a, b] = [...pointers.values()];
+      const dist = Math.hypot(a.x - b.x, a.y - b.y);
+      if (pinchDist > 0 && dist > 0) {
+        kbZoomAt(svg, kbToUser(svg, (a.x + b.x) / 2, (a.y + b.y) / 2),
+                 dist / pinchDist);
+      }
+      pinchDist = dist;
+      return;
+    }
+    if (!panning) return;
+    const ctm = svg.getScreenCTM();
+    if (!ctm) return;
+    const dx = (event.clientX - startX) * ctm.a;
+    const dy = (event.clientY - startY) * ctm.d;
+    moved = Math.max(moved, Math.abs(event.clientX - startX) + Math.abs(event.clientY - startY));
+    kbState.view.x = originX - dx;
+    kbState.view.y = originY - dy;
+    kbApplyView(svg);
+  });
+
+  const endPointer = (event) => {
+    pointers.delete(event.pointerId);
+    if (pointers.size < 2) pinchDist = 0;
+    if (pointers.size === 0) {
+      panning = false;
+      canvas && canvas.classList.remove('kb-panning');
+    }
+    if (svg.hasPointerCapture(event.pointerId)) svg.releasePointerCapture(event.pointerId);
+  };
+  svg.addEventListener('pointerup', endPointer);
+  svg.addEventListener('pointercancel', endPointer);
+
+  // 拖拽后抑制误触点击（位移超 4px 视为平移，不触发节点/连线选中）
+  svg.addEventListener('click', (event) => {
+    const suppress = moved > 4;
+    moved = 0;
+    if (!suppress) return;
+    event.stopPropagation();
+    event.preventDefault();
+  }, true);
+
+  // 缩放按钮（在卡片头部，不在 svg 内）
+  const card = svg.closest('.kb-card') || document;
+  card.querySelectorAll('[data-kb-zoom]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.stopPropagation();
+      const mode = button.dataset.kbZoom;
+      if (mode === 'in') kbZoomCenter(svg, 1.3);
+      else if (mode === 'out') kbZoomCenter(svg, 1 / 1.3);
+      else kbFitView(svg);
+    });
+  });
 }
 
 function kbFocus(kind, id) {

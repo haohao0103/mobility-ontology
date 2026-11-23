@@ -579,6 +579,21 @@ class FactMCP:
             lambda: self.sem.catalog(group_ids=group_ids, budget=budget),
         )
 
+    def check_answerable(self, question: str,
+                         terms: list[str] | None = None) -> dict:
+        """问句级可答性检查：这个问题在本体与事实里答得出来吗？缺什么？
+
+        借鉴 selfgraph 的 check_answerable —— 回答之前先判断图里有没有答案，
+        让「不知道」成为一等公民，而不是让模型编一个。纯确定性，不调用大模型。
+        """
+        from freight.answerability import check_answerable
+        return self._record(
+            "ontology.check_answerable",
+            {"question": question, "terms": terms},
+            "本体",
+            lambda: check_answerable(self._runtime(), question, terms),
+        )
+
     def object_type_search(self, question: str, top_k: int = 8,
                            group_ids: list[str] | None = None) -> dict:
         return self._record(
@@ -1576,6 +1591,8 @@ class FactMCP:
         handlers: dict[str, Callable[[], Any]] = {
             "ontology.catalog": lambda: self.catalog(
                 args.get("group_ids"), args.get("budget")),
+            "ontology.check_answerable": lambda: self.check_answerable(
+                args["question"], args.get("terms")),
             "ontology.object_type_search": lambda: self.object_type_search(
                 args["question"], args.get("top_k", 8), args.get("group_ids")),
             "ontology.search_around": lambda: self.search_around_objects(
@@ -1662,9 +1679,15 @@ class FactMCP:
                     param["name"]: args.get(param["name"])
                     for param in params if param["name"] in args
                 }
+                from freight.tiers import tier_for, with_tiers
+                tier = tier_for(self.sem, f'function.{fn["id"]}')
+
+                def _call(fn=fn, kwargs=kwargs, tier=tier):
+                    out = getattr(self._runtime(), fn["implementation"])(**kwargs)
+                    return with_tiers(out, [tier])
+
                 return self._record(
-                    f'function.{fn["id"]}', args, "确定性函数",
-                    lambda: getattr(self._runtime(), fn["implementation"])(**kwargs))
+                    f'function.{fn["id"]}', args, "确定性函数", _call)
             handlers[f'function.{function["id"]}'] = handler
         handler = handlers.get(tool)
         if not handler:

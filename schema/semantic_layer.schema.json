@@ -435,6 +435,15 @@
         },
         "returns": {
           "type": "string"
+        },
+        "tier": {
+          "type": "string",
+          "enum": [
+            "declaration",
+            "deterministic",
+            "agent"
+          ],
+          "description": "执行档位：declaration=只读本体声明；deterministic=声明+事实+规则求值(0 LLM)；agent=含大模型推理"
         }
       }
     },
@@ -476,6 +485,15 @@
         "returns": {
           "type": "string",
           "minLength": 1
+        },
+        "tier": {
+          "type": "string",
+          "enum": [
+            "declaration",
+            "deterministic",
+            "agent"
+          ],
+          "description": "执行档位：declaration=只读本体声明；deterministic=声明+事实+规则求值(0 LLM)；agent=含大模型推理"
         }
       }
     },

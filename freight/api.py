@@ -243,6 +243,16 @@ def ontology_type_lab(body: dict):
     return guard(lambda: type_lab(get_system(), body.get("case", "waiting_minutes_boolean")))
 
 
+@router.post("/agent/check-answerable")
+def agent_check_answerable(body: dict):
+    """问句级可答性检查：这个问句答得出来吗、缺什么（纯确定性，不调 LLM）。"""
+    from freight.answerability import check_answerable
+    question = (body.get("question") or "").strip()
+    if not question:
+        return {"ok": False, "error": "缺少 question"}
+    return guard(lambda: check_answerable(get_system(), question, body.get("terms")))
+
+
 @router.post("/agent/declaration-check")
 def agent_declaration_check(body: dict):
     """B-07: 确定性检查工具白名单/可圈定类型/证据 checksum，不调 LLM。"""

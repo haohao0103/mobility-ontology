@@ -168,3 +168,54 @@ class TestJudgeHonesty:
 
     def test_explicit_false_passes(self, runner):
         assert runner.compare({"blocked": False}, {"blocked": False}, 0.01) == []
+
+
+class TestSelfgraphReference:
+    """第四组：selfgraph（工业级属性图 SDK）参考实现的接线检查。
+
+    注意：本机 Python 3.14 无 Kuzu 预编译 wheel → 该组**跑不了**，
+    因此这里只验证「接线正确 + 缺依赖时明确报不可用（SKIPPED）+ 隔离检查通过」，
+    **不**断言它的用例结果（那需要真实后端，见 implementations/selfgraph_ref/README.md）。
+    """
+
+    def test_impl_exists_and_declares_contract(self):
+        src = (BENCH / "implementations" / "selfgraph_ref" / "impl.py").read_text(encoding="utf-8")
+        for method in ("q1_diff", "q2_waiting", "q3_roadblock", "apply_change"):
+            assert f"def {method}" in src, method
+        assert "IMPL = SelfGraphImpl" in src
+
+    def test_isolation_check_passes(self, runner):
+        rep = runner.audit_impl(BENCH / "implementations" / "selfgraph_ref" / "impl.py")
+        assert rep["ok"], rep["issues"]
+
+    def test_missing_backend_reports_unavailable_not_crash(self, runner, manifest):
+        """缺 Kuzu 时应报 SelfGraphUnavailable → runner 记 SKIPPED，而不是 FAIL。"""
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "sg_impl_probe", BENCH / "implementations" / "selfgraph_ref" / "impl.py")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules["sg_impl_probe"] = module
+        spec.loader.exec_module(module)
+        try:
+            import kuzu  # noqa: F401
+            pytest.skip("本机装了 Kuzu，缺依赖路径不可测")
+        except Exception:
+            pass
+        raised = None
+        try:
+            module.IMPL()
+        except Exception as exc:  # noqa: BLE001
+            raised = exc
+        assert raised is not None, "缺后端时应抛 SelfGraphUnavailable"
+        # 按类名判断：模块可能被加载两次，异常类不保证是同一个对象
+        assert type(raised).__name__ == "SelfGraphUnavailable", type(raised).__name__
+        run = runner.run_impl("selfgraph_ref",
+                              BENCH / "implementations" / "selfgraph_ref" / "impl.py",
+                              manifest)
+        assert run.get("skipped") is True, run.get("error")
+        assert "Kuzu" in (run.get("error") or "")
+
+    def test_readme_states_unmeasured_honestly(self):
+        text = (BENCH / "implementations" / "selfgraph_ref" / "README.md").read_text(
+            encoding="utf-8")
+        assert "推断" in text and "实测" in text, "必须标明哪些是推断、哪些是实测"

@@ -145,6 +145,19 @@ def run_impl(name: str, impl_path: Path, manifest: dict) -> dict:
     results = []
     metrics = {"M1": [], "M2": [], "M3": []}
     ws = None
+    # 先探测实现是否可用（缺依赖的组如 RAG 无端点、selfgraph 无 Kuzu）：
+    # 「不可用」与「跑失败」要分开 —— 前者是 SKIPPED，不是 FAIL，
+    # 也不能把异常抛给调用方（调用方应拿到一致的结果结构）。
+    try:
+        Impl = load_impl(impl_path)
+        Impl()
+    except Exception as exc:  # noqa: BLE001
+        skipped = type(exc).__name__.endswith(("Unavailable", "NotAvailable"))
+        return {"implementation": name, "passed": 0, "total": 0, "results": [],
+                "metrics": {"M1": [], "M2": [], "M3": []},
+                "skipped": skipped,
+                "error": f"{type(exc).__name__}: {exc}"}
+
     try:
         Impl = load_impl(impl_path)
 
@@ -252,6 +265,7 @@ STDLIB_OK = {
     "collections", "itertools", "functools", "dataclasses", "datetime", "csv",
     "sqlite3", "argparse", "copy", "random", "decimal", "statistics", "uuid",
     "urllib", "http", "socket", "subprocess", "tempfile", "shutil", "glob",
+    "asyncio", "inspect", "contextlib", "enum", "abc", "typing_extensions",
     "textwrap", "time", "traceback", "string", "random",
 }
 
@@ -316,7 +330,7 @@ def main() -> int:
         except Exception as exc:  # noqa: BLE001
             # 「不可用」与「跑失败」要分开：需要外部依赖的组（如 RAG 需要大模型端点）
             # 缺依赖时是 SKIPPED，不是 FAIL —— 否则会把环境问题算成实现问题。
-            skipped = type(exc).__name__ in ("RAGNotAvailable", "Unavailable")
+            skipped = type(exc).__name__.endswith(("Unavailable", "NotAvailable"))
             runs.append({"implementation": name, "passed": 0, "total": 0,
                          "results": [], "metrics": {"M1": [], "M2": [], "M3": []},
                          "skipped": skipped,

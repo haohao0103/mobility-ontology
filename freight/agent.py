@@ -1846,39 +1846,72 @@ class ReasoningAgent:
             "finish": "大模型 + 业务数据",
         }.get(self.pending, "Agent")
 
+    # 链路固定阶段计划：start 那一刻总览就是完整五段，执行轨迹只改状态不改结构。
+    # 阶段划分来自 agent 的 pending 状态机设计（catalog→plan→tbox→facts→final），
+    # 不是对结果的编造；未发生的阶段显示"待执行"，不发生"只露一行"的问题。
+    _PLANNED_STAGES = [
+        ("catalog", "紧凑 TBox 目录装载", "本体引擎（TBox）",
+         "按强依赖白名单展开对象能力集（全量优先，不调用大模型）",
+         "工具白名单 + 可圈定类型"),
+        ("plan", "链路规划", "大模型",
+         "把业务问题拆成取数计划（类型/口径/事实）",
+         "行动计划"),
+        ("tbox", "本体声明查询", "本体引擎（TBox）",
+         "命中规则、状态机、口径与来源契约",
+         "命中的本体声明"),
+        ("facts", "业务事实取证", "业务系统（ABox）",
+         "取运单、费用行、证据与时间线",
+         "事实数据"),
+        ("final", "结论汇总", "大模型 + 规则",
+         "给出带证据、版本与 checksum 的诊断结论",
+         "诊断结论"),
+    ]
+
+    @classmethod
+    def _planned_stage_of(cls, step: dict) -> str:
+        """把实际步骤归并到计划阶段（tag 前缀映射）。"""
+        tag = str(step.get("tag") or "")
+        if tag in ("TBox · 对象上下文", "TBox · 紧凑目录"):
+            return "catalog"
+        if tag.startswith("TBox"):
+            return "tbox"
+        if tag in ("LLM · 本体规划", "LLM · 决策", "LLM · 复核"):
+            return "plan"
+        if tag in ("Agent · Final", "LLM · 归纳"):
+            return "final"
+        if tag.startswith("动作"):
+            return "action"
+        if tag.startswith("Agent"):
+            return "facts"
+        return "tool"
+
     def _stage_summaries(self) -> list[dict]:
-        """按实际执行轨迹归并业务阶段，不在代码里写死阶段清单。
+        """总览 = 完整链路计划（五段）+ 实际执行轨迹覆盖状态。
 
-        每一步真实动作按 tag 归到阶段：Agent 多看一次定义、多查一次事实，
-        总览就多一段；没有发生的阶段不会出现在总览里。
+        与原实现的区别：原来只从已执行步骤归纳，start 时总览只剩一行；
+        现在先铺计划阶段，已执行的标 done、即将执行的标 current、
+        未发生的标 pending——标题"整条链一眼看完"从第一步起就成立。
+        实际发生的计划外步骤（动作/复核分支）仍按原规则追加，不丢信息。
         """
-        def group_of(step: dict) -> tuple[str, str, str]:
-            tag = str(step.get("tag") or "")
-            if tag.startswith("TBox"):
-                return tag, tag.split(" · ", 1)[-1] or "本体口径", "本体引擎（TBox）"
-            if tag.startswith("LLM"):
-                return tag, tag.split(" · ", 1)[-1] or "大模型推理", "大模型"
-            if tag.startswith("动作"):
-                return "action", "动作提案与前置校验", "本体引擎（动作）"
-            if tag == "Agent · Final" or (step.get("query") or {}).get("expression") == "final()":
-                return "final", "结论汇总", "大模型 + 规则"
-            if tag.startswith("Agent"):
-                return "facts", "业务事实取证", "业务系统（ABox）"
-            return tag or "step", tag or "执行", str(step.get("source") or "Agent")
-
-        order: list[str] = []
         groups: dict[str, dict] = {}
+        order: list[str] = []
+        for sid, name, who, action, output in self._PLANNED_STAGES:
+            groups[sid] = {"id": sid, "name": name, "who": who,
+                           "action": action, "output": output,
+                           "status": "pending", "details": []}
+            order.append(sid)
+
         for step in self.steps:
-            key, name, who = group_of(step)
+            key = self._planned_stage_of(step)
             group = groups.get(key)
-            if group is None:
-                group = {
-                    "id": key, "name": name, "who": who,
-                    "action": step.get("title") or name,
-                    "output": "", "status": "done", "details": [],
-                }
+            if group is None:  # 计划外阶段（动作/分支）：按实际追加
+                tag = str(step.get("tag") or "step")
+                group = {"id": key, "name": tag, "who": str(step.get("source") or "Agent"),
+                         "action": step.get("title") or tag, "output": "",
+                         "status": "done", "details": []}
                 groups[key] = group
                 order.append(key)
+            group["status"] = "done"
             group["action"] = step.get("title") or group["action"]
             summary = self._summary_for_step(step)
             if summary.get("output"):
@@ -1898,26 +1931,11 @@ class ReasoningAgent:
                 })
 
         if not self.finished:
-            label = self._next_label()
-            if "大模型" in label:
-                who = "大模型"
-            elif "ABox" in label:
-                who = "业务系统（ABox）"
-            elif "动作提案" in label:
-                who = "人工 + 本体引擎"
-            else:
-                who = "本体引擎（TBox）"
-            pending_key = f"pending:{self.pending}"
-            groups[pending_key] = {
-                "id": pending_key,
-                "name": "下一步",
-                "who": who,
-                "action": label,
-                "output": "尚未执行",
-                "status": "waiting" if self.pending in ("action", "review") else "current",
-                "details": [],
-            }
-            order.append(pending_key)
+            # 第一个未完成的计划阶段标 current（取代原来的"下一步"占位行）
+            for sid, *_ in self._PLANNED_STAGES:
+                if groups[sid]["status"] != "done":
+                    groups[sid]["status"] = "current"
+                    break
 
         return [{
             "id": groups[key]["id"],

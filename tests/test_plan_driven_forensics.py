@@ -319,3 +319,119 @@ class TestDegradedStepShape:
         # 裁定来自确定性检查：种子运单有 38 元差异，H1 应被裁定（非全待补证）
         assert all(r["verdict"] in {"成立", "排除", "待补证"} for r in rows)
         assert any(r["verdict"] in {"成立", "排除"} for r in rows)
+
+
+# ── 总览阶段表：执行轨迹台账（不是售前示意图）────────────────────────────
+
+def _replay(agent: ReasoningAgent, steps_spec: list[tuple]) -> None:
+    """按真实链的 tag 序列离线重放执行轨迹（不触网）。
+
+    步骤结构与真实一致：没有 who 字段——who 由 _summary_for_step
+    从 llm / proposal / query.api 等字段派生。
+    """
+    for i, (tag, title, rows, extra) in enumerate(steps_spec):
+        step = {"tag": tag, "title": title, "rows": rows,
+                "index": i + 1, "tool": None}
+        step.update(extra or {})
+        agent.steps.append(step)
+
+
+_FULL_RUN = [
+    # (tag, title, rows, 触发 who 派生的真实字段)
+    ("TBox · 紧凑目录", "目录装载", 0, {"query": {"scope": "catalog"}}),
+    ("LLM · 本体规划", "大模型规划本体范围", 0, {"llm": {"elapsed_ms": 900}}),
+    ("TBox · 问答前置", "本体定义查询", 12, None),
+    ("LLM · 决策", "决策：费用拆解", 0, {"llm": {"elapsed_ms": 800}}),
+    ("Agent · function.fee_breakdown", "费用拆解", 9, {
+        "tool": "function.fee_breakdown",
+        "query": {"api": "/freight/mcp/call · 计价系统",
+                  "expression": "function.fee_breakdown({})"}}),
+    ("LLM · 决策", "决策：差异对账", 0, {"llm": {"elapsed_ms": 700}}),
+    ("Agent · function.quote_reconcile", "差异对账", 4, {
+        "tool": "function.quote_reconcile",
+        "query": {"api": "/freight/mcp/call · 结算系统",
+                  "expression": "function.quote_reconcile({})"}}),
+    ("LLM · 复核", "大模型复核结论", 0, {"llm": {"elapsed_ms": 1200}}),
+    ("动作 · 权限 / 前置校验", "动作提案", 0, {"proposal": {}}),
+    ("Agent · Final", "综合判断与结论", 0, None),
+]
+
+
+class TestStageSummaries:
+    def _stages_by_id(self, agent):
+        return {st["id"]: st for st in agent._stage_summaries()}
+
+    def test_stage_text_stable_and_llm_decisions_in_facts(self, system):
+        """阶段文案固定不被步骤覆盖；LLM 决策归「业务事实取证」，
+        不再把复核/决策堆进「链路规划」——原来跑完后 02 会显示
+        "大模型复核结论"，自相矛盾。"""
+        agent = _agent(system)
+        agent.planned = {
+            "types": ["Waybill"],
+            "fee_types": ["fuel", "toll", "base", "wait", "park"],
+            "focus_fee_types": ["base", "wait"],
+            "hypotheses": agent._normalize_hypotheses(None),
+            "tasks": [],
+        }
+        _replay(agent, _FULL_RUN)
+        agent.finished = True
+        agent.pending = "done"
+        stages = self._stages_by_id(agent)
+        assert "取数计划" in stages["plan"]["action"]
+        assert "复核" not in stages["plan"]["action"]
+        facts = stages["facts"]
+        assert facts["counts"]["llm"] == 2   # 两次决策都在取证循环
+        assert facts["counts"]["tool"] == 2
+        assert "大模型决策" in facts["who"]
+        assert "裁剪率" in stages["plan"]["output"]
+        assert "假设裁定" in stages["final"]["output"]
+
+    def test_action_exit_stage_proposed(self, system):
+        """动作出口阶段：有提案步骤时状态为「等人工确认」——
+        动作从不自动执行，这是链末段业务语义（谁去补证/谁去退费）。"""
+        agent = _agent(system)
+        _replay(agent, _FULL_RUN)
+        agent.finished = True
+        agent.pending = "done"
+        stages = self._stages_by_id(agent)
+        assert stages["action"]["status"] == "proposed"
+        assert "等人工确认" in stages["action"]["output"]
+        assert "角色提案" in stages["action"]["output"]
+
+    def test_degraded_maps_to_final_and_skips_unreached(self, system):
+        """降级步骤映射到「结论汇总」并显式标注；链结束后没到的
+        阶段标「未到达」；不再冒出第 7 行计划外阶段。"""
+        agent = _agent(system)
+        agent.steps.append({"tag": "TBox · 紧凑目录", "title": "目录装载",
+                            "query": {"scope": "catalog"}, "index": 1})
+        agent.steps.append(agent._degraded_step(LLMError("模拟网关瞬断")))
+        agent.finished = True
+        agent.pending = None
+        stages = agent._stage_summaries()
+        by_id = {st["id"]: st for st in stages}
+        assert len(stages) == 6                      # 六段骨架，无计划外追加
+        assert by_id["final"]["status"] == "degraded"
+        assert "降级收口" in by_id["final"]["output"]
+        assert by_id["plan"]["status"] == "skipped"
+        assert by_id["facts"]["status"] == "skipped"
+        assert by_id["catalog"]["status"] == "done"
+
+    def test_current_follows_pending(self, system):
+        """进行中阶段按真实 pending 映射：decide → 业务事实取证。"""
+        agent = _agent(system)
+        agent.pending = "decide"
+        stages = self._stages_by_id(agent)
+        assert stages["facts"]["status"] == "current"
+        assert stages["plan"]["status"] == "pending"
+
+    def test_participants_from_real_steps(self, system):
+        """参与方按真实步骤聚合（带系统后缀的归并主干），
+        不再按写死阶段文案去重——真实会出现 Agent → 人工。"""
+        agent = _agent(system)
+        _replay(agent, _FULL_RUN)
+        agent.finished = True
+        agent.pending = "done"
+        participants = agent.result()["summary"]["participants"]
+        assert "Agent → 人工" in participants
+        assert "业务系统（ABox）" in participants       # · 计价/· 结算 归并
+        assert "本体引擎（TBox）" in participants

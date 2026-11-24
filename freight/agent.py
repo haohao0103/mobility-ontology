@@ -2277,104 +2277,197 @@ class ReasoningAgent:
             "finish": "大模型 + 业务数据",
         }.get(self.pending, "Agent")
 
-    # 链路固定阶段计划：start 那一刻总览就是完整五段，执行轨迹只改状态不改结构。
-    # 阶段划分来自 agent 的 pending 状态机设计（catalog→plan→tbox→facts→final），
-    # 不是对结果的编造；未发生的阶段显示"待执行"，不发生"只露一行"的问题。
+    # 链路固定阶段骨架：start 那一刻总览就是完整六段，执行只更新状态、
+    # 计数与明细——阶段文案固定不动，总览是执行台账的目录页，不是售前示意图。
+    # 顺序按业务叙事（结论之后落到"谁去做什么"）；各阶段真实步骤序号见 details。
     _PLANNED_STAGES = [
         ("catalog", "紧凑 TBox 目录装载", "本体引擎（TBox）",
          "按强依赖白名单展开对象能力集（全量优先，不调用大模型）",
          "工具白名单 + 可圈定类型"),
         ("plan", "链路规划", "大模型",
-         "把业务问题拆成取数计划（类型/口径/事实）",
-         "行动计划"),
+         "把业务问题拆成取数计划：类型/口径/事实 + 取证重点裁剪与假设清单",
+         "行动计划（任务清单 + 待验证假设）"),
         ("tbox", "本体声明查询", "本体引擎（TBox）",
-         "命中规则、状态机、口径与来源契约",
+         "命中规则、状态机、口径与来源契约（取证中可按需回查）",
          "命中的本体声明"),
-        ("facts", "业务事实取证", "业务系统（ABox）",
-         "取运单、费用行、证据与时间线",
-         "事实数据"),
+        ("facts", "业务事实取证", "大模型决策 + 业务系统（ABox）",
+         "多轮「大模型决策 → 工具调用」循环取证，直到信息足够或预算用尽",
+         "事实数据（每次调用带行数与证据）"),
         ("final", "结论汇总", "大模型 + 规则",
-         "给出带证据、版本与 checksum 的诊断结论",
-         "诊断结论"),
+         "复核并归纳结论：假设逐条裁定，附证据、版本与 checksum",
+         "诊断结论 + 收口三件套"),
+        ("action", "动作出口", "按角色 · Agent",
+         "提案谁补证、谁退费、找哪个系统；动作等人工确认后才执行",
+         "动作提案（含未决项清单）"),
     ]
 
     @classmethod
     def _planned_stage_of(cls, step: dict) -> str:
-        """把实际步骤归并到计划阶段（tag 前缀映射）。"""
+        """把实际步骤归并到计划阶段（tag 前缀映射）。
+
+        归并原则与阶段叙事一致：取证循环里的大模型决策属于「业务事实取证」
+        （它决定取什么数）；复核/预算穷尽归纳/最终结论/降级属于「结论汇总」；
+        动作提案属于「动作出口」——不再把所有 LLM 步骤堆进「链路规划」。
+        """
         tag = str(step.get("tag") or "")
-        if tag in ("TBox · 对象上下文", "TBox · 紧凑目录"):
+        if tag == "TBox · 紧凑目录":
             return "catalog"
+        if tag == "LLM · 本体规划":
+            return "plan"
         if tag.startswith("TBox"):
             return "tbox"
-        if tag in ("LLM · 本体规划", "LLM · 决策", "LLM · 复核"):
-            return "plan"
-        if tag in ("Agent · Final", "LLM · 归纳"):
+        if tag == "Agent · Final":
+            return "final"
+        if tag == "LLM · 决策" or tag.startswith("Agent"):
+            return "facts"
+        if tag in ("LLM · 复核", "LLM · 归纳", "LLM · 失败降级"):
             return "final"
         if tag.startswith("动作"):
             return "action"
-        if tag.startswith("Agent"):
-            return "facts"
         return "tool"
 
-    def _stage_summaries(self) -> list[dict]:
-        """总览 = 完整链路计划（五段）+ 实际执行轨迹覆盖状态。
+    def _stage_output(self, sid: str, group: dict) -> str:
+        """各阶段产出摘要：确定性生成，不用模型措辞。
 
-        与原实现的区别：原来只从已执行步骤归纳，start 时总览只剩一行；
-        现在先铺计划阶段，已执行的标 done、即将执行的标 current、
-        未发生的标 pending——标题"整条链一眼看完"从第一步起就成立。
-        实际发生的计划外步骤（动作/复核分支）仍按原规则追加，不丢信息。
+        阶段还没有步骤时统一显示骨架产出——start 视图不该出现
+        "0 次调用"或提前暴露动作提案计数（那会像已经诊断完）。
+        """
+        counts = group["counts"]
+        if sid == "plan" and counts["steps"]:
+            focus = self.planned.get("focus_fee_types") or []
+            fees = self.planned.get("fee_types") or []
+            hyp = self.planned.get("hypotheses") or []
+            tasks = self.planned.get("tasks") or []
+            rate = round((1 - len(focus) / len(fees)) * 100) if fees else 0
+            return (f"取证重点 {len(focus)}/{len(fees)} 种（裁剪率 {rate}%）"
+                    f"· 假设 {len(hyp)} 条 · 任务 {len(tasks)} 条")
+        if sid == "plan" and self.finished:
+            return "规划未完成（降级）"
+        if sid == "tbox" and counts["steps"]:
+            return f"{counts['steps']} 次本体查询 · {counts['rows']} 行声明"
+        if sid == "facts" and counts["steps"]:
+            parts = [f"{counts['tool']} 次工具调用 · {counts['llm']} 次大模型决策"]
+            if counts["rows"]:
+                parts.append(f"取回 {counts['rows']} 行")
+            return " · ".join(parts)
+        if sid == "final" and counts["steps"]:
+            verdicts = self._hypothesis_verdicts()
+            tally: dict[str, int] = {}
+            for row in verdicts:
+                tally[row["verdict"]] = tally.get(row["verdict"], 0) + 1
+            text = "假设裁定：" + " · ".join(
+                f"{k} {v}" for k, v in sorted(tally.items())) if tally else "观察归纳"
+            if group.get("degraded"):
+                text = "降级收口 · " + text
+            return text
+        if sid == "action" and counts["steps"]:
+            roles = self._role_exports()
+            items = self._open_items()
+            return (f"{len(roles)} 条角色提案 · 未决项 {len(items)} 条"
+                    " · 等人工确认")
+        # 其余（catalog / 未开始阶段）：骨架产出
+        for psid, _, _, _, output in self._PLANNED_STAGES:
+            if psid == sid:
+                return output
+        return "—"
+
+    def _stage_summaries(self) -> list[dict]:
+        """总览 = 六段固定骨架 + 执行轨迹聚合（可审计台账）。
+
+        设计约束（与"一眼看完"的承诺一致）：
+        - 阶段文案固定来自骨架，执行只更新状态/计数/明细——不会跑到链尾
+          把「链路规划」改写成别的内容；
+        - 状态语义真实：出现过步骤即完成；链结束后没到的阶段标「未到达」，
+          降级/预算穷尽落在「结论汇总」并显式标注；动作出口恒为
+          「等人工确认」（动作从不自动执行）；
+        - 每阶段聚合真实步骤数/工具调用数/大模型调用数，明细逐步可回看。
         """
         groups: dict[str, dict] = {}
         order: list[str] = []
         for sid, name, who, action, output in self._PLANNED_STAGES:
             groups[sid] = {"id": sid, "name": name, "who": who,
                            "action": action, "output": output,
-                           "status": "pending", "details": []}
+                           "status": "pending", "details": [],
+                           "counts": {"steps": 0, "llm": 0, "tool": 0, "rows": 0},
+                           "degraded": False}
             order.append(sid)
 
         for step in self.steps:
             key = self._planned_stage_of(step)
             group = groups.get(key)
-            if group is None:  # 计划外阶段（动作/分支）：按实际追加
+            if group is None:  # 计划外（兜底）：按实际追加，不丢信息
                 tag = str(step.get("tag") or "step")
-                group = {"id": key, "name": tag, "who": str(step.get("source") or "Agent"),
+                group = {"id": key, "name": tag,
+                         "who": str(step.get("source") or "Agent"),
                          "action": step.get("title") or tag, "output": "",
-                         "status": "done", "details": []}
+                         "status": "done", "details": [],
+                         "counts": {"steps": 0, "llm": 0, "tool": 0, "rows": 0},
+                         "degraded": False}
                 groups[key] = group
                 order.append(key)
-            group["status"] = "done"
-            group["action"] = step.get("title") or group["action"]
-            summary = self._summary_for_step(step)
-            if summary.get("output"):
-                group["output"] = summary["output"]
-            if key == "facts":
+            tag = str(step.get("tag") or "")
+            counts = group["counts"]
+            counts["steps"] += 1
+            if tag.startswith("LLM"):
+                counts["llm"] += 1
+            if tag.startswith("Agent") and step.get("tool"):
+                counts["tool"] += 1
+            counts["rows"] += int(step.get("rows") or 0)
+            if tag in ("LLM · 失败降级", "LLM · 归纳"):
+                group["degraded"] = True
+            detail = {
+                "no": len(group["details"]) + 1,
+                "index": step.get("index"),
+                "title": step.get("title") or tag,
+                "tag": tag,
+                "ok": step.get("ok") is not False,
+            }
+            if key == "facts" and step.get("tool"):
+                # 工具明细保留可审计字段：系统/工具/参数/行数
                 layer = step.get("layers") or {}
                 api = str((step.get("query") or {}).get("api") or "")
                 system = api.split("·", 1)[1].strip() if "·" in api else ""
-                group["details"].append({
-                    "no": len(group["details"]) + 1,
+                detail.update({
                     "system": system,
                     "tool": step.get("tool") or "—",
                     "question": layer.get("question") or step.get("title") or "",
                     "arguments": step.get("arguments") or {},
                     "rows": int(step.get("rows") or 0),
-                    "output": self._clip(summary.get("output") or "", 70),
                 })
+            group["details"].append(detail)
 
-        if not self.finished:
-            # 第一个未完成的计划阶段标 current（取代原来的"下一步"占位行）
-            for sid, *_ in self._PLANNED_STAGES:
-                if groups[sid]["status"] != "done":
-                    groups[sid]["status"] = "current"
-                    break
+        # 规划 LLM 失败时 planned 可能没建出来：final 摘要复用收口兜底
+        if not self.planned.get("hypotheses"):
+            self.planned["hypotheses"] = self._normalize_hypotheses(None)
+
+        pending_stage = {
+            "catalog": "catalog", "plan": "plan",
+            "tbox": "tbox", "tbox_query": "tbox", "tbox_search": "tbox",
+            "object_type_search": "tbox", "tbox_path": "tbox",
+            "decide": "facts", "tool": "facts",
+            "review": "final", "finish": "final", "action": "action",
+        }.get(self.pending or "")
+        for sid in order:
+            group = groups[sid]
+            if sid == "action" and group["counts"]["steps"]:
+                group["status"] = "proposed"  # 动作从不自动执行
+            elif group["counts"]["steps"]:
+                group["status"] = "degraded" if group["degraded"] else "done"
+            elif self.finished:
+                group["status"] = "skipped"   # 链已结束却没到：显式暴露
+            elif sid == pending_stage:
+                group["status"] = "current"
 
         return [{
             "id": groups[key]["id"],
             "name": groups[key]["name"],
             "who": groups[key]["who"],
             "action": groups[key]["action"],
-            "output": self._clip(groups[key]["output"] or "—", 90),
+            "output": self._clip(self._stage_output(key, groups[key])
+                                 or "—", 90),
             "status": groups[key]["status"],
+            "counts": groups[key]["counts"],
+            "degraded": groups[key]["degraded"],
             "details": groups[key]["details"],
         } for key in order]
 
@@ -2388,10 +2481,20 @@ class ReasoningAgent:
             item["summary"] = self._summary_for_step(step)
             steps.append(item)
         stages = self._stage_summaries()
+        # 参与方按真实步骤聚合：who 是 _summary_for_step 的派生字段
+        # （步骤本体没有 who），工具步骤带系统后缀的按主干归并——
+        # "N 参与方"不再是写死文案去重的结果。
         participants: list[str] = []
-        for stage in stages:
-            if stage["who"] not in participants:
-                participants.append(stage["who"])
+        for item in steps:
+            who = str((item.get("summary") or {}).get("who") or "").strip()
+            if "·" in who:
+                who = who.split("·", 1)[0].strip()
+            if who and who not in participants:
+                participants.append(who)
+        if not participants:
+            for stage in stages:
+                if stage["who"] not in participants:
+                    participants.append(stage["who"])
         return {
             "title": "运单费用诊断 · Agent 推理链",
             "question": self.question,

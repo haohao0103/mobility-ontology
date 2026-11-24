@@ -536,6 +536,14 @@
   .sum-stage em.current{color:#1f3f9c;background:#e8f0ff;border-color:#c9dbff}
   .sum-stage em.waiting{color:#8a5a12;background:#fff7e8;border-color:#f1dcb8}
   .sum-stage em.pending{color:#7a87a3;background:#f7f9fc;border-color:#e2e8f4}
+  .sum-stage em.degraded{color:#9c3a1a;background:#fdf0ec;border-color:#f3d4c9}
+  .sum-stage em.skipped{color:#98a2b8;background:#fbfcfe;border-color:#e6eaf2;border-style:dashed}
+  .sum-stage em.proposed{color:#6b3fa0;background:#f5efff;border-color:#e0d0f5}
+  .sum-counts{
+    display:inline-block;margin-top:1px;font-style:normal;font-family:var(--mono);
+    font-size:9px;border-radius:3px;padding:0 4px;margin-left:4px;
+    color:#4c5d84;background:#f0f4fb;border:1px solid #dbe4f3;
+  }
   .sum-who{color:#2f3b52}
   .sum-action{color:#2f3b52}
   .sum-output{
@@ -2725,23 +2733,41 @@ function renderChainSummary(data) {
   const executed = steps.length;
   const stages = summary.stages || [];
   const participants = chainSummaryParticipants(data);
-  const statusLabel = { done: '已完成', current: '进行中', waiting: '待确认', pending: '待执行' };
+  const statusLabel = { done: '已完成', current: '进行中', waiting: '待确认', pending: '待执行',
+    degraded: '已降级', skipped: '未到达', proposed: '等人工确认' };
   const rows = stages.length
     ? stages.map((stage, index) => {
         const status = statusLabel[stage.status] ? stage.status : 'pending';
-        const current = status === 'current' || status === 'waiting';
-        const details = (stage.details || []).map(detail => `
+        const current = status === 'current' || status === 'proposed';
+        const counts = stage.counts || {};
+        const countBits = [];
+        if (counts.steps) countBits.push(`${counts.steps} 步`);
+        if (counts.tool) countBits.push(`工具 ${counts.tool}`);
+        if (counts.llm) countBits.push(`大模型 ${counts.llm}`);
+        const countBadge = countBits.length
+          ? `<span class="sum-counts">${esc(countBits.join(' · '))}</span>` : '';
+        const details = (stage.details || []).map(detail => {
+          if (detail.tool) {
+            return `
           <div class="chain-summary-sub-item">
             <b>${esc(String(detail.no || '').padStart(2, '0'))}</b>
             <span><code>${esc(detail.tool || '')}</code>(${esc(JSON.stringify(detail.arguments || {}))})
               → ${esc(String(detail.rows || 0))} 行${detail.system ? ` · ${esc(detail.system)}` : ''} · <em>${esc(detail.question || '')}</em></span>
-          </div>`).join('');
+          </div>`;
+          }
+          const mark = detail.ok === false ? '✗' : '✓';
+          return `
+          <div class="chain-summary-sub-item">
+            <b>${esc(String(detail.no || '').padStart(2, '0'))}</b>
+            <span>${esc(mark)} #${esc(String(detail.index || ''))} ${esc(detail.title || '')} · <em>${esc(detail.tag || '')}</em></span>
+          </div>`;
+        }).join('');
         return `
           <div class="chain-summary-row${current ? ' current' : ''}">
             <span class="sum-no">${esc(String(index + 1).padStart(2, '0'))}</span>
             <span class="sum-stage">
               <b>${esc(stage.name || '')}</b>
-              <em class="${status}">${esc(statusLabel[status])}</em>
+              <em class="${status}">${esc(statusLabel[status])}</em>${countBadge}
             </span>
             <span class="sum-who">${esc(stage.who || '')}</span>
             <span class="sum-action">${esc(stage.action || '')}</span>
@@ -2762,8 +2788,9 @@ function renderChainSummary(data) {
             <span class="sum-output" title="${esc(item.output)}">${esc(item.output)}</span>
           </div>`;
       }).join('');
+  const degraded = data.agent && data.agent.degraded;
   const nextText = finished
-    ? `链路已结束：共 ${summary.total_stages || stages.length || executed} 个业务阶段、${executed} 个执行动作；下面可以逐步回看`
+    ? `链路已结束：共 ${summary.total_stages || stages.length || executed} 个业务阶段、${executed} 个执行动作${degraded ? '（含降级收口）' : ''}；动作出口等人工确认，下面可以逐步回看`
     : `下一步涉及：${summary.next_actor || 'Agent'} · ${data.next_label || '等待执行'}`;
   return `
     <div class="chain-summary-head">
@@ -2774,7 +2801,7 @@ function renderChainSummary(data) {
       <div class="chain-summary-stats">
         <span><b>${summary.total_stages || stages.length || '—'}</b>业务阶段</span>
         <span><b>${executed}</b>已执行动作</span>
-        <span><b>${participants.length}</b>参与方</span>
+        <span title="${esc(participants.join('、'))}"><b>${participants.length}</b>参与方</span>
       </div>
     </div>
     <div class="chain-summary-table">

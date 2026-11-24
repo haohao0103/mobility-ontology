@@ -86,6 +86,31 @@ def main() -> int:
         check("结论展示角色出口", "角色出口" in body)
         check("结论展示未决项", "未决项" in body)
 
+        # ③ 总览阶段表：执行轨迹台账（不是售前示意图）
+        summary_txt = page.inner_text("#chainSummary")
+        check("总览含六段骨架（动作出口入列）", "动作出口" in summary_txt)
+        check("总览动作出口等人工确认", "等人工确认" in summary_txt)
+        check("总览阶段表显示假设裁定", "假设裁定" in summary_txt)
+        check("总览取证阶段显示循环计数", "次工具调用" in summary_txt
+              and "次大模型决策" in summary_txt)
+        check("总览规划阶段显示裁剪率", "裁剪率" in summary_txt)
+        plan_txt = ""
+        rows = page.locator(
+            "#chainSummary .chain-summary-table .chain-summary-row")
+        for i in range(rows.count()):
+            txt = rows.nth(i).inner_text()
+            if "链路规划" in txt:
+                plan_txt = rows.nth(i).locator(".sum-action").inner_text()
+                break
+        check("总览阶段文案固定（规划行仍是取数计划）",
+              "取数计划" in plan_txt and "复核" not in plan_txt,
+              plan_txt[:40])
+        part_title = page.locator(
+            "#chainSummary .chain-summary-stats span").nth(2).get_attribute(
+            "title") or ""
+        check("总览参与方按真实步骤聚合", "Agent → 人工" in part_title,
+              part_title[:60])
+
         check("全程无 JS 错误", not errors, " || ".join(errors[:2]))
         browser.close()
 

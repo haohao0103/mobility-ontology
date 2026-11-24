@@ -949,55 +949,65 @@ class ReasoningAgent:
         return groups
 
     def _fit_groups_to_budget(self, group_ids: list[str],
-                              budget: int) -> tuple[list[str], bool]:
-        """按锚点相关性累加业务域目录，实际测字符数，超预算即截断。
+                              budget: int) -> tuple[list[str], bool, list[str]]:
+        """按顺序累加业务域，实际测字符数；放不下的跳过，不连坐后面的域。
 
-        域集合与顺序都来自本次问句召回的锚点，字符数由语义层构造的
-        目录实测，不预设任何业务域、也不靠估算。
+        只截断「装不进预算」的域，而不是一遇超预算就 break——否则排在
+        后面的小域会被无辜砍掉，最容易把核心域挤出去。
         """
         selected: list[str] = []
         trimmed = False
+        skipped: list[str] = []
         for gid in group_ids:
             trial = selected + [gid]
             payload = self.sem.catalog(group_ids=trial)
-            if not selected or int(payload.get("characters") or 0) <= budget:
+            if int(payload.get("characters") or 0) <= budget:
                 selected = trial
             else:
                 trimmed = True
-                break
-        return selected, trimmed
+                skipped.append(gid)
+                if not selected:
+                    # 至少保留一个真实存在的域，避免 catalog 退化成空目录。
+                    selected = trial
+        return selected, trimmed, skipped
 
     def _step_catalog(self) -> None:
-        """Palantir 路径：先注入全量紧凑目录；装不下再按**问句召回**的域缩域。"""
+        """全量目录优先；装不下时 = 必选对象域 + 按问句召回的域。"""
         full = self.sem.catalog()
         payload = full
         mode = full.get("mode") or "full"
         anchors: list[str] = []
         group_ids: list[str] = []
         candidate_groups: list[str] = []
+        seed_groups: list[str] = []
+        question_groups: list[str] = []
+        skipped_groups: list[str] = []
         search_result: dict = {}
         trimmed = False
         fallback_used = False
         budget = int(full.get("budget") or self.sem.catalog_budget())
         all_groups = [g["id"] for g in full.get("groups") or []]
         if not full.get("fits"):
-            # 候选集是全部业务域：不再用「当前对象所在域」把检索范围钉死。
-            # 锚点及其顺序完全由 object_type_search 对本次问句的打分决定。
+            # 当前对象所在域必选：该对象的类型、关系端点全在里面，
+            # 缺了它目录会变成「一堆同名扩展类 + 0 条关系」，规划无法进行。
+            # 它是业务约束，不冒充检索结果；轨迹里单独列为 seed_groups。
+            seed_groups = self.sem.group_ids_for_types([self.object_type])
+            # 其余域完全由问句在全部业务域里召回的锚点相关性决定。
             search_result = self.sem.object_type_search(
                 self.question, top_k=SEARCH_TOP_K,
             )
             anchors = [hit["id"] for hit in search_result.get("types") or []]
-            candidate_groups = self._groups_for_anchors(anchors)
-            group_ids, trimmed = self._fit_groups_to_budget(
+            question_groups = [
+                g for g in self._groups_for_anchors(anchors)
+                if g not in seed_groups
+            ]
+            candidate_groups = list(dict.fromkeys(seed_groups + question_groups))
+            fallback_used = not question_groups
+            group_ids, trimmed, skipped_groups = self._fit_groups_to_budget(
                 candidate_groups, budget,
             )
             if not group_ids:
-                # 零命中：诚实标注回退，不把当前对象域伪装成「召回结果」。
-                fallback_used = True
-                group_ids = self.sem.group_ids_for_types([self.object_type])
-            if not group_ids:
-                # 当前对象也不属于任何已声明域时，至少给一个真实存在的域，
-                # 避免 catalog(group_ids=[]) 静默退化成空目录。
+                # 当前对象不属于任何已声明域时，至少给一个真实存在的域。
                 group_ids = all_groups[:1]
             payload = self.sem.catalog(group_ids=group_ids)
             mode = "group"
@@ -1038,28 +1048,34 @@ class ReasoningAgent:
                 + json.dumps(group_ids, ensure_ascii=False)
                 + ")"
             )
-            title = "按问句召回锚点并缩域（不调用大模型）"
+            title = "必选对象域 + 按问句召回域（不调用大模型）"
             fallback_note = (
-                "；问句零命中，已标注回退到当前对象所在域（不是召回结果）"
+                "；问句零命中，目录只含必选对象域（显式标注，不冒充召回结果）"
                 if fallback_used else ""
             )
             trim_note = (
-                f"；按预算从 {len(candidate_groups)} 个候选域截到 {len(group_ids)} 个"
-                if trimmed else ""
+                f"；预算内放不下而跳过 {len(skipped_groups)} 个域："
+                f"{'、'.join(skipped_groups)}" if trimmed else ""
             )
             conclusion = (
                 f"全量目录 {full.get('characters', 0)} 字符超出 {budget} 预算；"
+                f"必选对象域 {'、'.join(seed_groups) or '—'}"
+                "（当前对象的类型与关系端点所在，业务约束）；"
                 f"在 {len(all_groups)} 个业务域里按问句召回 {len(anchors)} 个锚点，"
-                f"命中 {len(candidate_groups)} 个候选域，保留 {len(group_ids)} 个："
-                f"{'、'.join(group_ids) or '—'}；注入 {len(types)} 个类型、"
-                f"{relation_count} 条关系{fallback_note}{trim_note}。"
+                f"追加 {len(question_groups)} 个问句域"
+                f"{'、'.join(question_groups) or '—'}；"
+                f"保留 {len(group_ids)} 个域：{'、'.join(group_ids) or '—'}；"
+                f"注入 {len(types)} 个类型、{relation_count} 条关系"
+                f"{fallback_note}{trim_note}。"
             )
             query_explain = (
-                f"全量目录装不下：object_type_search 在全部 {len(all_groups)} 个业务域、"
-                f"{len(self.sem.classes)} 个类型里按问句元数据打分召回锚点，"
-                "再按锚点相关性把所属域逐个加入目录，边加边实测字符数，"
-                "超预算即截断。检索范围不预设，域集合由本次问句决定"
-                + ("；本次问句零命中，已显式标注回退" if fallback_used else "")
+                f"全量目录装不下：当前对象所在域必选（含该对象的类型与关系端点，"
+                f"缺了目录会只剩同名扩展类且 0 条关系），它不冒充检索结果，"
+                f"轨迹里单列为 seed_groups。其余域由 object_type_search 在全部 "
+                f"{len(all_groups)} 个业务域、{len(self.sem.classes)} 个类型里"
+                "按问句元数据打分召回的锚点决定；按顺序逐个加入目录并实测字符数，"
+                "放不下的域跳过，不连坐后面的域"
+                + ("；本次问句零命中，已显式标注" if fallback_used else "")
                 + "。没有预计算全局强依赖闭包。"
             )
 
@@ -1105,6 +1121,9 @@ class ReasoningAgent:
             ],
             "anchors": anchors,
             "candidate_groups": candidate_groups,
+            "seed_groups": seed_groups,
+            "question_groups": question_groups,
+            "skipped_groups": skipped_groups,
             "search_scope": "all_groups" if mode != "full" else "full",
             "trimmed_by_budget": trimmed,
             "fallback_used": fallback_used,
@@ -1116,8 +1135,8 @@ class ReasoningAgent:
         step["layers"]["tbox"]["query"] = expression
         step["layers"]["tbox"]["query_explain"] = query_explain
         step["layers"]["tbox"]["note"] = (
-            "先判断全量紧凑目录是否在上下文预算内；装不下时按问句在全部"
-            "业务域里召回锚点，再按实测字符数逐个加入所属域直到预算上限。"
+            "装不下时：当前对象所在域必选（单独列为 seed_groups），其余域由"
+            "问句在全量业务域里召回的锚点决定；逐个实测字符数，放不下的跳过。"
         )
         step["operations"] = [
             f"读取全量紧凑目录：{full.get('characters', 0)} 字符 / "
@@ -1125,12 +1144,12 @@ class ReasoningAgent:
             (
                 "装得下：直接注入全量目录，不缩域、不做闭包"
                 if mode == "full" else
-                f"装不下：在 {len(all_groups)} 个业务域里按问句召回 "
-                f"{len(anchors)} 个锚点 → {len(candidate_groups)} 个候选域 → "
+                f"装不下：必选对象域 {'、'.join(seed_groups) or '—'} + "
+                f"在 {len(all_groups)} 个域里按问句召回 {len(anchors)} 个锚点 → "
+                f"追加 {len(question_groups)} 个问句域 → "
                 f"预算内保留 {len(group_ids)} 个（{'、'.join(group_ids) or '—'}）"
-                + ("；零命中已标注回退" if fallback_used else "")
-                + (f"；预算截断 {len(candidate_groups) - len(group_ids)} 个域"
-                   if trimmed else "")
+                + ("；零命中已标注" if fallback_used else "")
+                + (f"；因超预算跳过 {'、'.join(skipped_groups)}" if trimmed else "")
             ),
             f"注入 {len(types)} 个类型、{relation_count} 条关系、"
             f"{len(fee_types)} 个费用类型",
@@ -1138,12 +1157,17 @@ class ReasoningAgent:
             f"按 target={self.object_type} 生成对象级能力集，共 {len(self.catalog)} 个",
         ]
         step["facts"] = [
-            {"label": "目录模式", "value": "全量" if mode == "full" else "按问句缩域"},
+            {"label": "目录模式",
+             "value": "全量" if mode == "full" else "必选对象域 + 问句召回域"},
             {"label": "字符预算", "value": f"{characters}/{budget}"},
             {"label": "检索范围",
              "value": f"全部 {len(all_groups)} 域" if mode != "full" else "全量目录"},
             {"label": "问题来源",
              "value": "默认问句（用户未提供）" if self.question_is_default else "用户输入"},
+            {"label": "必选对象域",
+             "value": "、".join(seed_groups) or "—"},
+            {"label": "问句追加域",
+             "value": "、".join(question_groups) or "—（零命中）"},
             {"label": "类型", "value": str(len(types))},
             {"label": "关系", "value": str(relation_count)},
             {"label": "业务域", "value": str(len(group_ids) or group_count)},

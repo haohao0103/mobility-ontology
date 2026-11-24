@@ -55,12 +55,30 @@ class TestQuestionDrivesScope:
             _, resolved = _catalog(system, question)
             assert resolved["search_scope"] == "all_groups"
             assert not resolved["fallback_used"]
-            assert len(resolved["candidate_groups"]) >= 2
-        # 至少有一个问句完全不选当前对象所在的 order_transport 域
-        assert any(
-            "order_transport" not in _catalog(system, q)[1]["groups"]
-            for q in QUESTIONS
+            # 必选对象域要显式列出来，不许混进「问句召回」里冒充检索结果
+            assert resolved["seed_groups"]
+            assert not (set(resolved["seed_groups"])
+                        & set(resolved["question_groups"]))
+            assert len(resolved["question_groups"]) >= 1
+        # 问句追加域必须随输入变化，不能恒定
+        assert len({
+            tuple(_catalog(system, q)[1]["question_groups"]) for q in QUESTIONS
+        }) >= 3
+
+    def test_core_object_group_never_trimmed_out(self, system):
+        """回归：预算裁剪曾把 order_transport 砍掉，目录变成 0 条关系，
+        规划器随即输出无法解析 → 经典演示问题降级。"""
+        agent, resolved = _catalog(
+            system, "为什么这笔运单比预估贵38",
         )
+        assert "order_transport" in resolved["groups"]
+        assert resolved["relations"] > 0, "目录必须带关系端点"
+        assert "order_transport" in resolved["seed_groups"]
+        payload_types = {
+            s for s in (agent.steps[-1]["query"]["output"] or {}).get("types") or []
+        }
+        assert {"Waybill", "FeeItem", "Stop"} <= payload_types
+        assert "all_groups" not in agent.steps[-1]["query"]["expression"]
 
     def test_search_expression_and_metadata_are_real(self, system):
         agent, resolved = _catalog(system, QUESTIONS[0])

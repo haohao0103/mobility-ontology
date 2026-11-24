@@ -30,6 +30,17 @@
 - **环境问题**：8765 端口上改动前的旧服务进程绑定 `127.0.0.1`，遮蔽新代码服务，所有请求打到 v3 旧代码（health 报 3.0.0）。已按用户指示全部杀掉，只保留 v4 服务。
 - 回归测试 `tests/test_plan_parse_robustness.py` 11 项。
 
+### 测试隔离治本（「database is locked」间歇失败终局）
+- 根因链：`api.create_app(db_path=tmp)` 只隔离 MobilitySystem；挂载的 `/freight/*` 与
+  `/enh/*` 路由走 `freight.api` 模块级单例，默认绑**共享库** `runs/freight_facts.db`
+  （fresh=False + with_scenario=True，还会写库）。测试进程与本地运行的服务并发写同一
+  sqlite 文件 → `database is locked`，且是竞态（有时过有时挂），此前多轮被误标为
+  「环境性 flaky / 未定位」——实际唯一来源就是它。
+- 修复：`create_app` 新增 `freight_db_path` 参数（传了就为 freight/enh 构造独立系统并
+  注入单例，测试夹具在 teardown 恢复原单例防跨模块污染；服务模式不传，行为零变化）。
+  `test_new_api_smoke` / `test_osdk_observability` 已接入。
+- 验证：**服务运行中**跑全量不再锁死；此前必须停服务才能全绿。
+
 ### 验证
 - `pytest` 全量 exit=0；`semantic_gate.py` 35 项全绿（schema 已接纳 v4 字段）。
 - 本地服务（STG `stg-121` 仍 DNS 不可达，非 STG 验收）：默认问句 13 步工具调用收口、知识型问句按声明收口、零命中问句显式标注不降级。

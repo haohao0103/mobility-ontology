@@ -63,9 +63,25 @@ class RelationCheckIn(BaseModel):
     object_type: str
 
 
-def create_app(db_path: str = DEFAULT_DB, fresh: bool = False) -> FastAPI:
+def create_app(db_path: str = DEFAULT_DB, fresh: bool = False,
+               freight_db_path: str | None = None) -> FastAPI:
     sys = MobilitySystem(db_path, fresh=fresh)
     sys.bootstrap()
+    if freight_db_path:
+        # 测试隔离（治本）：/freight/* 与 /enh/* 路由走 freight.api 的模块
+        # 级单例，默认绑共享库 runs/freight_facts.db。测试传 tmp 库时若不
+        # 注入，测试进程会与本地运行的服务抢同一个 sqlite 文件——
+        # 「database is locked」间歇失败的唯一来源（多次全量跑实测定位）。
+        # 注入后由调用方（测试夹具）负责在 teardown 恢复原单例，避免
+        # 跨测试模块污染；服务模式不传该参数，行为不变。
+        import freight.api as _fa
+        import enhancements.api as _ea
+        from freight.engine import FreightSystem
+        from enhancements.runtime import EnhancedSystem
+
+        _fs = FreightSystem(freight_db_path, fresh=True, seed=True)
+        _fa._SYSTEM = _fs
+        _ea._SYSTEM = EnhancedSystem(_fs)
     app = FastAPI(
         title="共享出行互联网本体 · 最小闭环 v1",
         description="订单 / 派单 / 计费 / 取消 / 客服追溯，规则集中在语义层",

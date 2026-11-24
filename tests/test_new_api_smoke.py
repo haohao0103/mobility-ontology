@@ -16,8 +16,20 @@ def client():
     from api import create_app
 
     os.environ.pop("OPENAI_CHAT_API_KEY", None)
-    app = create_app(db_path=os.path.join(tempfile.mkdtemp(), "f.db"), fresh=True)
-    return TestClient(app)
+    # /enh/* 路由绑 freight.api 模块单例（默认共享库 runs/freight_facts.db）；
+    # 不注入 freight_db_path 的话，测试会与本地运行中的服务抢同一个 sqlite
+    # 文件 → database is locked。注入 tmp 库并在 teardown 恢复原单例。
+    import enhancements.api as ea
+    import freight.api as fa
+
+    old_freight, old_enh = fa._SYSTEM, ea._SYSTEM
+    td = tempfile.mkdtemp()
+    app = create_app(
+        db_path=os.path.join(td, "f.db"), fresh=True,
+        freight_db_path=os.path.join(td, "freight.db"))
+    with TestClient(app) as c:
+        yield c
+    fa._SYSTEM, ea._SYSTEM = old_freight, old_enh
 
 
 class TestNewEndpoints:

@@ -28,13 +28,25 @@ class TestOSDKTargets:
         import tempfile
 
         os.environ.pop("OPENAI_CHAT_API_KEY", None)
-        app = create_app(db_path=os.path.join(tempfile.mkdtemp(), "f.db"), fresh=True)
-        client = TestClient(app)
-        for target, needle in (("java", "public class Waybill"),
-                               ("graphql", "type Waybill")):
-            r = client.get(f"/enh/osdk?target={target}")
-            assert r.status_code == 200
-            assert needle in r.json()["code"]
+        # 同 test_new_api_smoke：/enh 绑 freight 模块单例，注入 tmp 库隔离
+        #（不注入会与本地运行的服务抢 runs/freight_facts.db → locked）。
+        import enhancements.api as ea
+        import freight.api as fa
+
+        old_freight, old_enh = fa._SYSTEM, ea._SYSTEM
+        try:
+            td = tempfile.mkdtemp()
+            app = create_app(
+                db_path=os.path.join(td, "f.db"), fresh=True,
+                freight_db_path=os.path.join(td, "freight.db"))
+            client = TestClient(app)
+            for target, needle in (("java", "public class Waybill"),
+                                   ("graphql", "type Waybill")):
+                r = client.get(f"/enh/osdk?target={target}")
+                assert r.status_code == 200
+                assert needle in r.json()["code"]
+        finally:
+            fa._SYSTEM, ea._SYSTEM = old_freight, old_enh
 
 
 class TestObservability:

@@ -1295,6 +1295,7 @@ class ReasoningAgent:
             output=plan.get("_output") or "",
             parsed={
                 "types": plan["types"],
+                "type_source": plan["type_source"],
                 "fee_types": plan["fee_types"],
                 "focus_fee_types": plan["focus_fee_types"],
                 "focus_reason": plan.get("focus_reason") or "",
@@ -1319,7 +1320,9 @@ class ReasoningAgent:
         focus_count = len(plan["focus_fee_types"])
         tools_ok = all(t["tool_hint"] in self.catalog for t in plan["tasks"])
         step["facts"] = [
-            {"label": "规划类型", "value": f"{len(plan['types'])} 个"},
+            {"label": "规划类型", "value": f"{len(plan['types'])} 个"
+             + ("（模型圈定）" if plan["type_source"] == "model"
+                else "（模型输出全部非法，回退目录锚点）")},
             {"label": "声明费用范围", "value": f"{len(plan['fee_types'])} 种"},
             {"label": "取证重点", "value": f"{focus_count} / {catalog_fee_count} 种"
                                         f"（裁剪率 {round(100 * (1 - focus_count / max(catalog_fee_count, 1)))}%）"},
@@ -2963,6 +2966,63 @@ class ReasoningAgent:
 
     # ------------------------------------------------------------------ 问答前置 TBox
     @staticmethod
+    def _salvage_truncated_json(text: str) -> dict | None:
+        """救被截断的 JSON 对象（只用于规划输出解析）。
+
+        实测事故：MiMo 返回合法 JSON 但被网关在 reason 字段中间截断
+        （len=2545 处断），主体 types/tasks/hypotheses 完整，整份判废会把
+        规划步打 degrade。策略：截到最后一个完整位置——若断在字符串里，
+        回退到最后一个顶层逗号（丢掉半个键值对）——再去尾逗号、按未闭合
+        括号栈补齐 `]`/`}`。救不出合法内容返回 None（空 dict 同判废）。
+        """
+        stack: list[str] = []
+        in_string = False
+        escape = False
+        end = 0
+        last_top_comma = -1  # 最后一个深度 1 的逗号（顶层键值分隔）
+        for i, ch in enumerate(text):
+            if in_string:
+                if escape:
+                    escape = False
+                elif ch == "\\":
+                    escape = True
+                elif ch == '"':
+                    in_string = False
+                    end = i + 1
+                continue
+            if ch == '"':
+                in_string = True
+            elif ch in "{[":
+                stack.append(ch)
+            elif ch in "}]":
+                if stack:
+                    stack.pop()
+                end = i + 1
+            elif ch == ",":
+                if len(stack) == 1:
+                    last_top_comma = i
+                end = i
+            elif not ch.isspace():
+                end = i + 1
+        if text[:1] != "{" or not stack:
+            return None
+        if in_string:
+            # 断在字符串中间：丢掉这半个键值对（顶层才安全；嵌套数组里的
+            # 半个元素回退到顶层逗号会丢整个 tasks，仍可接受——tasks 会由
+            # _normalize_tasks 兜底，且判废本就丢全部）
+            end = last_top_comma if last_top_comma >= 0 else end
+        candidate = text[:end].rstrip().rstrip(",")
+        if not candidate.startswith("{"):
+            return None
+        candidate += "".join(
+            "}" if c == "{" else "]" for c in reversed(stack))
+        try:
+            obj, _ = json.JSONDecoder().raw_decode(candidate)
+        except json.JSONDecodeError:
+            return None
+        return obj if isinstance(obj, dict) else None
+
+    @staticmethod
     def _parse_plan(raw: str) -> dict | None:
         text = (raw or "").strip()
         text = re.sub(r"^```(?:json)?\s*", "", text)
@@ -2970,11 +3030,20 @@ class ReasoningAgent:
         start = text.find("{")
         if start < 0:
             return None
+        text = text[start:]
+        # 模型偶发把 JSON 标点写成全角（实测：reason 字段后跟「，}」），
+        # 直接 json.loads 会整份判废 → 规划步失败降级。解析前把全角标点
+        # 归一为 ASCII 并清掉尾逗号；这不是放宽输出契约，是吸收已知的
+        # 标点噪声（尾逗号清理只动 } ] 之前，不动正常内容）。
+        text = (text.replace("，", ",").replace("：", ":")
+                    .replace("“", "\"").replace("”", "\"")
+                    .replace("｛", "{").replace("｝", "}"))
+        text = re.sub(r",(\s*[}\]])", r"\1", text)
         try:
-            obj, _ = json.JSONDecoder().raw_decode(text[start:])
+            obj, _ = json.JSONDecoder().raw_decode(text)
         except json.JSONDecodeError:
-            return None
-        return obj if isinstance(obj, dict) else None
+            obj = ReasoningAgent._salvage_truncated_json(text)
+        return obj if isinstance(obj, dict) and obj else None
 
     def _plan_tbox(self) -> dict:
         """只把 schema search + 闭包结果喂给模型，让它在邻域内圈定范围。
@@ -3090,6 +3159,19 @@ class ReasoningAgent:
         elapsed_ms = round((time.perf_counter() - started) * 1000)
         planned = self._parse_plan(raw)
         if not planned:
+            # 解析失败时把模型原始输出落 runs/（不入库），便于诊断网关
+            # 返回了 Markdown 围栏 / 推理过程 / 截断 JSON 中的哪一种。
+            try:
+                dump = os.path.join(
+                    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                    "runs", "plan_parse_failures.log")
+                os.makedirs(os.path.dirname(dump), exist_ok=True)
+                with open(dump, "a", encoding="utf-8") as f:
+                    f.write("=== %s len=%d ===\n%s\n" % (
+                        time.strftime("%Y-%m-%d %H:%M:%S"), len(str(raw)),
+                        str(raw)[:4000]))
+            except OSError:
+                pass
             raise LLMError("本体规划输出无法解析，未进入后续查询")
         raw_types = planned.get("types") if isinstance(planned.get("types"), list) else []
         raw_fees = (
@@ -3098,8 +3180,19 @@ class ReasoningAgent:
         )
         types = [str(t) for t in raw_types if str(t) in self.sem.classes]
         fees = [str(f) for f in raw_fees if str(f) in self.sem.pricing]
+        type_source = "model"
         if not types:
-            raise LLMError("本体规划输出没有合法类型，未进入后续查询")
+            # 模型圈定的类型全部不在目录里（零命中场景高发：目录只剩 seed
+            # 聚合）。与 focus/tasks 兜底同构：回退到目录锚点并显式标注
+            # 来源，不冒充模型输出——下游据此给出「本体无相关声明」的
+            # 诚实结论，而不是把规划步整个判废降级。
+            types = [str(t) for t in self.catalog_anchor_ids
+                     if str(t) in self.sem.classes]
+            if not types and self.object_type in self.sem.classes:
+                types = [self.object_type]
+            type_source = "catalog_anchors"
+            if not types:
+                raise LLMError("本体规划输出没有合法类型，未进入后续查询")
         # focus：模型没给 / 不合法时，按问句在本体里的命中确定焦点；
         # 不用「英文 fee_type 是否为中文问句子串」这种恒不命中的判断。
         raw_focus = planned.get("focus_fee_types")
@@ -3112,6 +3205,7 @@ class ReasoningAgent:
         hypotheses = self._normalize_hypotheses(planned.get("hypotheses"))
         return {
             "types": types,
+            "type_source": type_source,
             "fee_types": fees,
             "focus_fee_types": focus,
             "focus_source": self.focus_source,

@@ -340,7 +340,8 @@ _FULL_RUN = [
     # (tag, title, rows, 触发 who 派生的真实字段)
     ("TBox · 紧凑目录", "目录装载", 0, {"query": {"scope": "catalog"}}),
     ("LLM · 本体规划", "大模型规划本体范围", 0, {"llm": {"elapsed_ms": 900}}),
-    ("TBox · 问答前置", "本体定义查询", 12, None),
+    ("TBox · 问答前置", "本体定义查询", None, {
+        "data": {"datasets": [{"rows": [{} for _ in range(12)]}]}}),
     ("LLM · 决策", "决策：费用拆解", 0, {"llm": {"elapsed_ms": 800}}),
     ("Agent · function.fee_breakdown", "费用拆解", 9, {
         "tool": "function.fee_breakdown",
@@ -385,6 +386,11 @@ class TestStageSummaries:
         assert "大模型决策" in facts["who"]
         assert "裁剪率" in stages["plan"]["output"]
         assert "假设裁定" in stages["final"]["output"]
+        # TBox 声明条数从 datasets 取（顶层无业务 rows），不再是"0 行声明"
+        assert stages["tbox"]["counts"]["rows"] == 12
+        assert "12 行声明" in stages["tbox"]["output"]
+        # 骨架文案不再宣称"状态机"——describe 不返回独立状态机声明
+        assert "状态机" not in stages["tbox"]["action"]
 
     def test_action_exit_stage_proposed(self, system):
         """动作出口阶段：有提案步骤时状态为「等人工确认」——

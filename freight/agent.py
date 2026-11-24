@@ -2288,7 +2288,7 @@ class ReasoningAgent:
          "把业务问题拆成取数计划：类型/口径/事实 + 取证重点裁剪与假设清单",
          "行动计划（任务清单 + 待验证假设）"),
         ("tbox", "本体声明查询", "本体引擎（TBox）",
-         "命中规则、状态机、口径与来源契约（取证中可按需回查）",
+         "命中类定义、计价规则、关系与定价参数（取证中可按需回查）",
          "命中的本体声明"),
         ("facts", "业务事实取证", "大模型决策 + 业务系统（ABox）",
          "多轮「大模型决策 → 工具调用」循环取证，直到信息足够或预算用尽",
@@ -2412,7 +2412,13 @@ class ReasoningAgent:
                 counts["llm"] += 1
             if tag.startswith("Agent") and step.get("tool"):
                 counts["tool"] += 1
-            counts["rows"] += int(step.get("rows") or 0)
+            # TBox 步骤顶层没有业务行数：声明条数在 datasets[0].rows
+            # （工具步骤顶层 rows 才是业务行数，两者语义不同）。
+            if tag.startswith("TBox"):
+                datasets = ((step.get("data") or {}).get("datasets") or [{}])
+                counts["rows"] += len(datasets[0].get("rows") or [])
+            else:
+                counts["rows"] += int(step.get("rows") or 0)
             if tag in ("LLM · 失败降级", "LLM · 归纳"):
                 group["degraded"] = True
             detail = {

@@ -2872,7 +2872,9 @@ function mountReasoningChain() {
 
 async function runChainToEnd() {
   const data = chainState.data;
-  if (!data || !data.session_id || data.finished === false || chainState.loading) {
+  // 守卫是「已经跑完才拦」：新会话 finished 为 false，正是一键到底要跑的场景
+  if (!data || !data.session_id || data.finished === true || chainState.loading) {
+    if (data && data.finished === true) showToast('推理链已完成，无需再跑');
     return false;
   }
   chainState.loading = true;
@@ -3516,6 +3518,9 @@ function renderChainStep(step) {
   const operations = (step.operations || []).length
     ? `<ol class="chain-ops">${step.operations.map((op) => `<li>${esc(op)}</li>`).join('')}</ol>`
     : '';
+  const q = step.query || {
+    label: step.title || '本步执行', expression: '—', api: '—', params: {},
+  };
   return `
     <article class="chain-step">
       <div class="chain-step-head">
@@ -3526,13 +3531,13 @@ function renderChainStep(step) {
       ${renderChainFocus(step)}
       ${renderOntologySignals(step)}
       ${renderActionProposal(step.proposal, step.index)}
-      <details class="chain-details">
+      <details class="chain-details" ${chainState.all || step.tag === 'Agent · Final' ? 'open' : ''}>
         <summary>展开技术细节 · 查询语句 / 输入输出 / 原始返回 / 校验项</summary>
         <div class="chain-tech-body">
           <div class="chain-query">
-            <div class="q-label">${esc(step.query.label)}</div>
-            <code>${esc(step.query.expression)}</code>
-            <div class="q-api">${esc(step.query.api)}</div>
+            <div class="q-label">${esc(q.label)}</div>
+            <code>${esc(q.expression)}</code>
+            <div class="q-api">${esc(q.api)}</div>
             ${params}
           </div>
           ${renderChainTrace(step)}

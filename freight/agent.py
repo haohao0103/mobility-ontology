@@ -376,39 +376,156 @@ class ReasoningAgent:
             self.degraded = True
             self.finished = True
             self.pending = None
-            self.steps.append({
-                "kind": "llm", "tag": "LLM · 失败降级", "who": "大模型",
-                "action": "大模型调用失败，改用已取得的观察归纳",
-                "output": str(exc)[:200], "error": str(exc)[:200],
-                "answer": self._degraded_final("")["answer"],
-                "title": "初步结论（大模型不可用）", "question": self.question,
-                "thought": "大模型连续失败，改用已有观察归纳。",
-                "elapsed_ms": 0, "ok": False,
-            })
-            return self.result()
-        except LLMError as exc:
-            # 大模型这一步彻底失败（重试用尽 / 连续空响应）：**不抛给调用方**。
-            # 演示与线上排查都需要一个"基于已有观察的结论"，而不是整条链 503。
-            # 这里降级成初步结论并结束——本体取到的事实仍然有效。
-            self.error = str(exc)
-            self.degraded = True
-            self.finished = True
-            self.pending = None
-            self.steps.append({
-                "kind": "llm", "tag": "LLM · 失败降级", "who": "大模型",
-                "action": "大模型调用失败，改用已取得的观察归纳",
-                "output": str(exc)[:200], "error": str(exc)[:200],
-                "answer": self._degraded_final("")["answer"],
-                "title": "初步结论（大模型不可用）", "question": self.question,
-                "thought": "大模型连续失败，改用已有观察归纳。",
-                "elapsed_ms": 0, "ok": False,
-            })
+            self.steps.append(self._degraded_step(exc))
             return self.result()
         except Exception as exc:
             # 单步失败必须显式抛给调用方，不能把失败伪装成上一笔已执行步骤。
             self.error = str(exc)
             raise
         return self.result()
+
+    def _closing_datasets(self) -> dict:
+        """收口三件套：假设核对 / 计划执行对照 / 角色出口 / 未决项。
+
+        全部确定性产出（finding 码、计数、action.plan），模型只能叙述不能改写。
+        正常结论与降级结论共用——链没跑完时"假设全部待补证、任务全部未执行"
+        本身就是诚实的收口，不能因为大模型挂了就让收口消失。
+        """
+        # 规划 LLM 失败时 planned 可能还没建出来：兜底到标准假设/任务，
+        # 让假设核对与执行对照表仍然有内容可对照。
+        if not self.planned.get("hypotheses"):
+            self.planned["hypotheses"] = self._normalize_hypotheses(None)
+        if not self.planned.get("tasks"):
+            focus = self.planned.get("focus_fee_types") or [""]
+            self.planned["tasks"] = self._normalize_tasks(None, focus)
+        datasets: list[dict] = []
+        facts: list[dict] = []
+        checks: list[dict] = []
+        # ① 假设核对：每条假设一个裁定（成立/排除/待补证）+ 证据
+        hypo_rows = self._hypothesis_verdicts()
+        if hypo_rows:
+            datasets.append({
+                "caption": "假设核对 · 结论必须逐条回应",
+                "columns": [
+                    {"key": "id", "label": "编号"},
+                    {"key": "claim", "label": "假设"},
+                    {"key": "verdict", "label": "裁定"},
+                    {"key": "evidence", "label": "证据"},
+                ],
+                "rows": hypo_rows,
+                "note": "裁定来自确定性检查（finding 码 / 计数），不是模型措辞",
+            })
+        # ② 计划执行对照：每条取证任务一个状态，未执行给理由
+        review_rows = self._plan_execution_review()
+        if review_rows:
+            datasets.append({
+                "caption": "计划执行对照 · 取证任务清单",
+                "columns": [
+                    {"key": "intent", "label": "任务"},
+                    {"key": "tool", "label": "工具"},
+                    {"key": "status", "label": "状态"},
+                    {"key": "evidence", "label": "执行证据"},
+                    {"key": "reason", "label": "未执行理由"},
+                ],
+                "rows": review_rows,
+                "note": "规划驱动执行：未执行的任务必须给出理由",
+            })
+        # ③ 角色出口：谁、做什么、对谁做、为什么（来自系统动作提案）
+        role_rows = self._role_exports()
+        if role_rows:
+            datasets.append({
+                "caption": "按角色的下一步（动作未执行，等人工确认）",
+                "columns": [
+                    {"key": "role", "label": "角色"},
+                    {"key": "action", "label": "动作"},
+                    {"key": "target", "label": "对象"},
+                    {"key": "why", "label": "依据"},
+                ],
+                "rows": role_rows,
+                "note": "来自 action.plan 的确定性提案；执行需人工按角色确认",
+            })
+        open_items = self._open_items()
+        if open_items:
+            datasets.append({
+                "caption": "未决项（缺什么、找谁、哪个系统）",
+                "columns": [
+                    {"key": "missing", "label": "缺少"},
+                    {"key": "owner", "label": "建议找谁"},
+                    {"key": "system", "label": "系统"},
+                    {"key": "blocks", "label": "阻塞"},
+                ],
+                "rows": open_items,
+                "note": "结论的边界：这些项补齐前，相关口径只能算到这一步",
+            })
+        verdict_counts: dict[str, int] = {}
+        for row in hypo_rows:
+            verdict_counts[row["verdict"]] = verdict_counts.get(row["verdict"], 0) + 1
+        facts.extend([
+            {"label": "假设裁定", "value": "、".join(
+                f"{k} {v}" for k, v in sorted(verdict_counts.items())) or "—"},
+            {"label": "任务执行", "value": "、".join([
+                f"已执行 {sum(1 for r in review_rows if r['status'] == '已执行')}",
+                f"未执行 {sum(1 for r in review_rows if r['status'] == '未执行')}",
+                f"计划外 {sum(1 for r in review_rows if r['status'] == '计划外执行')}",
+            ]) if review_rows else "—"},
+            {"label": "角色出口", "value": f"{len(role_rows)} 条"},
+            {"label": "未决项", "value": f"{len(open_items)} 条"},
+        ])
+        checks.append({
+            "pass": all(row["verdict"] for row in hypo_rows),
+            "label": "每条假设都有裁定",
+            "expected": f"{len(hypo_rows)} 条全部裁定",
+            "actual": "、".join(f"{k} {v}" for k, v in sorted(verdict_counts.items())) or "无假设",
+        })
+        checks.append({
+            "pass": all(row["reason"] != "—" for row in review_rows
+                        if row["status"] == "未执行"),
+            "label": "未执行任务已给出理由",
+            "expected": "全部有理由",
+            "actual": "全部有理由" if all(
+                row["reason"] != "—" for row in review_rows
+                if row["status"] == "未执行") else "存在无理由的未执行任务",
+        })
+        return {"datasets": datasets, "facts": facts, "checks": checks}
+
+    def _degraded_step(self, exc: Exception) -> dict:
+        """大模型失败时的降级步骤。
+
+        字段必须与 _final_step/_llm_step 对齐（query/facts/checks/data/
+        judgment/conclusion/source/basis），否则前端 renderChainStep 会在
+        step.query.label 上崩掉——降级不但要给结论，还得渲染得出来。
+        """
+        degraded = self._degraded_final("")
+        closing = self._closing_datasets()
+        return {
+            "index": len(self.steps) + 1,
+            "kind": "llm", "tag": "LLM · 失败降级", "actor": "agent",
+            "who": "大模型",
+            "action": "大模型调用失败，改用已取得的观察归纳",
+            "output": str(exc)[:200], "error": str(exc)[:200],
+            "answer": degraded["answer"],
+            "title": degraded["title"],
+            "question": self.question,
+            "thought": degraded["thought"],
+            "query": {
+                "label": "大模型调用失败 → 降级归纳",
+                "expression": "degraded_final()",
+                "api": "不调用大模型 · 用已取得的观察作答",
+                "params": {},
+            },
+            "data": {"datasets": closing["datasets"]},
+            "facts": [{"label": "失败原因", "value": str(exc)[:120]},
+                      {"label": "观察条数", "value": f"{len(self.observations)} 条"}]
+                     + closing["facts"],
+            "checks": [{"pass": False, "label": "大模型调用成功",
+                        "expected": "正常返回", "actual": str(exc)[:80]}]
+                       + closing["checks"],
+            "judgment": degraded["thought"],
+            "conclusion": degraded["answer"],
+            "source": "降级路径：已有 ABox 观察，未经本轮大模型综合",
+            "basis": "—",
+            "elapsed_ms": 0, "ok": False,
+        }
 
     def run(self) -> dict:
         """兼容原接口：一次跑完整条链，内部仍然复用逐个动作执行逻辑。"""
@@ -985,6 +1102,15 @@ class ReasoningAgent:
         self.error = plan.get("_error")
         types = "、".join(plan["types"]) or "无"
         fees = "、".join(plan["fee_types"]) or "无"
+        focus = "、".join(plan["focus_fee_types"]) or "无"
+        task_lines = "\n".join(
+            f"{i}. {t['intent']} → {t['tool_hint']}（{t['why']}）"
+            for i, t in enumerate(plan["tasks"], 1)
+        ) or "（无）"
+        hypo_lines = "\n".join(
+            f"{h['id']} {h['claim']}（验证：{h['verify_by']}）"
+            for h in plan["hypotheses"]
+        ) or "（无）"
         self.messages = [
             {"role": "system", "content": self._system_prompt()},
             {
@@ -994,14 +1120,18 @@ class ReasoningAgent:
                     f"诊断对象 object_id：{self.object_id}；"
                     f"运单业务主键 waybill_id：{self.waybill_id}。\n"
                     f"{self.catalog_context}\n"
-                    f"规划器圈定的本体范围：类型 {types}；费用类型 {fees}。\n"
+                    f"规划器圈定的本体范围：类型 {types}；费用类型 {fees}；"
+                    f"取证重点费用类型 {focus}。\n"
+                    f"取证任务清单（执行阶段逐条对照，未执行要给出理由）：\n"
+                    f"{task_lines}\n"
+                    f"待验证假设（结论必须逐条回应）：\n{hypo_lines}\n"
                     "目录装得下时已直接注入全量紧凑目录；需要字段、规则或实例时，"
                     "再按需调用 tbox.describe 或 ontology.search_around。"
                 ),
             },
         ]
         self.pending = "tbox"
-        self.steps.append(self._llm_step(
+        step = self._llm_step(
             index=len(self.steps) + 1,
             title="大模型规划本体范围（调用 LLM）",
             tag="LLM · 本体规划",
@@ -1010,16 +1140,75 @@ class ReasoningAgent:
             parsed={
                 "types": plan["types"],
                 "fee_types": plan["fee_types"],
+                "focus_fee_types": plan["focus_fee_types"],
+                "focus_reason": plan.get("focus_reason") or "",
+                "tasks": plan["tasks"],
+                "hypotheses": plan["hypotheses"],
                 "reason": plan.get("reason") or "",
             },
             thought=plan.get("reason") or "",
             ok=not plan.get("_error"),
             error=plan.get("_error"),
             elapsed_ms=plan.get("_elapsed_ms", 0),
-            conclusion=f"规划类型：{types}；费用类型：{fees}",
+            conclusion=(
+                f"规划类型：{types}；费用类型：{fees}；"
+                f"取证重点：{focus}；任务 {len(plan['tasks'])} 条；"
+                f"假设 {len(plan['hypotheses'])} 条"
+            ),
             next_text=f"查询本体定义：{types}",
             thinking=False,
-        ))
+        )
+        # 规划质量可度量：裁剪率 + 任务/假设计数 + 工具合法性
+        catalog_fee_count = len(self.sem.pricing)
+        focus_count = len(plan["focus_fee_types"])
+        tools_ok = all(t["tool_hint"] in self.catalog for t in plan["tasks"])
+        step["facts"] = [
+            {"label": "规划类型", "value": f"{len(plan['types'])} 个"},
+            {"label": "声明费用范围", "value": f"{len(plan['fee_types'])} 种"},
+            {"label": "取证重点", "value": f"{focus_count} / {catalog_fee_count} 种"
+                                        f"（裁剪率 {round(100 * (1 - focus_count / max(catalog_fee_count, 1)))}%）"},
+            {"label": "取证任务", "value": f"{len(plan['tasks'])} 条"},
+            {"label": "待验证假设", "value": f"{len(plan['hypotheses'])} 条"},
+        ]
+        step["checks"] = [
+            {"pass": focus_count > 0, "label": "取证重点非空",
+             "expected": "≥1 种", "actual": f"{focus_count} 种"},
+            {"pass": focus_count < catalog_fee_count or catalog_fee_count <= 1,
+             "label": "取证重点已裁剪（不是全部费用类型）",
+             "expected": f"<{catalog_fee_count} 种",
+             "actual": f"{focus_count} 种"},
+            {"pass": bool(plan["tasks"]), "label": "取证任务清单非空",
+             "expected": "≥1 条", "actual": f"{len(plan['tasks'])} 条"},
+            {"pass": tools_ok, "label": "任务工具都在可用能力集内",
+             "expected": "全部合法", "actual": "合法" if tools_ok else "存在越界工具"},
+            {"pass": bool(plan["hypotheses"]), "label": "假设清单非空",
+             "expected": "≥1 条", "actual": f"{len(plan['hypotheses'])} 条"},
+        ]
+        # 注意挂到 step["data"]["datasets"]：前端 renderChainData 只读这个键
+        step["data"]["datasets"] = [
+            {
+                "caption": "取证任务清单（执行阶段逐条对照）",
+                "columns": [
+                    {"key": "no", "label": "#"},
+                    {"key": "intent", "label": "意图"},
+                    {"key": "tool_hint", "label": "建议工具"},
+                    {"key": "why", "label": "理由"},
+                ],
+                "rows": [{"no": i, **t} for i, t in enumerate(plan["tasks"], 1)],
+                "note": "任务来自规划器；执行对照见结论阶段的「计划执行对照」",
+            },
+            {
+                "caption": "待验证假设（结论必须逐条回应）",
+                "columns": [
+                    {"key": "id", "label": "编号"},
+                    {"key": "claim", "label": "可证伪判断"},
+                    {"key": "verify_by", "label": "验证依据"},
+                ],
+                "rows": plan["hypotheses"],
+                "note": "假设驱动取证：每条假设在结论里给出 成立/排除/待补证",
+            },
+        ]
+        self.steps.append(step)
 
     def _step_tbox(self) -> None:
         plan = self.planned
@@ -1424,6 +1613,7 @@ class ReasoningAgent:
         if len(self.observations) + self.tbox_queries >= self.max_steps:
             self._step_exhausted()
             return
+        self._sync_task_reminder()
         started = time.perf_counter()
         try:
             raw = self.client.chat(self.messages)
@@ -1615,11 +1805,17 @@ class ReasoningAgent:
         self.pending = "decide"
 
     def _step_review(self) -> None:
+        hypo_lines = "\n".join(
+            f"{h['id']} {h['claim']}" for h in self.planned.get("hypotheses", [])
+        )
         instruction = (
             "请复核以上全部观察，核对金额、规则和证据引用是否一致；"
             "如有遗漏或错误请修正。只输出 final JSON，不要调用工具："
             '{"action":"final","title":"结论","question":"最终核对的问题",'
-            '"thought":"综合判断","answer":"最终结论"}'
+            '"thought":"综合判断","answer":"最终结论"}\n'
+            "answer 必须包含三段：① 逐条回应以下假设（成立/排除/待补证+证据）：\n"
+            + (hypo_lines or "（无假设）")
+            + "\n② 已核对的事实；③ 未决项（缺什么、建议找谁、哪个系统）。"
         )
         self.messages.append({"role": "user", "content": instruction})
         started = time.perf_counter()
@@ -1658,8 +1854,9 @@ class ReasoningAgent:
     def _degraded_final(self, raw: str) -> dict:
         """工具预算用尽且模型没给合法 final 时的降级结论。
 
-        只用**已经取到的观察**作答，不臆造数字；措辞里明确"初步"与依据条数，
-        让看的人知道这是降级结果、还差什么。
+        只用**已经取到的观察**作答，不臆造数字。收口是三段式：
+        已核对什么 / 未决项（缺什么、找谁、哪个系统）/ 假设回应到哪一步——
+        "没查完"必须是结构化清单，不能是一句"尚未完成全部交叉核对"。
         """
         lines = []
         for obs in self.observations:
@@ -1669,23 +1866,257 @@ class ReasoningAgent:
                 summary = self._compact(summary, 160)
             lines.append(f"- {tool}：{str(summary)[:160]}")
         body = "\n".join(lines[:8]) or "（本轮没有取到任何观察）"
+        open_items = self._open_items()
+        open_lines = [
+            f"{i}. {item['missing']} → 建议 {item['owner']}（{item['system']}）"
+            f"；阻塞：{item['blocks']}"
+            for i, item in enumerate(open_items, 1)
+        ]
+        hypo_lines = [
+            f"- {h['id']} {h['claim']}：{h['verdict']}"
+            + (f"（{h['evidence']}）" if h.get("evidence") else "")
+            for h in self._hypothesis_verdicts()
+        ]
+        parts = [
+            "**初步结论**（观察不足，非最终判定）：\n"
+            "**已核对**（本轮取到的观察）：\n" + body,
+        ]
+        if hypo_lines:
+            parts.append("**假设回应**：\n" + "\n".join(hypo_lines))
+        parts.append(
+            "**未决项**：\n" + ("\n".join(open_lines) if open_lines
+                              else "1. 无——本轮任务清单已全部执行")
+        )
         return {
             "action": "final",
             "title": "初步结论（工具预算用尽，未完成完整核对）",
             "question": self.question,
             "thought": "工具调用次数已用完，模型未给出结构化结论，改用已有观察归纳。",
-            "answer": (
-                "以下是本轮已经取到的观察，属于**初步结论**（工具预算用尽，"
-                "尚未完成全部交叉核对）：\n" + body
-            ),
+            "answer": "\n\n".join(parts),
             "degraded": True,
         }
 
+    # ---------------------------------------------------------------- 计划驱动取证
+    #
+    # 规划产出 tasks（取证任务清单）后，执行阶段必须可对照：
+    #   - _sync_task_reminder：每次决策前把"还没做的任务"注入模型上下文，
+    #     规划真正驱动执行（原来规划只喂给 tbox.describe，工具调用是临场发挥）
+    #   - _task_for_tool：工具执行时标记服务了哪条任务；计划外的显式标注
+    #   - _plan_execution_review：结论阶段出对照表（已执行/未执行+理由/计划外）
+    TASK_REMINDER_TAG = "[任务提醒]"
+
+    def _covered_task_tools(self) -> set[str]:
+        return {
+            obs["tool"] for obs in self.observations
+            if obs.get("serves")
+        }
+
+    def _uncovered_tasks(self) -> list[dict]:
+        covered = self._covered_task_tools()
+        return [t for t in self.planned.get("tasks", [])
+                if t["tool_hint"] not in covered]
+
+    def _sync_task_reminder(self) -> None:
+        """把未覆盖任务写进模型上下文（替换上一条提醒，不累积）。"""
+        self.messages = [
+            m for m in self.messages
+            if not str(m.get("content") or "").startswith(self.TASK_REMINDER_TAG)
+        ]
+        pending = self._uncovered_tasks()
+        if not pending:
+            return
+        lines = [
+            f"{i}. {t['intent']} → {t['tool_hint']}（目标 {t['target']}）"
+            for i, t in enumerate(pending, 1)
+        ]
+        self.messages.append({
+            "role": "user",
+            "content": (
+                f"{self.TASK_REMINDER_TAG}规划里的取证任务还没做完，"
+                f"请优先逐条完成（预算内）：\n" + "\n".join(lines)
+            ),
+        })
+
+    def _task_for_tool(self, tool: str) -> dict | None:
+        for task in self.planned.get("tasks", []):
+            if task["tool_hint"] == tool and tool not in self._covered_task_tools():
+                return task
+        return None
+
+    def _plan_execution_review(self) -> list[dict]:
+        """计划 vs 执行对照表：每条任务一个状态，未执行给理由，计划外显式列出。"""
+        covered = self._covered_task_tools()
+        rows = []
+        for task in self.planned.get("tasks", []):
+            hits = [o for o in self.observations
+                    if o.get("tool") == task["tool_hint"] and o.get("serves")]
+            if hits:
+                rows.append({
+                    "intent": task["intent"],
+                    "tool": task["tool_hint"],
+                    "status": "已执行",
+                    "evidence": f"{len(hits)} 次调用 · "
+                                f"{sum(h.get('rows', 0) for h in hits)} 行",
+                    "reason": "—",
+                })
+            elif task["tool_hint"] in {o.get("tool") for o in self.observations}:
+                rows.append({
+                    "intent": task["intent"],
+                    "tool": task["tool_hint"],
+                    "status": "计划外执行",
+                    "evidence": "被调用但未标记服务本任务",
+                    "reason": "模型选择了其他意图",
+                })
+            else:
+                reason = ("工具预算用尽，未轮到" if self.degraded
+                          else "模型判断信息已足够，未执行")
+                rows.append({
+                    "intent": task["intent"],
+                    "tool": task["tool_hint"],
+                    "status": "未执行",
+                    "evidence": "—",
+                    "reason": reason,
+                })
+        planned_tools = {t["tool_hint"] for t in self.planned.get("tasks", [])}
+        for tool in sorted({o.get("tool") for o in self.observations
+                            if o.get("tool")} - planned_tools):
+            hits = [o for o in self.observations if o.get("tool") == tool]
+            rows.append({
+                "intent": "（计划外）模型自主追加的查询",
+                "tool": tool,
+                "status": "计划外执行",
+                "evidence": f"{len(hits)} 次调用 · "
+                            f"{sum(h.get('rows', 0) for h in hits)} 行",
+                "reason": "规划未覆盖，执行中补充",
+            })
+        return rows
+
+    # ---------------------------------------------------------------- 假设回应
+    def _hypothesis_verdicts(self) -> list[dict]:
+        """逐条假设给 成立/排除/待补证，证据全部来自确定性分析结果。
+
+        判定不靠模型措辞：每条假设绑定一个确定性检查（finding 码 / 计数），
+        模型结论必须在此基础上叙述——假设回应因此可复核。
+        """
+        analysis = self.system.fee_analysis(self.object_id) or {}
+        findings = analysis.get("findings") or []
+        codes = {f.get("code") for f in findings}
+        breakdown = analysis.get("breakdown") or []
+        evidence = analysis.get("evidence") or []
+        out = []
+        for hypo in self.planned.get("hypotheses", []):
+            claim = hypo["claim"]
+            verdict, why = "待补证", "本轮未取到直接证据"
+            if any(k in claim for k in ("费率", "应计", "口径", "多收", "少收")):
+                if "WAITING_FEE_MISMATCH" in codes or any(
+                        abs(b.get("rule_delta") or 0) > 0.01 for b in breakdown):
+                    bad = [b for b in breakdown
+                           if abs(b.get("rule_delta") or 0) > 0.01]
+                    verdict = "成立"
+                    why = ("；".join(
+                        f"{b['label']} 应计 {b['rule_expected']:.2f} / "
+                        f"实收 {b['actual_amount']:.2f}" for b in bad[:3]))
+                elif breakdown:
+                    verdict = "排除"
+                    why = "全部费用项 rule_delta ≈ 0，应计与实收一致"
+            elif any(k in claim for k in ("报价", "快照")):
+                if "QUOTE_SNAPSHOT_DRIFT" in codes:
+                    verdict = "成立"
+                    why = "报价快照与明细不一致（QUOTE_SNAPSHOT_DRIFT）"
+                elif analysis:
+                    verdict = "排除"
+                    why = "三口径互校一致"
+            elif any(k in claim for k in ("证据", "checksum")):
+                missing = [f for f in findings
+                           if str(f.get("code", "")).startswith("GAP")]
+                if missing:
+                    verdict = "成立"
+                    why = "；".join(
+                        f"{f['code']}({f.get('fee_id')})" for f in missing[:3])
+                elif evidence:
+                    verdict = "排除"
+                    why = f"{len(evidence)} 条证据均在位且带 checksum"
+            elif any(k in claim for k in ("版本", "生效期", "过期")):
+                if "PRICING_RULE_EXPIRED" in codes:
+                    verdict = "成立"
+                    why = "费用发生时间超出规则生效期"
+                else:
+                    verdict = "排除"
+                    why = "费用发生时间在规则生效期内"
+            out.append({"id": hypo["id"], "claim": claim,
+                        "verdict": verdict, "evidence": why,
+                        "verify_by": hypo["verify_by"]})
+        return out
+
+    # ---------------------------------------------------------------- 角色出口
+    ROLE_LABELS = {
+        "finance": "财务", "supervisor": "主管", "cs": "客服",
+        "operator": "运营", "driver": "司机", "shipper": "货主",
+        "admin": "管理员",
+    }
+
+    def _role_exports(self) -> list[dict]:
+        """按角色的下一步：谁、做什么、对谁做、为什么。
+
+        来源是系统动作提案（execution_orders/action_plan 的确定性产物），
+        不是模型编的——角色出口因此可执行、可审计。
+        """
+        plan = self.system.action_plan(self.object_id) or {}
+        rows = []
+        for action in plan.get("actions") or []:
+            if not action.get("allowed"):
+                continue
+            roles = action.get("roles") or [action.get("role") or ""]
+            rows.append({
+                "role": "、".join(
+                    self.ROLE_LABELS.get(str(r), str(r)) for r in roles if r),
+                "action": action.get("label") or action.get("action_id"),
+                "target": action.get("target") or "—",
+                "why": f"目标状态 {action.get('target_status') or '—'}；"
+                       f"金额 {json.dumps(action.get('payload') or {}, ensure_ascii=False)}",
+            })
+        for pre in plan.get("prerequisites") or []:
+            rows.append({
+                "role": "客服",
+                "action": pre.get("label") or pre.get("action_id"),
+                "target": pre.get("target") or "—",
+                "why": pre.get("status") or "前置条件",
+            })
+        return rows
+
+    def _open_items(self) -> list[dict]:
+        """未决项：缺什么、建议找谁、哪个系统、阻塞哪条结论。"""
+        items = []
+        for row in self._plan_execution_review():
+            if row["status"] == "未执行":
+                items.append({
+                    "missing": f"未完成任务「{row['intent']}」（{row['tool']}）",
+                    "owner": "诊断执行方",
+                    "system": row["tool"],
+                    "blocks": row["intent"],
+                })
+        analysis = self.system.fee_analysis(self.object_id) or {}
+        for finding in analysis.get("findings") or []:
+            if str(finding.get("code", "")).startswith("GAP"):
+                items.append({
+                    "missing": f"{finding.get('code')}：{finding.get('message', '')[:60]}",
+                    "owner": "数据归属方",
+                    "system": finding.get("source_system") or "业务系统",
+                    "blocks": "该费用的最终口径确认",
+                })
+        return items
+
     def _step_exhausted(self) -> None:
+        hypo_lines = "\n".join(
+            f"{h['id']} {h['claim']}" for h in self.planned.get("hypotheses", [])
+        )
         instruction = (
             "工具调用次数已用完。请基于以上观察，只输出 final JSON："
             '{"action":"final","title":"结论","question":"最终核对的问题",'
-            '"thought":"综合判断","answer":"最终结论"}'
+            '"thought":"综合判断","answer":"最终结论"}\n'
+            "answer 必须包含三段：① 逐条回应以下假设（成立/排除/待补证+证据）：\n"
+            + (hypo_lines or "（无假设）")
+            + "\n② 已核对的事实；③ 未决项（缺什么、建议找谁、哪个系统）。"
         )
         self.messages.append({"role": "user", "content": instruction})
         started = time.perf_counter()
@@ -2094,7 +2525,16 @@ class ReasoningAgent:
         return obj if isinstance(obj, dict) else None
 
     def _plan_tbox(self) -> dict:
-        """只把 schema search + 闭包结果喂给模型，让它在邻域内圈定范围。"""
+        """只把 schema search + 闭包结果喂给模型，让它在邻域内圈定范围。
+
+        规划产出三段（都可被确定性兜底，模型不给也能跑）：
+        - types / fee_types：声明范围（tbox.describe 用，可以宽）
+        - focus_fee_types：**取证重点**，必须窄——列全部等于没规划，
+          步骤里用「圈定 N / 目录 M」的裁剪率度量规划质量
+        - tasks：取证任务清单（意图 / 建议工具 / 目标 / 理由），
+          执行阶段逐条对照，未执行的要给理由
+        - hypotheses：可证伪假设（claim + verify_by），结论必须逐条回应
+        """
         catalog = self.catalog_index
         class_items = [item for item in catalog if item["kind"] == "class"]
         price_items = [item for item in catalog if item["kind"] == "pricing"]
@@ -2104,6 +2544,9 @@ class ReasoningAgent:
         fee_types = "、".join(
             item["id"].split(".", 1)[1] for item in price_items
         ) or "无"
+        all_fee_ids = [
+            item["id"].split(".", 1)[1] for item in price_items
+        ] or list(self.sem.pricing.keys())
         if not classes:
             classes = "；".join(
                 f'{cls["id"]}|{cls.get("label", cls["id"])}'
@@ -2127,6 +2570,7 @@ class ReasoningAgent:
                 + ("、".join(self.catalog_group_ids) or "—")
                 + "）"
             )
+        tools_hint = "、".join(sorted(self.catalog.keys())) or "无"
         messages = [{
             "role": "system",
             "content": (
@@ -2135,10 +2579,14 @@ class ReasoningAgent:
                 "不预计算全局强依赖闭包。你只能从下面目录候选里选择后续要查定义"
                 "和事实的最小充分类型集合；目录只是索引，字段、规则和关系端点在"
                 "tbox.describe 或 ontology.search_around 中再按需读取。"
-                "金额差异类问题要选中能提供费用明细、证据、结算、发票、异常的类型。"
                 "不要用问题关键词做意图分类，只按目录元数据和工具契约选择。"
                 "不要输出任何目录之外的本体 ID。只输出一个 JSON 对象，"
-                "不要 Markdown，不要解释。"
+                "不要 Markdown，不要解释。\n"
+                "规划质量硬约束：① focus_fee_types 是**取证重点**，只列与本问题"
+                "直接相关的费用类型（通常 1-3 个），把全部费用类型列进 focus 等于"
+                "没规划；② tasks 是取证任务清单，每条给 intent / tool_hint / "
+                "target / why，tool_hint 必须来自可用能力集；③ hypotheses 是"
+                "可证伪假设，每条给 id / claim / verify_by，结论阶段必须逐条回应。"
             ),
         }, {
             "role": "user",
@@ -2148,8 +2596,16 @@ class ReasoningAgent:
                 f"{self.catalog_context}\n"
                 f"目录中的类型：{classes}\n"
                 f"目录中的费用类型：{fee_types}\n"
+                f"可用能力（工具）：{tools_hint}\n"
                 '输出格式：{"types":["<目录中的类型 ID>"],'
-                '"fee_types":["<目录中的费用类型 ID>"],"reason":"选择理由"}'
+                '"fee_types":["<目录中的费用类型 ID>"],'
+                '"focus_fee_types":["<取证重点费用类型，通常 1-3 个>"],'
+                '"focus_reason":"为什么是这几个",'
+                '"tasks":[{"intent":"要验证什么","tool_hint":"<可用能力中的工具>",'
+                '"target":"查什么对象","why":"为什么必须查"],'
+                '"hypotheses":[{"id":"H1","claim":"可证伪的判断",'
+                '"verify_by":"用什么证据验证"}],'
+                '"reason":"选择理由"}'
             ),
         }]
         started = time.perf_counter()
@@ -2171,15 +2627,92 @@ class ReasoningAgent:
         fees = [str(f) for f in raw_fees if str(f) in self.sem.pricing]
         if not types:
             raise LLMError("本体规划输出没有合法类型，未进入后续查询")
+        # focus：模型没给 / 不合法时，确定性兜底（问题里点名的费用类型，
+        # 再退到声明范围）——规划永远有焦点，裁剪率永远可度量
+        raw_focus = planned.get("focus_fee_types")
+        focus = [str(f) for f in (raw_focus if isinstance(raw_focus, list) else [])
+                 if str(f) in self.sem.pricing]
+        if not focus:
+            focus = [f for f in fees if f in self.question] or fees[:1]
+        tasks = self._normalize_tasks(planned.get("tasks"), focus)
+        hypotheses = self._normalize_hypotheses(planned.get("hypotheses"))
         return {
             "types": types,
             "fee_types": fees,
+            "focus_fee_types": focus,
+            "focus_reason": str(planned.get("focus_reason") or ""),
+            "tasks": tasks,
+            "hypotheses": hypotheses,
             "reason": str(planned.get("reason") or "大模型圈定类型范围"),
             "_messages": messages,
             "_output": raw,
             "_error": None,
             "_elapsed_ms": elapsed_ms,
         }
+
+    def _normalize_tasks(self, raw, focus: list[str]) -> list[dict]:
+        """取证任务清单：模型给的就地校验，缺了就按焦点确定性补齐。
+
+        校验三条：tool_hint 在可用能力集内、intent 非空、target 非空。
+        兜底任务与焦点费用类型挂钩——清单永远非空，执行对照永远有东西可对照。
+        """
+        tasks: list[dict] = []
+        seen: set[str] = set()
+        for item in (raw if isinstance(raw, list) else []):
+            if not isinstance(item, dict):
+                continue
+            intent = str(item.get("intent") or "").strip()
+            tool = str(item.get("tool_hint") or "").strip()
+            if not intent or tool not in self.catalog or tool in seen:
+                continue
+            seen.add(tool)
+            tasks.append({
+                "intent": intent,
+                "tool_hint": tool,
+                "target": str(item.get("target") or self.object_id),
+                "why": str(item.get("why") or "规划器圈定的取证任务"),
+            })
+        if tasks:
+            return tasks
+        defaults = [
+            ("function.fee_breakdown", "核对规则应计 vs 实收，定位差异来源"),
+            ("function.quote_reconcile", "核对报价口径（快照/明细/实际三口径）"),
+            ("function.evidence_chain", "核对每条费用的证据与 checksum"),
+        ]
+        for tool, intent in defaults:
+            if tool in self.catalog:
+                tasks.append({
+                    "intent": intent,
+                    "tool_hint": tool,
+                    "target": self.object_id,
+                    "why": "费用差异类问题的标准取证动作（确定性兜底）",
+                })
+        return tasks
+
+    def _normalize_hypotheses(self, raw) -> list[dict]:
+        """可证伪假设清单：模型给的就地校验，缺了按标准差异假设兜底。"""
+        items: list[dict] = []
+        for index, item in enumerate(raw if isinstance(raw, list) else [], 1):
+            if not isinstance(item, dict):
+                continue
+            claim = str(item.get("claim") or "").strip()
+            if not claim:
+                continue
+            items.append({
+                "id": str(item.get("id") or f"H{index}"),
+                "claim": claim,
+                "verify_by": str(item.get("verify_by") or "费用拆解与证据链"),
+            })
+        if items:
+            return items
+        return [
+            {"id": "H1", "claim": "差异来自费率口径（规则应计 ≠ 实收）",
+             "verify_by": "function.fee_breakdown 的 rule_delta"},
+            {"id": "H2", "claim": "差异来自报价口径（报价 ≠ 明细或快照漂移）",
+             "verify_by": "function.quote_reconcile 的三口径互校"},
+            {"id": "H3", "claim": "费用缺少证据或证据不一致",
+             "verify_by": "function.evidence_chain 的证据与 checksum"},
+        ]
 
     def _tbox_step(self, items: list[dict], query_inputs: dict,
                    plan: dict, index: int) -> dict:
@@ -2321,6 +2854,8 @@ class ReasoningAgent:
         rows = self._row_count(result)
         counts = self._counts(result)
         tbox_items, tbox_query_inputs = self._tbox_items(tool, result, arguments)
+        # 计划对照：本步服务了规划里的哪条取证任务（计划外调用 = None）
+        serves = self._task_for_tool(tool)
         observation = {
             "tool": tool,
             "arguments": arguments,
@@ -2328,6 +2863,7 @@ class ReasoningAgent:
             "rows": rows,
             "error": error,
             "result": result,
+            "serves": serves["intent"] if serves else None,
         }
         question = action.get("question") or f"调用 {tool} 获取诊断所需事实"
         thought = action.get("thought") or ""
@@ -2422,12 +2958,17 @@ class ReasoningAgent:
             "facts": [
                 {"label": "工具", "value": tool or "—"},
                 {"label": "返回行数", "value": str(rows)},
+                {"label": "服务任务", "value": (serves["intent"] if serves
+                                            else "计划外调用")},
                 {"label": "耗时", "value": f"{elapsed_ms} ms"},
             ],
             "rows": rows,
             "checks": [],
             "judgment": judgment,
-            "conclusion": conclusion,
+            "conclusion": (
+                conclusion + (f"（服务任务：{serves['intent']}）" if serves
+                             else "（计划外调用）")
+            ),
             "next": "由 Agent 根据本步观察决定下一步",
             "graph": self._graph(result),
             "source": (
@@ -2853,6 +3394,11 @@ class ReasoningAgent:
                 "label": "最终内存实例图",
                 "detail": f'节点 {len(graph["nodes"])} · 边 {len(graph["edges"])}',
             })
+        # ── 收口三件套（全部确定性产出，模型只能叙述不能改写）────────────
+        closing = self._closing_datasets()
+        datasets.extend(closing["datasets"])
+        facts.extend(closing["facts"])
+        checks.extend(closing["checks"])
         question = action.get("question") or "现有 ABox 观察是否足以支撑诊断结论？"
         thought = action.get("thought") or ""
         answer = action.get("answer") or "Agent 未给出最终结论，请查看前序观察数据。"

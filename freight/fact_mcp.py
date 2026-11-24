@@ -438,11 +438,22 @@ class FactMCP:
             return
         props = self._class_properties(type_id)
         if name not in props:
+            # 错误里带正确示例：模型常见误用是把过滤条件包成
+            # {"property": "x", "operator": "eq", "value": ...} 的 dict
+            # （键名 property 被当属性名）。给出两种合法形状，模型能自纠。
             self._schema_error(
                 f"{type_id} 不允许的属性: {name}",
                 type=type_id,
                 allowed_properties=props,
                 allowed_object_columns=sorted(self.OBJECT_COLUMNS),
+                where_examples=[
+                    {"where": {"waybill_id": "waybill:WB001"}},
+                    {"where": [{"property": "waybill_id", "op": "eq",
+                                "value": "waybill:WB001"}]},
+                ],
+                hint=("where 支持扁平属性表 {属性名: 值}，或过滤数组 "
+                      "[{property, op, value}]；property/operator/value "
+                      "是过滤结构字段，不是属性名"),
             )
         if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name):
             self._schema_error(
@@ -455,15 +466,40 @@ class FactMCP:
             return f"o.{name}"
         return f"json_extract(o.props, '$.{name}')"
 
+    _FILTER_KEYS = ("property", "field", "key", "name")
+    _FILTER_OP_KEYS = ("op", "operator")
+
+    def _normalize_where(self, type_id: str, where: Any) -> Any:
+        """把模型可能写出的 where 形状归一到过滤器列表。
+
+        实测事故（HTTP 链路 vc_step_10）：模型把单个过滤条件写成
+        {"property": "waybill_id", "operator": "eq", "value": "..."}，
+        旧代码走「dict 即扁平属性表」分支，把键名 "property" 当属性名
+        校验 → 报「FeeVariance 不允许的属性: property」，错误信息完全
+        指错方向。本函数识别「单过滤器对象」形状并包成列表；识别不了
+        的仍按扁平属性表处理（属性名照常校验，不放松契约）。
+        """
+        if isinstance(where, dict):
+            has_prop = any(k in where for k in self._FILTER_KEYS)
+            has_op = any(k in where for k in self._FILTER_OP_KEYS)
+            has_value = "value" in where
+            if has_prop and (has_op or has_value):
+                return [where]
+            return [
+                {"property": key, "op": "eq", "value": value}
+                for key, value in where.items()
+            ]
+        if isinstance(where, list):
+            # 列表形状本就是合法契约（[{property,op,value}, ...]），透传；
+            # 扁平 dict 已在上面归一。列表里混入非字典项由后续校验报错。
+            return where
+        return where
+
     def _compile_filters(self, type_id: str, where: Any,
                          args: list) -> list[str]:
         if where in (None, {}, []):
             return []
-        if isinstance(where, dict):
-            where = [
-                {"property": key, "op": "eq", "value": value}
-                for key, value in where.items()
-            ]
+        where = self._normalize_where(type_id, where)
         if not isinstance(where, list):
             self._schema_error(
                 "where 必须是过滤对象或过滤数组", allowed_ops=sorted(self.FILTER_OPS),

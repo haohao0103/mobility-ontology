@@ -103,6 +103,122 @@ class _TransientLLM(LLMError):
     pass
 
 
+# ---------------------------------------------------------------- 模型输出 JSON 提取
+# 规划步与决策步都吃模型的 JSON 输出，两侧都踩过同一种坑（HTTP 实测）：
+# 全角标点（「，}」）、网关截断（reason 字段中间断）、JSON 前掺推理文字。
+# 提取逻辑只实现一份，两个调用方共用；落盘诊断也走同一入口。
+def _normalize_json_text(text: str) -> str:
+    text = (text or "").strip()
+    text = re.sub(r"^```(?:json)?\s*", "", text)
+    text = re.sub(r"\s*```$", "", text)
+    return text
+
+
+def _relax_json_punct(text: str) -> str:
+    """全角标点归一 + 尾逗号清理（吸收已知噪声，不放宽输出契约）。"""
+    text = (text.replace("，", ",").replace("：", ":")
+                .replace("“", "\"").replace("”", "\"")
+                .replace("｛", "{").replace("｝", "}"))
+    return re.sub(r",(\s*[}\]])", r"\1", text)
+
+
+def _salvage_truncated_json(text: str) -> dict | None:
+    """救被截断的 JSON 对象。
+
+    实测事故：MiMo 返回的合法 JSON 在 reason 字段中间被网关截断
+    （len=2545 处断），主体 types/tasks/hypotheses 完整，整份判废会把
+    规划步打 degrade。策略：截到最后一个完整位置——若断在字符串里，
+    回退到最后一个顶层逗号（丢掉半个键值对）——再去尾逗号、按未闭合
+    括号栈补齐 `]`/`}`。救不出合法内容返回 None（空 dict 同判废）。
+    """
+    stack: list[str] = []
+    in_string = False
+    escape = False
+    end = 0
+    last_top_comma = -1  # 最后一个深度 1 的逗号（顶层键值分隔）
+    for i, ch in enumerate(text):
+        if in_string:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_string = False
+                end = i + 1
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch in "{[":
+            stack.append(ch)
+        elif ch in "}]":
+            if stack:
+                stack.pop()
+            end = i + 1
+        elif ch == ",":
+            if len(stack) == 1:
+                last_top_comma = i
+            end = i
+        elif not ch.isspace():
+            end = i + 1
+    if text[:1] != "{" or not stack:
+        return None
+    if in_string:
+        # 断在字符串中间：丢掉这半个键值对（顶层才安全；嵌套数组里的
+        # 半个元素回退到顶层逗号会丢整个 tasks，仍可接受——tasks 会由
+        # _normalize_tasks 兜底，且判废本就丢全部）
+        end = last_top_comma if last_top_comma >= 0 else end
+    candidate = text[:end].rstrip().rstrip(",")
+    if not candidate.startswith("{"):
+        return None
+    candidate += "".join(
+        "}" if c == "{" else "]" for c in reversed(stack))
+    try:
+        obj, _ = json.JSONDecoder().raw_decode(candidate)
+    except json.JSONDecodeError:
+        return None
+    return obj if isinstance(obj, dict) else None
+
+
+def _extract_json_object(raw: str) -> dict | None:
+    """从模型输出里提取 JSON 对象：剥围栏 → 全角归一 → 逐个 { 尝试 →
+    截断 salvage。JSON 前掺推理文字时从第一个 { 起解；都失败返回 None。
+    """
+    text = _relax_json_punct(_normalize_json_text(raw))
+    if "{" not in text:
+        return None
+    decoder = json.JSONDecoder()
+    positions = [i for i, c in enumerate(text) if c == "{"]
+    for idx in positions:
+        # 每个位置先原样解（最外层的 { 就是完整 JSON 的起点），失败立刻
+        # 在该位置试 salvage——不能把所有位置的 raw_decode 都跑完再 salvage，
+        # 否则嵌套内层对象（如 arguments 里的 {"type": ...}）会先解析成功，
+        # 把截断的外层对象挡住。
+        try:
+            obj, _ = decoder.raw_decode(text[idx:])
+        except json.JSONDecodeError:
+            obj = None
+        if isinstance(obj, dict):
+            return obj
+        salvaged = _salvage_truncated_json(text[idx:])
+        if salvaged:
+            return salvaged
+    return None
+
+
+def _dump_unparsed_model_output(raw: str, stage: str) -> None:
+    """模型输出解析失败时落 runs/（不入库）：诊断不能靠猜。"""
+    try:
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        dump = os.path.join(root, "runs", "model_output_parse_failures.log")
+        os.makedirs(os.path.dirname(dump), exist_ok=True)
+        with open(dump, "a", encoding="utf-8") as f:
+            f.write("=== %s stage=%s len=%d ===\n%s\n" % (
+                time.strftime("%Y-%m-%d %H:%M:%S"), stage, len(str(raw)),
+                str(raw)[:4000]))
+    except OSError:
+        pass
+
+
 class LLMClient:
     """OpenAI 兼容网关客户端，STG 环境变量与 nl2sql 模板保持一致。"""
 
@@ -1908,6 +2024,7 @@ class ReasoningAgent:
         elapsed_ms = round((time.perf_counter() - started) * 1000)
         action = self._parse_action(raw)
         if action is None:
+            _dump_unparsed_model_output(raw, "decide")
             self.error = "大模型输出无法解析"
             raise LLMError("大模型输出无法解析，未执行任何工具")
         self.error = None
@@ -2127,6 +2244,7 @@ class ReasoningAgent:
         elapsed_ms = round((time.perf_counter() - started) * 1000)
         candidate = self._parse_action(raw)
         if not candidate or candidate.get("action") != "final":
+            _dump_unparsed_model_output(raw, "review")
             self.error = "复核输出无法解析"
             raise LLMError("复核输出没有给出合法 final 结论")
         self.final_action = candidate
@@ -3086,83 +3204,13 @@ class ReasoningAgent:
     # ------------------------------------------------------------------ 问答前置 TBox
     @staticmethod
     def _salvage_truncated_json(text: str) -> dict | None:
-        """救被截断的 JSON 对象（只用于规划输出解析）。
-
-        实测事故：MiMo 返回合法 JSON 但被网关在 reason 字段中间截断
-        （len=2545 处断），主体 types/tasks/hypotheses 完整，整份判废会把
-        规划步打 degrade。策略：截到最后一个完整位置——若断在字符串里，
-        回退到最后一个顶层逗号（丢掉半个键值对）——再去尾逗号、按未闭合
-        括号栈补齐 `]`/`}`。救不出合法内容返回 None（空 dict 同判废）。
-        """
-        stack: list[str] = []
-        in_string = False
-        escape = False
-        end = 0
-        last_top_comma = -1  # 最后一个深度 1 的逗号（顶层键值分隔）
-        for i, ch in enumerate(text):
-            if in_string:
-                if escape:
-                    escape = False
-                elif ch == "\\":
-                    escape = True
-                elif ch == '"':
-                    in_string = False
-                    end = i + 1
-                continue
-            if ch == '"':
-                in_string = True
-            elif ch in "{[":
-                stack.append(ch)
-            elif ch in "}]":
-                if stack:
-                    stack.pop()
-                end = i + 1
-            elif ch == ",":
-                if len(stack) == 1:
-                    last_top_comma = i
-                end = i
-            elif not ch.isspace():
-                end = i + 1
-        if text[:1] != "{" or not stack:
-            return None
-        if in_string:
-            # 断在字符串中间：丢掉这半个键值对（顶层才安全；嵌套数组里的
-            # 半个元素回退到顶层逗号会丢整个 tasks，仍可接受——tasks 会由
-            # _normalize_tasks 兜底，且判废本就丢全部）
-            end = last_top_comma if last_top_comma >= 0 else end
-        candidate = text[:end].rstrip().rstrip(",")
-        if not candidate.startswith("{"):
-            return None
-        candidate += "".join(
-            "}" if c == "{" else "]" for c in reversed(stack))
-        try:
-            obj, _ = json.JSONDecoder().raw_decode(candidate)
-        except json.JSONDecodeError:
-            return None
-        return obj if isinstance(obj, dict) else None
+        """救被截断的 JSON 对象（委托模块级实现）。"""
+        return _salvage_truncated_json(text)
 
     @staticmethod
     def _parse_plan(raw: str) -> dict | None:
-        text = (raw or "").strip()
-        text = re.sub(r"^```(?:json)?\s*", "", text)
-        text = re.sub(r"\s*```$", "", text)
-        start = text.find("{")
-        if start < 0:
-            return None
-        text = text[start:]
-        # 模型偶发把 JSON 标点写成全角（实测：reason 字段后跟「，}」），
-        # 直接 json.loads 会整份判废 → 规划步失败降级。解析前把全角标点
-        # 归一为 ASCII 并清掉尾逗号；这不是放宽输出契约，是吸收已知的
-        # 标点噪声（尾逗号清理只动 } ] 之前，不动正常内容）。
-        text = (text.replace("，", ",").replace("：", ":")
-                    .replace("“", "\"").replace("”", "\"")
-                    .replace("｛", "{").replace("｝", "}"))
-        text = re.sub(r",(\s*[}\]])", r"\1", text)
-        try:
-            obj, _ = json.JSONDecoder().raw_decode(text)
-        except json.JSONDecodeError:
-            obj = ReasoningAgent._salvage_truncated_json(text)
-        return obj if isinstance(obj, dict) and obj else None
+        return _extract_json_object(raw)
+
 
     def _plan_tbox(self) -> dict:
         """只把 schema search + 闭包结果喂给模型，让它在邻域内圈定范围。
@@ -3285,17 +3333,7 @@ class ReasoningAgent:
         if not planned:
             # 解析失败时把模型原始输出落 runs/（不入库），便于诊断网关
             # 返回了 Markdown 围栏 / 推理过程 / 截断 JSON 中的哪一种。
-            try:
-                dump = os.path.join(
-                    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                    "runs", "plan_parse_failures.log")
-                os.makedirs(os.path.dirname(dump), exist_ok=True)
-                with open(dump, "a", encoding="utf-8") as f:
-                    f.write("=== %s len=%d ===\n%s\n" % (
-                        time.strftime("%Y-%m-%d %H:%M:%S"), len(str(raw)),
-                        str(raw)[:4000]))
-            except OSError:
-                pass
+            _dump_unparsed_model_output(raw, "plan")
             raise LLMError("本体规划输出无法解析，未进入后续查询")
         raw_types = planned.get("types") if isinstance(planned.get("types"), list) else []
         raw_fees = (
@@ -4313,49 +4351,30 @@ tbox.describe|按类型读取类定义、邻接关系、作用域规则、动作
 3. 只能调用工具目录里的 ontology.* 原语、function.* 确定性函数、action.plan 或 tbox.describe，arguments 严格使用对应参数名；不要编造不存在的工具，也不要调用 action.execute。
 4. 不要编造事实；工具返回 0 条时必须明确说明，不能假设存在。
 5. 遇到 SCHEMA_ERROR 时读取 allowed values，修正类型/属性/操作符后重试，不要重复同一非法查询。若报错字段是 evidence_id 这类关联对象主键（不在当前类型的 allowed_properties 内），说明它属于另一个对象，不要继续拿它过滤当前类型；改用 ontology.search_around / ontology.traverse 沿关系取关联对象（费用项证据走 FeeItem → Evidence 的 fee_supported_by_evidence），或优先调用对应 function.* 确定性函数。
-6. 最多执行 {self.max_steps} 次 MCP / 本体调用，之后必须输出 final。
+6. ontology.query 的 where 只有两种合法形状：扁平属性表 {{"waybill_id": "waybill:WB001"}}，或过滤数组 [{{"property": "waybill_id", "op": "eq", "value": "waybill:WB001"}}]。property / operator / value 是过滤结构字段，不是属性名——把它们当作属性名直接传（如 {{"property": "waybill_id", ...}}）会被拒绝。属性名必须来自该类型的 allowed_properties；order_by 是字符串或字符串数组，如 "created_at desc"。
+7. 最多执行 {self.max_steps} 次 MCP / 本体调用，之后必须输出 final。
 """
 
     # ------------------------------------------------------------------ 解析
     @staticmethod
     def _parse_action(raw: str) -> dict | None:
-        text = (raw or "").strip()
-        text = re.sub(r"^```(?:json)?\s*", "", text)
-        text = re.sub(r"\s*```$", "", text)
-        candidates = [text]
-        decoder = json.JSONDecoder()
-        for idx, char in enumerate(text):
-            if char == "{":
-                try:
-                    obj, _ = decoder.raw_decode(text[idx:])
-                except json.JSONDecodeError:
-                    continue
-                if isinstance(obj, dict):
-                    candidates.append(obj)
-                    break
-        for candidate in candidates:
-            if isinstance(candidate, dict):
-                obj = candidate
-            else:
-                try:
-                    obj = json.loads(candidate)
-                except json.JSONDecodeError:
-                    continue
-            if isinstance(obj, dict):
-                action = str(obj.get("action") or "")
-                if action in ("tool", "final"):
-                    return obj
-                # 宽松兜底：模型给了结论但动作名不是 final / 或干脆没给动作名，
-                # 只要有 answer 就按 final 收下——宁可放过一次格式偏差，
-                # 也不要因为字段名的小出入把整个诊断变成 503。
-                if obj.get("answer") and action in ("", "conclude", "answer",
-                                                   "conclusion", "结论", "final_answer"):
-                    obj = dict(obj)
-                    obj["action"] = "final"
-                    obj.setdefault("title", "结论")
-                    obj.setdefault("thought", "")
-                    obj.setdefault("question", "")  # staticmethod 里没有实例上下文
-                    return obj
+        obj = _extract_json_object(raw)
+        if not isinstance(obj, dict):
+            return None
+        action = str(obj.get("action") or "")
+        if action in ("tool", "final"):
+            return obj
+        # 宽松兜底：模型给了结论但动作名不是 final / 或干脆没给动作名，
+        # 只要有 answer 就按 final 收下——宁可放过一次格式偏差，
+        # 也不要因为字段名的小出入把整个诊断变成 503。
+        if obj.get("answer") and action in ("", "conclude", "answer",
+                                           "conclusion", "结论", "final_answer"):
+            obj = dict(obj)
+            obj["action"] = "final"
+            obj.setdefault("title", "结论")
+            obj.setdefault("thought", "")
+            obj.setdefault("question", "")  # staticmethod 里没有实例上下文
+            return obj
         return None
 
     @staticmethod

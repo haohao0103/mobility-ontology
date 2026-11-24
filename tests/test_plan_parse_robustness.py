@@ -151,6 +151,44 @@ def test_debug_dump_written_on_failure(tmp_path, monkeypatch):
     agent._client = _FakeClient()
     with pytest.raises(agent_mod.LLMError):
         agent._plan_tbox()
-    dump = tmp_path / "runs" / "plan_parse_failures.log"
+    dump = tmp_path / "runs" / "model_output_parse_failures.log"
     assert dump.exists()
     assert "完全不是 JSON" in dump.read_text(encoding="utf-8")
+
+
+# ---- 决策步（_parse_action）共用同一提取逻辑的回归 ----
+
+def test_action_parse_shares_extractor():
+    """决策步必须同样受益：全角标点 / 截断 / 前缀文字。"""
+    from freight.agent import ReasoningAgent
+
+    fullwidth = ('{"action":"tool","tool":"ontology.query",'
+                 '"arguments":{"type":"FeeItem"}，}')
+    assert ReasoningAgent._parse_action(fullwidth)["action"] == "tool"
+
+    truncated = ('{"action":"tool","tool":"ontology.query",'
+                 '"arguments":{"type":"FeeItem","where":{"fee_type":"waiting"}},'
+                 '"thought":"查 waiting 费用项，因为问题是')
+    parsed = ReasoningAgent._parse_action(truncated)
+    assert parsed is not None
+    assert parsed["tool"] == "ontology.query"
+    assert parsed["arguments"]["where"]["fee_type"] == "waiting"
+
+    prose = '我先查费用项：\n{"action":"tool","tool":"function.fee_breakdown"}'
+    assert ReasoningAgent._parse_action(prose)["tool"] == "function.fee_breakdown"
+
+
+def test_action_parse_still_rejects_garbage():
+    from freight.agent import ReasoningAgent
+    assert ReasoningAgent._parse_action("我完全没给 JSON") is None
+    assert ReasoningAgent._parse_action('{"action":"bogus"}') is None
+    # 有 answer 但动作名离谱 → 宽松兜底按 final 收下（既有行为不变）
+    obj = ReasoningAgent._parse_action('{"action":"conclude","answer":"结论"}')
+    assert obj is not None and obj["action"] == "final"
+
+
+def test_action_parse_truncated_before_action_field():
+    """截在 action 字段之前：救不出可用动作，必须判废（不能瞎跑）。"""
+    from freight.agent import ReasoningAgent
+    assert ReasoningAgent._parse_action('{"acti') is None
+    assert ReasoningAgent._parse_action('{"action": "to') is None

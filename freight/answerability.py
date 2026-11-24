@@ -40,6 +40,50 @@ _MEASURE_WORDS = ("应收", "应计", "超收", "应得", "该收", "算出来",
                   "多少钱", "多少", "缺口", "差额", "差异", "超了", "少收")
 _RULE_HINT_WORDS = ("按规则", "规则", "计价", "定价", "口径")
 
+# ---- 知识型/实例型分诊（确定性，0 LLM）----
+# 实例锚：问句点名了具体业务对象（对象 ID / 运单号模式）→ 答案在 ABox
+_INSTANCE_ANCHOR_RE = re.compile(
+    r"(?:waybill|order|fee|stop|settlement|invoice|ticket|cargo|driver|vehicle)"
+    r":[A-Za-z0-9_\-]+|WB\d{6,}", re.IGNORECASE)
+# 知识锚：问句要的是声明（规则/定价/状态/动作/结构），不是某个对象的数
+_KNOWLEDGE_HINT_WORDS = (
+    "规则", "计价", "定价", "口径", "费率", "怎么算", "如何计算",
+    "状态", "流转", "转移", "状态机", "谁能", "什么操作", "哪些操作",
+    "角色", "权限", "免费", "公式", "定义", "字段",
+)
+
+
+def classify_question(question: str) -> dict:
+    """问句分诊：knowledge / instance / mixed（纯确定性，0 LLM）。
+
+    knowledge：问的是本体声明本身（规则公式、定价参数、状态机、动作
+    权限、结构定义），答案在 TBox，不需要查任何业务实例；
+    instance：点名了具体对象或默认诊断问句，答案在 ABox 事实里；
+    mixed：两者都有——规则口径读 TBox，金额证据查 ABox。
+    分诊结果只改变提示词与工具引导，不改变任何查询的权限边界。
+    """
+    q = (question or "").strip()
+    has_instance = bool(_INSTANCE_ANCHOR_RE.search(q))
+    has_knowledge = any(w in q for w in _KNOWLEDGE_HINT_WORDS)
+    if has_instance and has_knowledge:
+        kind = "mixed"
+    elif has_knowledge:
+        kind = "knowledge"
+    else:
+        kind = "instance"
+    return {
+        "kind": kind,
+        "signals": {
+            "instance_anchor": has_instance,
+            "knowledge_hint": has_knowledge,
+        },
+        "explain": {
+            "knowledge": "问句要的是声明（规则/定价/状态/动作），答案在 TBox",
+            "instance": "问句点名具体对象或金额，答案在 ABox 事实里",
+            "mixed": "声明与实例都要：规则口径读 TBox，金额证据查 ABox",
+        }[kind],
+    }
+
 # 事实里承担"显示名"作用的属性 → 用来把中文问句映射到 fee_type
 _LABEL_PROPS = ("fee_label", "label", "name", "display_name", "title")
 

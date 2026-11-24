@@ -269,6 +269,14 @@ class ReasoningAgent:
             (question or "").strip()
             or f"诊断运单 {self.waybill_id} 的费用构成与差异原因"
         )
+        # 知识型/实例型分诊（确定性，0 LLM）：知识型问题的答案在 TBox 声明
+        # 里，不该被拖进 ABox 取证循环。分诊只影响提示词与工具引导；
+        # 失败时保守按 instance 走原诊断链路。
+        try:
+            from freight.answerability import classify_question
+            self.question_kind = classify_question(self.question)["kind"]
+        except Exception:  # noqa: BLE001
+            self.question_kind = "instance"
         # LLM 客户端延迟到第一次真正调用才构造。start()/catalog/tbox 这些
         # 确定性步骤不该被网关或密钥问题挡住；演示前另走 /agent/preflight 预检。
         self._client: "LLMClient | None" = None
@@ -1613,6 +1621,13 @@ class ReasoningAgent:
         if len(self.observations) + self.tbox_queries >= self.max_steps:
             self._step_exhausted()
             return
+        # 知识型问题：声明已到手就本地收口。describe 结果里已经带着答案，
+        # 再把决策交给 LLM 只会赌它的 JSON 输出格式（实测常见直接文本作答）。
+        if (self.question_kind == "knowledge"
+                and any(it.get("kind") in ("rule", "pricing", "action")
+                        for it in self.tbox_seen.values())):
+            self._knowledge_final()
+            return
         self._sync_task_reminder()
         started = time.perf_counter()
         try:
@@ -1808,6 +1823,18 @@ class ReasoningAgent:
         hypo_lines = "\n".join(
             f"{h['id']} {h['claim']}" for h in self.planned.get("hypotheses", [])
         )
+        if self.question_kind == "knowledge":
+            evidence_rule = (
+                "\n这是知识型问题：最终答案必须引用对话中已出现的 TBox 声明——"
+                "规则 ID、公式、定价参数值（如免费分钟数、每块单价）、"
+                "状态机迁移。凡声明已在上下文中的假设，必须给出参数值并判"
+                "「成立」，禁止标待补证；只有上下文确实没有的声明才允许待补证。"
+            )
+        else:
+            evidence_rule = (
+                "\n已核对的 TBox 声明与 ABox 观察同样是证据：规则公式、定价参数、"
+                "状态机迁移可直接引用其 ID 与参数值作答，不要把已有声明标成待补证。"
+            )
         instruction = (
             "请复核以上全部观察，核对金额、规则和证据引用是否一致；"
             "如有遗漏或错误请修正。只输出 final JSON，不要调用工具："
@@ -1816,6 +1843,7 @@ class ReasoningAgent:
             "answer 必须包含三段：① 逐条回应以下假设（成立/排除/待补证+证据）：\n"
             + (hypo_lines or "（无假设）")
             + "\n② 已核对的事实；③ 未决项（缺什么、建议找谁、哪个系统）。"
+            + evidence_rule
         )
         self.messages.append({"role": "user", "content": instruction})
         started = time.perf_counter()
@@ -1866,6 +1894,14 @@ class ReasoningAgent:
                 summary = self._compact(summary, 160)
             lines.append(f"- {tool}：{str(summary)[:160]}")
         body = "\n".join(lines[:8]) or "（本轮没有取到任何观察）"
+        # 降级也不能丢 TBox：知识型问题的答案往往在已查到的声明里
+        # （规则公式、定价参数、动作权限），它们不在 observations 里。
+        decl_lines = [
+            f"- {item['kind']}|{item['id']}：{str(item.get('detail'))[:200]}"
+            for item in self.tbox_seen.values()
+            if item.get("kind") in ("rule", "pricing", "action")
+        ][:8]
+        decl_body = "\n".join(decl_lines)
         open_items = self._open_items()
         open_lines = [
             f"{i}. {item['missing']} → 建议 {item['owner']}（{item['system']}）"
@@ -1881,6 +1917,9 @@ class ReasoningAgent:
             "**初步结论**（观察不足，非最终判定）：\n"
             "**已核对**（本轮取到的观察）：\n" + body,
         ]
+        if decl_body:
+            parts.append("**已核对的 TBox 声明**（规则 / 定价参数 / 动作）：\n"
+                         + decl_body)
         if hypo_lines:
             parts.append("**假设回应**：\n" + "\n".join(hypo_lines))
         parts.append(
@@ -1895,6 +1934,39 @@ class ReasoningAgent:
             "answer": "\n\n".join(parts),
             "degraded": True,
         }
+
+    def _knowledge_final(self) -> None:
+        """知识型问题：以已取到的 TBox 声明为证据，本地确定性收口。
+
+        不是降级——是设计路径：答案就在 rule / pricing / action 声明里，
+        声明到手后无需再调决策 LLM，也就不赌它的输出格式。
+        """
+        decl_lines = [
+            f"- {it['kind']}|{it['id']}（{it.get('label') or ''}）："
+            f"{str(it.get('detail') or '')[:400]}"
+            for it in self.tbox_seen.values()
+            if it.get("kind") in ("class", "rule", "pricing", "action", "function")
+        ][:12]
+        hypo_lines = [
+            f"- {h['id']} {h['claim']}：{h['verdict']}"
+            + (f"（{h['evidence']}）" if h.get("evidence") else "")
+            for h in self._hypothesis_verdicts()
+        ]
+        parts = ["**知识问答结论**（证据 = 本体声明，确定性收口）："]
+        if decl_lines:
+            parts.append("**已核对的声明**：\n" + "\n".join(decl_lines))
+        if hypo_lines:
+            parts.append("**假设回应**：\n" + "\n".join(hypo_lines))
+        if len(parts) == 1:
+            parts.append("（未取到与问题相关的声明，请扩大 describe 范围）")
+        self.final_action = {
+            "action": "final",
+            "title": "知识问答结论（本体声明）",
+            "question": self.question,
+            "thought": "知识型问题：答案在 TBox 声明中，已取到即本地收口。",
+            "answer": "\n\n".join(parts),
+        }
+        self._finish()
 
     # ---------------------------------------------------------------- 计划驱动取证
     #
@@ -1992,6 +2064,42 @@ class ReasoningAgent:
         return rows
 
     # ---------------------------------------------------------------- 假设回应
+    # 知识词 → TBox 声明 detail 里会出现的参数/字段名
+    _DECL_KEYS = {
+        "免费": ("free_minutes",),
+        "时长": ("free_minutes", "block_minutes"),
+        "分钟": ("free_minutes", "block_minutes"),
+        "取整": ("block_minutes",),
+        "费率": ("per_block",),
+        "单价": ("per_block",),
+        "块": ("block_minutes", "per_block"),
+        "加价": ("per_block",),
+        "状态": ("to_status", "from_status", "statuses"),
+        "流转": ("to_status", "from_status"),
+        "转移": ("to_status", "from_status"),
+        "角色": ("roles",),
+        "权限": ("roles",),
+        "谁能": ("roles",),
+        "动作": ("to_status", "from_status", "roles"),
+    }
+
+    def _declaration_hit(self, claim: str) -> str | None:
+        """知识型假设的声明命中：claim 的知识词映射到参数名，
+        在本次会话已查到的规则/定价参数/动作声明里检索。命中返回
+        可引用的证据串（ID + 参数摘要），未命中返回 None。
+        """
+        keys = [key for word, tup in self._DECL_KEYS.items() if word in claim
+                for key in tup]
+        if not keys:
+            return None
+        for item in self.tbox_seen.values():
+            if item.get("kind") not in ("rule", "pricing", "action"):
+                continue
+            detail = str(item.get("detail") or "")
+            if any(k in detail for k in keys):
+                return f"{item['kind']}|{item['id']}：{detail[:140]}"
+        return None
+
     def _hypothesis_verdicts(self) -> list[dict]:
         """逐条假设给 成立/排除/待补证，证据全部来自确定性分析结果。
 
@@ -2007,7 +2115,14 @@ class ReasoningAgent:
         for hypo in self.planned.get("hypotheses", []):
             claim = hypo["claim"]
             verdict, why = "待补证", "本轮未取到直接证据"
-            if any(k in claim for k in ("费率", "应计", "口径", "多收", "少收")):
+            # 知识型假设：声明本身就是证据。claim 命中知识词时，在本次
+            # 会话已查到的 TBox 声明（规则公式 / 定价参数 / 动作）里找
+            # 对应参数名，找到即「成立」，避免降级路径全盘待补证。
+            decl = self._declaration_hit(claim)
+            if decl:
+                verdict = "成立"
+                why = decl
+            elif any(k in claim for k in ("费率", "应计", "口径", "多收", "少收")):
                 if "WAITING_FEE_MISMATCH" in codes or any(
                         abs(b.get("rule_delta") or 0) > 0.01 for b in breakdown):
                     bad = [b for b in breakdown
@@ -2110,6 +2225,18 @@ class ReasoningAgent:
         hypo_lines = "\n".join(
             f"{h['id']} {h['claim']}" for h in self.planned.get("hypotheses", [])
         )
+        if self.question_kind == "knowledge":
+            evidence_rule = (
+                "\n这是知识型问题：最终答案必须引用对话中已出现的 TBox 声明——"
+                "规则 ID、公式、定价参数值（如免费分钟数、每块单价）、"
+                "状态机迁移。凡声明已在上下文中的假设，必须给出参数值并判"
+                "「成立」，禁止标待补证；只有上下文确实没有的声明才允许待补证。"
+            )
+        else:
+            evidence_rule = (
+                "\n已核对的 TBox 声明与 ABox 观察同样是证据：规则公式、定价参数、"
+                "状态机迁移可直接引用其 ID 与参数值作答，不要把已有声明标成待补证。"
+            )
         instruction = (
             "工具调用次数已用完。请基于以上观察，只输出 final JSON："
             '{"action":"final","title":"结论","question":"最终核对的问题",'
@@ -2117,6 +2244,7 @@ class ReasoningAgent:
             "answer 必须包含三段：① 逐条回应以下假设（成立/排除/待补证+证据）：\n"
             + (hypo_lines or "（无假设）")
             + "\n② 已核对的事实；③ 未决项（缺什么、建议找谁、哪个系统）。"
+            + evidence_rule
         )
         self.messages.append({"role": "user", "content": instruction})
         started = time.perf_counter()
@@ -2154,6 +2282,11 @@ class ReasoningAgent:
 
     def _step_action(self) -> None:
         """一次点击只生成本地动作提案，不调用大模型，也不追加最终结论。"""
+        if self.question_kind == "knowledge":
+            # 知识型问题没有对象状态变化诉求：不出动作提案，直接收口。
+            # （提案本身也不写数据，跳过只为避免答非所问的建议。）
+            self.pending = "finish"
+            return
         self.plan = self.system.action_plan(self.object_id) or {}
         self.steps.append(self._action_step(self.plan, len(self.steps) + 1))
         self.pending = "finish"
@@ -2690,6 +2823,21 @@ class ReasoningAgent:
                 + "）"
             )
         tools_hint = "、".join(sorted(self.catalog.keys())) or "无"
+        if self.question_kind == "knowledge":
+            kind_rule = (
+                "\n本次是**知识型问题**：用户要的是本体声明（规则/定价/状态/"
+                "动作），不是实例取证。tasks 只需要声明读取任务（tool_hint 用 "
+                "tbox.describe / ontology.state_machine / ontology.schema，"
+                "不要给 function.* 或实例查询）；hypotheses 围绕声明的具体"
+                "内容（如免费时长是多少分钟、谁能执行哪个动作）。"
+            )
+        elif self.question_kind == "mixed":
+            kind_rule = (
+                "\n本次是**混合型问题**：规则与口径部分用 tbox.describe 读声明，"
+                "金额与证据部分照常规划实例取证。"
+            )
+        else:
+            kind_rule = ""
         messages = [{
             "role": "system",
             "content": (
@@ -2706,6 +2854,7 @@ class ReasoningAgent:
                 "没规划；② tasks 是取证任务清单，每条给 intent / tool_hint / "
                 "target / why，tool_hint 必须来自可用能力集；③ hypotheses 是"
                 "可证伪假设，每条给 id / claim / verify_by，结论阶段必须逐条回应。"
+                + kind_rule
             ),
         }, {
             "role": "user",
@@ -3617,11 +3766,37 @@ class ReasoningAgent:
             f'|返回={tool.get("returns", "")}'
             for tool in self.catalog.values()
         ]
+        if self.question_kind == "knowledge":
+            diagnosis_rule = (
+                "本问题已判定为**本体知识型**：答案在 TBox 声明里——规则公式、"
+                "定价参数、动作与角色、状态机迁移。先用 tbox.describe"
+                "（费用类问题给 fee_types）读取规则与参数，状态流转问题用 "
+                "ontology.state_machine；拿到声明即可给 final 结论，"
+                "不要查询业务实例（ontology.query / search_around / function.* "
+                "都不需要），也不要把问题改写成对某张运单的取证。"
+            )
+        else:
+            diagnosis_rule = (
+                "确定性函数（function.*）是问题无关的计算原语：费用拆解、"
+                "报价对账、证据链、动作预检应优先调用它们，不要用手工多轮查询"
+                "重新实现。凡是费用构成、金额差异、为什么多收/少收类问题，"
+                "第一次业务查询必须调用 function.fee_breakdown，拿到确定性拆解"
+                "后再决定是否补充查询。"
+            )
+            if self.question_kind == "mixed":
+                diagnosis_rule += (
+                    "本问题同时含知识成分：规则口径与参数直接引用 TBox 声明"
+                    "（tbox.describe 返回的规则公式与定价参数），不要为口径"
+                    "再去查业务实例。"
+                )
+        diagnosis_rule += (
+            "动作只能调用 action.plan 做预检，禁止执行 action.execute。"
+        )
         return f"""你是货拉拉运单费用诊断 Agent。你运行在本体系统内，只读诊断，不修改任何业务数据。
 任务：围绕业务问题「{self.question}」，针对运单 {self.waybill_id}（对象 ID {self.object_id}，对象类型 {self.object_type}），通过通用本体查询原语查询业务事实（ABox），结合本体定义（TBox）解释费用构成、差异原因、证据充分性和动作影响面，最后给出可核对的结论。
 约束：不要假设目录之外的任何本体 ID；当前工具目录已按对象类型裁剪，优先在对象能力集内选择工具。系统已优先注入全量紧凑 TBox 目录；装不下时才按 object type group 缩域。目录只是索引：需要类型间路径时用 ontology.path，需要字段/关系/规则时用 tbox.describe；需要从锚点对象展开邻居时用 ontology.search_around，不要预计算全局强依赖闭包。所有查询入口都会做 schema 校验，报 SCHEMA_ERROR 时按返回的 allowed values 重写查询。
 不要用关键词规则给问题打意图标签；按工具契约选择：对象类型、必填参数、返回类型和权限是否匹配。用户给出的金额或差异是待核对断言，不是过滤条件；先用确定性函数算出实际值，再确认或纠正用户说的数字。
-确定性函数（function.*）是问题无关的计算原语：费用拆解、报价对账、证据链、动作预检应优先调用它们，不要用手工多轮查询重新实现。凡是费用构成、金额差异、为什么多收/少收类问题，第一次业务查询必须调用 function.fee_breakdown，拿到确定性拆解后再决定是否补充查询。动作只能调用 action.plan 做预检，禁止执行 action.execute。
+{diagnosis_rule}
 
 【标识约定】
 - 本运单对象 ID = {self.object_id}；所有查询参数里的 waybill_id / object_id 都传这个完整对象 ID。
@@ -3632,6 +3807,7 @@ ontology.catalog|读取紧凑 TBox 目录；全量装得下直接返回，装不
 ontology.object_type_search|按对象类型 ID、名称、描述、别名和业务域召回锚点类型|参数={{"question":"<自然语言问题>","top_k":8,"group_ids":["<业务域 ID，可空>"]}}
 ontology.schema|读取完整 schema，结构扩展固定沿强依赖白名单执行|参数={{"question":"<自然语言问题，可空>","types":["<类型，可空>"],"top_k":12,"depth":2}}
 ontology.path|查询两个类型之间所有合法关系路径|参数={{"from_type":"<类型>","to_type":"<类型>","max_depth":4,"limit":10}}
+ontology.state_machine|读取状态机声明：状态集、起点/终态、合法迁移边（带动作与角色）；给 object_id 时附当前状态与可用迁移|参数={{"object_type":"<类型 ID，可空>","object_id":"<对象 ID，可空>"}}
 ontology.search_around|从一组锚点对象沿 link type 按需展开实例邻居，不预计算全局闭包|参数={{"object_ids":["<对象 ID>"],"link_type_ids":["<关系 ID，可空>"],"direction":"both","depth":1,"limit":200}}
 tbox.describe|按类型读取类定义、邻接关系、作用域规则、动作和定价参数|参数={{"types":["<目录中的类型 ID>"],"fee_types":["<目录中的费用类型 ID>"]}}
 - 对话开头已注入紧凑 TBox 目录；能覆盖问题范围时直接使用，不要重复请求全量目录。
@@ -3834,14 +4010,27 @@ tbox.describe|按类型读取类定义、邻接关系、作用域规则、动作
             })
         for fee_type, pricing in described["pricing"].items():
             if fee_type == "waiting":
+                # 知识型问答的答案就是这些参数（免费分钟数、计费块、单价），
+                # 只给"决策表 7 行"这种摘要等于没给——必须把行渲染出来。
                 matrix = pricing.get("matrix") or []
                 dims = pricing.get("dimensions") or []
-                detail = json.dumps(pricing, ensure_ascii=False)
-                if matrix:
-                    detail = (
-                        f'决策表 {len(matrix)} 行 · 维度 {" × ".join(dims) or "—"}'
-                        f' · 首行命中'
+                rows = []
+                for row in matrix[:8]:
+                    conds = row.get("conditions") or {}
+                    values = [
+                        str(item.get("value"))
+                        for grp in conds.values() if isinstance(grp, list)
+                        for item in grp if isinstance(item, dict)
+                    ]
+                    cond = "+".join(values) or "默认"
+                    params = "，".join(
+                        f"{k}={v}" for k, v in (row.get("params") or {}).items()
                     )
+                    rows.append(f"[{cond}] {params}")
+                detail = (
+                    f'维度 {" × ".join(dims) or "—"}：' + "；".join(rows)
+                    if rows else json.dumps(pricing, ensure_ascii=False)
+                )[:600]
                 label = "等候费定价参数"
             elif fee_type == "highway":
                 # 来源参数也在决策表默认行里——顶层 source 是迁移后的死键，
@@ -3899,17 +4088,31 @@ tbox.describe|按类型读取类定义、邻接关系、作用域规则、动作
 
     @staticmethod
     def _tbox_context(items: list[dict], limit: int = TBOX_CONTEXT_LIMIT) -> str:
-        """把圈定范围内的 TBox 定义压成带长度上限的上下文。"""
-        lines = ["【TBox 定义（按本次问题按需加载，非全量）】"]
-        lines.extend(
-            f'{item["kind"]}|{item["id"]}|{item["label"]}|{item["detail"]}'
-            for item in items
+        """把圈定范围内的 TBox 定义压成带长度上限的上下文。
+
+        截断时的优先级：类/规则/动作/函数/定价参数先保留，关系行用剩余
+        预算装。规则公式与定价参数（如免费分钟数）是知识型问题的答案，
+        不能被数量占优的邻接关系挤出上下文。
+        """
+        priority = {"class": 0, "rule": 1, "action": 2, "function": 3,
+                    "pricing": 4, "relation": 5}
+        ordered = sorted(
+            items, key=lambda it: priority.get(it.get("kind"), 6)
         )
-        text = "\n".join(lines)
-        if len(text) > limit:
-            text = (
-                text[:limit]
-                + "\n…（已截断；需要其他类型请调用 tbox.describe）"
+        lines = ["【TBox 定义（按本次问题按需加载，非全量）】"]
+        kept: list[str] = []
+        used = len(lines[0])
+        for item in ordered:
+            line = f'{item["kind"]}|{item["id"]}|{item["label"]}|{item["detail"]}'
+            if used + len(line) + 1 > limit and kept:
+                break
+            kept.append(line)
+            used += len(line) + 1
+        text = "\n".join(lines + kept)
+        if len(ordered) > len(kept):
+            text += (
+                f"\n…（{len(ordered) - len(kept)} 条关系行超出预算被省略；"
+                "需要其他类型请调用 tbox.describe）"
             )
         return text
 

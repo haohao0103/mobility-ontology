@@ -1547,11 +1547,18 @@ function correctionTrace(it) {
     ['提议=PENDING', '确认后=EXECUTED', '驳回=REJECTED', '审计=全量留痕'],
     'Agent 只能提议，必须人工确认才落图；驳回同样留痕。');
 
-  push('修复后复检', 'diagnose(crowd_id)', 'GET /assets/{id}/diagnose',
-    ['修复前=BLOCK', '修复后=PASS', '全程=可追溯'],
-    '重新诊断同一人群，确认冲突消失后闭环完成。');
+  const closed = it.verdict === 'PASS' && issues.length === 0;
+  push('修复后复检（示意）', 'diagnose(crowd_id)', 'GET /assets/{id}/diagnose',
+    [`本次结论=${it.verdict || '—'}`, `本次冲突数=${issues.length}`, `复检=尚未执行`],
+    closed
+      ? '本次诊断结论为 PASS 且无冲突；修复动作仍需复检确认后才能闭环。'
+      : `本次诊断结论为 ${esc(it.verdict || '—')}、冲突 ${issues.length} 条；尚未闭环，不能宣布「修复后=PASS」。`,
+    closed ? 'ok' : '');
 
   return `<div class="trace" data-trace>
+    <div style="font-size:12px;opacity:.75;padding:0 0 10px">
+      以下为<b>讲解用示意轨迹</b>：步骤骨架与查询表达式是预置文案，数据取自本次诊断接口返回；不是逐步实时执行的推理链，也不代表修复动作已执行。
+    </div>
     <div class="trace-nav">
       <span class="tp" data-trace-title>步骤 1 / ${steps.length}</span>
       <div class="tbar"><i data-trace-bar style="width:${100 / steps.length}%"></i></div>
@@ -1573,7 +1580,7 @@ function correctionTrace(it) {
         <div class="step-query" data-step-query="${s.n}" id="stepQuery${s.n}">
           <div class="empty">加载该步图谱查询结果…</div>
         </div>
-        ${ONTO[s.title] ? `<div class="to">本体依据：${ONTO[s.title]}</div>` : ''}
+        ${ONTO[s.title] ? `<div class="to">依据（示意说明，非本体实时读取）：${ONTO[s.title]}</div>` : ''}
       </div>
     </div>`).join('')}</div>`;
 }

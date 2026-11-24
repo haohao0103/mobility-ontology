@@ -265,16 +265,19 @@ class ReasoningAgent:
             raw_type,
         )
         self.max_steps = max(2, min(int(max_steps), 10))
+        self.question_is_default = not (question or "").strip()
         self.question = (
             (question or "").strip()
             or f"诊断运单 {self.waybill_id} 的费用构成与差异原因"
         )
         # 知识型/实例型分诊（确定性，0 LLM）：知识型问题的答案在 TBox 声明
-        # 里，不该被拖进 ABox 取证循环。分诊只影响提示词与工具引导；
+        # 里，不该被拖进 ABox 取证循环。分诊只用本体声明与问句本身，
         # 失败时保守按 instance 走原诊断链路。
         try:
             from freight.answerability import classify_question
-            self.question_kind = classify_question(self.question)["kind"]
+            self.question_kind = classify_question(
+                self.question, semantic=self.sem,
+            )["kind"]
         except Exception:  # noqa: BLE001
             self.question_kind = "instance"
         # LLM 客户端延迟到第一次真正调用才构造。start()/catalog/tbox 这些
@@ -936,28 +939,66 @@ class ReasoningAgent:
             )
         return text
 
+    def _groups_for_anchors(self, anchors: list[str]) -> list[str]:
+        """锚点 → 业务域，按锚点相关性保序（不是按域的声明顺序）。"""
+        groups: list[str] = []
+        for cid in anchors:
+            for gid in self.sem.group_ids_for_types([cid]):
+                if gid not in groups:
+                    groups.append(gid)
+        return groups
+
+    def _fit_groups_to_budget(self, group_ids: list[str],
+                              budget: int) -> tuple[list[str], bool]:
+        """按锚点相关性累加业务域目录，实际测字符数，超预算即截断。
+
+        域集合与顺序都来自本次问句召回的锚点，字符数由语义层构造的
+        目录实测，不预设任何业务域、也不靠估算。
+        """
+        selected: list[str] = []
+        trimmed = False
+        for gid in group_ids:
+            trial = selected + [gid]
+            payload = self.sem.catalog(group_ids=trial)
+            if not selected or int(payload.get("characters") or 0) <= budget:
+                selected = trial
+            else:
+                trimmed = True
+                break
+        return selected, trimmed
+
     def _step_catalog(self) -> None:
-        """Palantir 路径：先注入全量紧凑目录；装不下再按业务域缩域并找锚点。"""
+        """Palantir 路径：先注入全量紧凑目录；装不下再按**问句召回**的域缩域。"""
         full = self.sem.catalog()
         payload = full
         mode = full.get("mode") or "full"
         anchors: list[str] = []
         group_ids: list[str] = []
+        candidate_groups: list[str] = []
         search_result: dict = {}
+        trimmed = False
+        fallback_used = False
+        budget = int(full.get("budget") or self.sem.catalog_budget())
+        all_groups = [g["id"] for g in full.get("groups") or []]
         if not full.get("fits"):
-            scope_groups = self.sem.group_ids_for_types([self.object_type])
-            if not scope_groups:
-                scope_groups = [g["id"] for g in full.get("groups") or []]
+            # 候选集是全部业务域：不再用「当前对象所在域」把检索范围钉死。
+            # 锚点及其顺序完全由 object_type_search 对本次问句的打分决定。
             search_result = self.sem.object_type_search(
                 self.question, top_k=SEARCH_TOP_K,
-                group_ids=scope_groups or None,
             )
             anchors = [hit["id"] for hit in search_result.get("types") or []]
-            if not anchors:
-                anchors = [self.object_type]
-            group_ids = self.sem.group_ids_for_types(anchors)
+            candidate_groups = self._groups_for_anchors(anchors)
+            group_ids, trimmed = self._fit_groups_to_budget(
+                candidate_groups, budget,
+            )
             if not group_ids:
-                group_ids = scope_groups
+                # 零命中：诚实标注回退，不把当前对象域伪装成「召回结果」。
+                fallback_used = True
+                group_ids = self.sem.group_ids_for_types([self.object_type])
+            if not group_ids:
+                # 当前对象也不属于任何已声明域时，至少给一个真实存在的域，
+                # 避免 catalog(group_ids=[]) 静默退化成空目录。
+                group_ids = all_groups[:1]
             payload = self.sem.catalog(group_ids=group_ids)
             mode = "group"
 
@@ -993,20 +1034,33 @@ class ReasoningAgent:
             expression = (
                 "ontology.catalog() → ontology.object_type_search("
                 + json.dumps(self.question, ensure_ascii=False)
-                + ") → ontology.catalog(group_ids=["
-                + ", ".join(json.dumps(g, ensure_ascii=False) for g in group_ids)
-                + "])"
+                + f", top_k={SEARCH_TOP_K}) → ontology.catalog(group_ids="
+                + json.dumps(group_ids, ensure_ascii=False)
+                + ")"
             )
-            title = "对象类型组缩域 + 对象类型检索（不调用大模型）"
+            title = "按问句召回锚点并缩域（不调用大模型）"
+            fallback_note = (
+                "；问句零命中，已标注回退到当前对象所在域（不是召回结果）"
+                if fallback_used else ""
+            )
+            trim_note = (
+                f"；按预算从 {len(candidate_groups)} 个候选域截到 {len(group_ids)} 个"
+                if trimmed else ""
+            )
             conclusion = (
-                f"全量目录超出 {budget} 字符预算，改用 {len(group_ids)} 个业务域缩域，"
-                f"并召回 {len(anchors)} 个锚点类型；注入 {len(types)} 个类型、"
-                f"{relation_count} 条关系。"
+                f"全量目录 {full.get('characters', 0)} 字符超出 {budget} 预算；"
+                f"在 {len(all_groups)} 个业务域里按问句召回 {len(anchors)} 个锚点，"
+                f"命中 {len(candidate_groups)} 个候选域，保留 {len(group_ids)} 个："
+                f"{'、'.join(group_ids) or '—'}；注入 {len(types)} 个类型、"
+                f"{relation_count} 条关系{fallback_note}{trim_note}。"
             )
             query_explain = (
-                f"全量目录装不下，先按 object_type_groups 把范围缩到 "
-                f"{'、'.join(group_ids) or '当前对象所在域'}，再用 object_type_search "
-                "按类型元数据召回锚点；没有预计算全局强依赖闭包。"
+                f"全量目录装不下：object_type_search 在全部 {len(all_groups)} 个业务域、"
+                f"{len(self.sem.classes)} 个类型里按问句元数据打分召回锚点，"
+                "再按锚点相关性把所属域逐个加入目录，边加边实测字符数，"
+                "超预算即截断。检索范围不预设，域集合由本次问句决定"
+                + ("；本次问句零命中，已显式标注回退" if fallback_used else "")
+                + "。没有预计算全局强依赖闭包。"
             )
 
         output_scope = {
@@ -1031,6 +1085,8 @@ class ReasoningAgent:
         step["query"]["params"] = {
             "object_type": self.object_type,
             "question": self.question,
+            "question_source": "default" if self.question_is_default else "user",
+            "search_scope": f"all_groups({len(all_groups)})" if mode != "full" else "full",
         }
         step["query"]["input"] = step["query"]["params"]
         step["query"]["scope"] = output_scope
@@ -1048,6 +1104,11 @@ class ReasoningAgent:
                 group["id"] for group in payload.get("groups") or []
             ],
             "anchors": anchors,
+            "candidate_groups": candidate_groups,
+            "search_scope": "all_groups" if mode != "full" else "full",
+            "trimmed_by_budget": trimmed,
+            "fallback_used": fallback_used,
+            "question_source": "default" if self.question_is_default else "user",
         }
         step["layers"]["tbox"]["source"] = (
             "semantic_layer.json · 紧凑目录 + 对象类型组 + 对象类型检索"
@@ -1055,8 +1116,8 @@ class ReasoningAgent:
         step["layers"]["tbox"]["query"] = expression
         step["layers"]["tbox"]["query_explain"] = query_explain
         step["layers"]["tbox"]["note"] = (
-            "先判断全量紧凑目录是否在上下文预算内；装得下直接注入，"
-            "装不下才按 object_type_groups 缩域，并用 object_type_search 找锚点。"
+            "先判断全量紧凑目录是否在上下文预算内；装不下时按问句在全部"
+            "业务域里召回锚点，再按实测字符数逐个加入所属域直到预算上限。"
         )
         step["operations"] = [
             f"读取全量紧凑目录：{full.get('characters', 0)} 字符 / "
@@ -1064,8 +1125,12 @@ class ReasoningAgent:
             (
                 "装得下：直接注入全量目录，不缩域、不做闭包"
                 if mode == "full" else
-                f"装不下：缩域到业务域 {'、'.join(group_ids)}，"
-                f"召回锚点 {'、'.join(anchors)}"
+                f"装不下：在 {len(all_groups)} 个业务域里按问句召回 "
+                f"{len(anchors)} 个锚点 → {len(candidate_groups)} 个候选域 → "
+                f"预算内保留 {len(group_ids)} 个（{'、'.join(group_ids) or '—'}）"
+                + ("；零命中已标注回退" if fallback_used else "")
+                + (f"；预算截断 {len(candidate_groups) - len(group_ids)} 个域"
+                   if trimmed else "")
             ),
             f"注入 {len(types)} 个类型、{relation_count} 条关系、"
             f"{len(fee_types)} 个费用类型",
@@ -1073,12 +1138,17 @@ class ReasoningAgent:
             f"按 target={self.object_type} 生成对象级能力集，共 {len(self.catalog)} 个",
         ]
         step["facts"] = [
-            {"label": "目录模式", "value": "全量" if mode == "full" else "业务域缩域"},
+            {"label": "目录模式", "value": "全量" if mode == "full" else "按问句缩域"},
             {"label": "字符预算", "value": f"{characters}/{budget}"},
+            {"label": "检索范围",
+             "value": f"全部 {len(all_groups)} 域" if mode != "full" else "全量目录"},
+            {"label": "问题来源",
+             "value": "默认问句（用户未提供）" if self.question_is_default else "用户输入"},
             {"label": "类型", "value": str(len(types))},
             {"label": "关系", "value": str(relation_count)},
             {"label": "业务域", "value": str(len(group_ids) or group_count)},
-            {"label": "锚点类型", "value": "、".join(anchors) or "—"},
+            {"label": "候选业务域", "value": str(len(candidate_groups))},
+            {"label": "锚点类型", "value": "、".join(anchors) or "—（零命中）"},
             {"label": "费用候选", "value": str(len(fee_types))},
             {"label": "可用能力", "value": str(len(self.catalog))},
             {"label": "业务事实", "value": "0 行（尚未查询）"},
@@ -2064,47 +2134,85 @@ class ReasoningAgent:
         return rows
 
     # ---------------------------------------------------------------- 假设回应
-    # 知识词 → TBox 声明 detail 里会出现的参数/字段名
-    _DECL_KEYS = {
-        "免费": ("free_minutes",),
-        "时长": ("free_minutes", "block_minutes"),
-        "分钟": ("free_minutes", "block_minutes"),
-        "取整": ("block_minutes",),
-        "费率": ("per_block",),
-        "单价": ("per_block",),
-        "块": ("block_minutes", "per_block"),
-        "加价": ("per_block",),
-        "状态": ("to_status", "from_status", "statuses"),
-        "流转": ("to_status", "from_status"),
-        "转移": ("to_status", "from_status"),
-        "角色": ("roles",),
-        "权限": ("roles",),
-        "谁能": ("roles",),
-        "动作": ("to_status", "from_status", "roles"),
-    }
+    def _declared_param_keys(self) -> set[str]:
+        """从本体声明动态收集参数名/字段名，代码里不维护「知识词→参数名」表。"""
+        raw = self.sem.raw or {}
+        keys: set[str] = set()
+        for spec in (raw.get("pricing") or {}).values():
+            if isinstance(spec, dict):
+                for row in spec.get("matrix") or []:
+                    if isinstance(row, dict):
+                        keys.update(str(k) for k in (row.get("params") or {}))
+        for section in ("rules", "actions", "state_machines"):
+            data = raw.get(section) or []
+            if isinstance(data, dict):
+                data = list(data.values())
+            for item in (data or [])[:200]:
+                if isinstance(item, dict):
+                    keys.update(str(k) for k in item)
+        return {k for k in keys if len(k) >= 4}
 
     def _declaration_hit(self, claim: str) -> str | None:
-        """知识型假设的声明命中：claim 的知识词映射到参数名，
-        在本次会话已查到的规则/定价参数/动作声明里检索。命中返回
-        可引用的证据串（ID + 参数摘要），未命中返回 None。
-        """
-        keys = [key for word, tup in self._DECL_KEYS.items() if word in claim
-                for key in tup]
-        if not keys:
+        """声明命中：用问句/假设里的本体术语（类型名、费用显示名、声明
+        标签、参数名）与已查到的 TBox 声明求交集；不用中文词表。"""
+        from freight.answerability import _match, _terms_of
+
+        text = f"{claim} {self.question}"
+        needles: set[str] = {
+            t for t in _terms_of(text) if len(t) >= 3 and not t.isascii()
+        }
+        needles.update(k for k in self._declared_param_keys() if k in text)
+        try:
+            hits = _match(self.system, text)
+            for tid in (hits.get("types") or {}):
+                cls = self.sem.classes.get(tid) or {}
+                for form in (cls.get("label"), tid):
+                    if isinstance(form, str) and len(form) >= 3:
+                        needles.add(form)
+            for label in (hits.get("fee_index") or {}):
+                if len(str(label)) >= 3:
+                    needles.add(str(label))
+        except Exception:  # noqa: BLE001
+            pass
+        if not needles:
             return None
         for item in self.tbox_seen.values():
             if item.get("kind") not in ("rule", "pricing", "action"):
                 continue
-            detail = str(item.get("detail") or "")
-            if any(k in detail for k in keys):
-                return f"{item['kind']}|{item['id']}：{detail[:140]}"
+            haystack = " ".join(
+                str(item.get(k) or "") for k in ("id", "label", "detail")
+            )
+            if any(n in haystack for n in needles):
+                return (f"{item['kind']}|{item['id']}："
+                        + str(item.get("detail") or "")[:140])
+        return None
+
+    @staticmethod
+    def _check_from_verify_by(verify_by: str) -> str | None:
+        """从假设自己声明的验证手段（工具名/字段名）推出确定性检查 ID；
+        推不出就返回 None，让结论如实标「待补证」。"""
+        text = (verify_by or "").lower()
+        for token, check in (
+            ("fee_breakdown", "rule_delta"),
+            ("rule_delta", "rule_delta"),
+            ("quote_reconcile", "quote_drift"),
+            ("snapshot", "quote_drift"),
+            ("evidence", "evidence_complete"),
+            ("checksum", "evidence_complete"),
+            ("pricing_rule_expired", "rule_expired"),
+            ("生效期", "rule_expired"),
+            ("tbox", "declaration_hit"),
+            ("describe", "declaration_hit"),
+        ):
+            if token in text:
+                return check
         return None
 
     def _hypothesis_verdicts(self) -> list[dict]:
         """逐条假设给 成立/排除/待补证，证据全部来自确定性分析结果。
 
-        判定不靠模型措辞：每条假设绑定一个确定性检查（finding 码 / 计数），
-        模型结论必须在此基础上叙述——假设回应因此可复核。
+        判定绑定假设自己声明的确定性检查（check / verify_by 里的工具名），
+        不靠 claim 的措辞关键词；没有绑定检查就如实标「待补证」。
         """
         analysis = self.system.fee_analysis(self.object_id) or {}
         findings = analysis.get("findings") or []
@@ -2114,15 +2222,14 @@ class ReasoningAgent:
         out = []
         for hypo in self.planned.get("hypotheses", []):
             claim = hypo["claim"]
-            verdict, why = "待补证", "本轮未取到直接证据"
-            # 知识型假设：声明本身就是证据。claim 命中知识词时，在本次
-            # 会话已查到的 TBox 声明（规则公式 / 定价参数 / 动作）里找
-            # 对应参数名，找到即「成立」，避免降级路径全盘待补证。
+            check = hypo.get("check") or self._check_from_verify_by(
+                hypo.get("verify_by") or "",
+            )
+            verdict, why = "待补证", "假设未绑定可执行的确定性检查，无法自动裁定"
             decl = self._declaration_hit(claim)
             if decl:
-                verdict = "成立"
-                why = decl
-            elif any(k in claim for k in ("费率", "应计", "口径", "多收", "少收")):
+                verdict, why = "成立", decl
+            elif check == "rule_delta":
                 if "WAITING_FEE_MISMATCH" in codes or any(
                         abs(b.get("rule_delta") or 0) > 0.01 for b in breakdown):
                     bad = [b for b in breakdown
@@ -2134,14 +2241,14 @@ class ReasoningAgent:
                 elif breakdown:
                     verdict = "排除"
                     why = "全部费用项 rule_delta ≈ 0，应计与实收一致"
-            elif any(k in claim for k in ("报价", "快照")):
+            elif check == "quote_drift":
                 if "QUOTE_SNAPSHOT_DRIFT" in codes:
                     verdict = "成立"
                     why = "报价快照与明细不一致（QUOTE_SNAPSHOT_DRIFT）"
                 elif analysis:
                     verdict = "排除"
                     why = "三口径互校一致"
-            elif any(k in claim for k in ("证据", "checksum")):
+            elif check == "evidence_complete":
                 missing = [f for f in findings
                            if str(f.get("code", "")).startswith("GAP")]
                 if missing:
@@ -2151,7 +2258,7 @@ class ReasoningAgent:
                 elif evidence:
                     verdict = "排除"
                     why = f"{len(evidence)} 条证据均在位且带 checksum"
-            elif any(k in claim for k in ("版本", "生效期", "过期")):
+            elif check == "rule_expired":
                 if "PRICING_RULE_EXPIRED" in codes:
                     verdict = "成立"
                     why = "费用发生时间超出规则生效期"
@@ -2160,7 +2267,8 @@ class ReasoningAgent:
                     why = "费用发生时间在规则生效期内"
             out.append({"id": hypo["id"], "claim": claim,
                         "verdict": verdict, "evidence": why,
-                        "verify_by": hypo["verify_by"]})
+                        "verify_by": hypo["verify_by"],
+                        "check": check or "unbound"})
         return out
 
     # ---------------------------------------------------------------- 角色出口
@@ -2895,19 +3003,21 @@ class ReasoningAgent:
         fees = [str(f) for f in raw_fees if str(f) in self.sem.pricing]
         if not types:
             raise LLMError("本体规划输出没有合法类型，未进入后续查询")
-        # focus：模型没给 / 不合法时，确定性兜底（问题里点名的费用类型，
-        # 再退到声明范围）——规划永远有焦点，裁剪率永远可度量
+        # focus：模型没给 / 不合法时，按问句在本体里的命中确定焦点；
+        # 不用「英文 fee_type 是否为中文问句子串」这种恒不命中的判断。
         raw_focus = planned.get("focus_fee_types")
         focus = [str(f) for f in (raw_focus if isinstance(raw_focus, list) else [])
                  if str(f) in self.sem.pricing]
+        self.focus_source = "model" if focus else ""
         if not focus:
-            focus = [f for f in fees if f in self.question] or fees[:1]
+            focus = self._focus_from_question(fees)
         tasks = self._normalize_tasks(planned.get("tasks"), focus)
         hypotheses = self._normalize_hypotheses(planned.get("hypotheses"))
         return {
             "types": types,
             "fee_types": fees,
             "focus_fee_types": focus,
+            "focus_source": self.focus_source,
             "focus_reason": str(planned.get("focus_reason") or ""),
             "tasks": tasks,
             "hypotheses": hypotheses,
@@ -2918,11 +3028,26 @@ class ReasoningAgent:
             "_elapsed_ms": elapsed_ms,
         }
 
+    def _focus_from_question(self, fees: list[str]) -> list[str]:
+        """按问句命中的费用显示名定焦点；没命中则按模型声明顺序取，
+        并显式标注来源，不冒充「按问题圈定」。"""
+        try:
+            from freight.answerability import _match
+            hits = _match(self.system, self.question)
+            matched = [f for f in (hits.get("fee_types") or {}) if f in fees]
+            if matched:
+                self.focus_source = "question_ontology_match"
+                return matched
+        except Exception:  # noqa: BLE001
+            pass
+        self.focus_source = "model_order_fallback"
+        return fees[:1]
+
     def _normalize_tasks(self, raw, focus: list[str]) -> list[dict]:
-        """取证任务清单：模型给的就地校验，缺了就按焦点确定性补齐。
+        """取证任务清单：模型给的就地校验，缺了按本次问句与焦点补齐。
 
         校验三条：tool_hint 在可用能力集内、intent 非空、target 非空。
-        兜底任务与焦点费用类型挂钩——清单永远非空，执行对照永远有东西可对照。
+        兜底任务显式标注「非模型规划」，不把固定剧本冒充规划结果。
         """
         tasks: list[dict] = []
         seen: set[str] = set()
@@ -2942,23 +3067,25 @@ class ReasoningAgent:
             })
         if tasks:
             return tasks
-        defaults = [
-            ("function.fee_breakdown", "核对规则应计 vs 实收，定位差异来源"),
-            ("function.quote_reconcile", "核对报价口径（快照/明细/实际三口径）"),
-            ("function.evidence_chain", "核对每条费用的证据与 checksum"),
+        labels = [
+            str((self.sem.pricing.get(f) or {}).get("label") or f)
+            for f in focus
         ]
-        for tool, intent in defaults:
+        focus_label = "、".join(labels) or "当前对象"
+        for tool in ("function.fee_breakdown", "function.quote_reconcile",
+                     "function.evidence_chain"):
             if tool in self.catalog:
                 tasks.append({
-                    "intent": intent,
+                    "intent": f"核对{focus_label}｜{self.question[:40]}",
                     "tool_hint": tool,
                     "target": self.object_id,
-                    "why": "费用差异类问题的标准取证动作（确定性兜底）",
+                    "why": "规划器未输出任务；按焦点与可用能力集生成的兜底取证（非模型规划）",
                 })
         return tasks
 
     def _normalize_hypotheses(self, raw) -> list[dict]:
-        """可证伪假设清单：模型给的就地校验，缺了按标准差异假设兜底。"""
+        """可证伪假设清单：模型给的就地校验；缺了按本次问句命中的本体
+        要素生成检查项，每条绑定确定性检查，不写死具体差异结论。"""
         items: list[dict] = []
         for index, item in enumerate(raw if isinstance(raw, list) else [], 1):
             if not isinstance(item, dict):
@@ -2969,17 +3096,32 @@ class ReasoningAgent:
             items.append({
                 "id": str(item.get("id") or f"H{index}"),
                 "claim": claim,
-                "verify_by": str(item.get("verify_by") or "费用拆解与证据链"),
+                "verify_by": str(item.get("verify_by") or ""),
+                "check": str(item.get("check") or ""),
             })
         if items:
             return items
+        try:
+            from freight.answerability import _match
+            hits = _match(self.system, self.question)
+            subjects = (list((hits.get("fee_types") or {}).keys())
+                        + list((hits.get("types") or {}).keys()))
+        except Exception:  # noqa: BLE001
+            subjects = []
+        subject = subjects[0] if subjects else self.object_type
         return [
-            {"id": "H1", "claim": "差异来自费率口径（规则应计 ≠ 实收）",
-             "verify_by": "function.fee_breakdown 的 rule_delta"},
-            {"id": "H2", "claim": "差异来自报价口径（报价 ≠ 明细或快照漂移）",
-             "verify_by": "function.quote_reconcile 的三口径互校"},
-            {"id": "H3", "claim": "费用缺少证据或证据不一致",
-             "verify_by": "function.evidence_chain 的证据与 checksum"},
+            {"id": "H1",
+             "claim": f"问句涉及的 {subject} 在本体里有可计算的声明",
+             "verify_by": "tbox.describe 返回的声明 ID 与参数",
+             "check": "declaration_hit"},
+            {"id": "H2",
+             "claim": f"问句涉及的 {subject} 有可核对的业务事实与证据",
+             "verify_by": "function.evidence_chain 的证据与 checksum",
+             "check": "evidence_complete"},
+            {"id": "H3",
+             "claim": f"现有声明与事实足以回答：{self.question[:40]}",
+             "verify_by": "function.fee_breakdown 的 rule_delta",
+             "check": "rule_delta"},
         ]
 
     def _tbox_step(self, items: list[dict], query_inputs: dict,
@@ -4033,13 +4175,14 @@ tbox.describe|按类型读取类定义、邻接关系、作用域规则、动作
                 )[:600]
                 label = "等候费定价参数"
             elif fee_type == "highway":
-                # 来源参数也在决策表默认行里——顶层 source 是迁移后的死键，
-                # 读不到会静默回退成硬编码 "ETC"（猜对了也是猜）
-                source = "ETC"
+                # 来源只能来自本体声明的决策表默认行；读不到就如实说没有，
+                # 不用常量猜一个值充当「证据」。
+                source = None
                 for row in pricing.get("matrix") or []:
                     if not (row.get("conditions") or {}):
-                        source = (row.get("params") or {}).get("source", source)
-                detail = f'来源 {source}'
+                        source = (row.get("params") or {}).get("source")
+                detail = (f"来源 {source}" if source
+                          else "来源未在本体声明中给出（不推断）")
                 label = "高速费定价参数"
             else:
                 detail = json.dumps(pricing, ensure_ascii=False)

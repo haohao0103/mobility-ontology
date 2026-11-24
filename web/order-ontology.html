@@ -1259,8 +1259,8 @@
     <div class="launch-card">
       <div>
         <span class="kicker">LIVE DIAGNOSIS · STEP BY STEP</span>
-        <h2>这张运单为什么比预估多 38 元？</h2>
-        <p>不是一段解释，是逐步真实执行：每点一次只做一个动作——调用大模型、查本体或查业务事实。下一步查什么、用什么参数，都由上一步的真实结果现场决定，不预置、不预跑。</p>
+        <h2>带一个问题，逐步诊断这张运单</h2>
+        <p>每点一次只做一个动作——调用大模型、查本体或查业务事实。问什么由你在弹窗里输入（示例：这张运单为什么比预估多 38 元？）；下一步查什么、用什么参数，都由上一步的真实结果现场决定，没有预跑脚本。</p>
       </div>
       <div class="launch-actions">
         <button class="btn primary" id="openChainHero" type="button">开始逐步诊断 →</button>
@@ -1398,12 +1398,12 @@
     <div class="wrap">
       <div class="sec-head">
         <div class="sec-no">04</div>
-        <h2>走一遍真实追问<small>「这单为什么多收 38 块？」</small></h2>
+        <h2>演示剧本：一次追问怎么走<small>预置讲解稿 · 金额与参数由接口实时填充</small></h2>
       </div>
-      <p class="sec-lead">对象是名词，关系是句子，动作是动词——三者齐了，追问才走得完。</p>
+      <p class="sec-lead">对象是名词，关系是句子，动作是动词——三者齐了，追问才走得完。以下步骤文案是讲解稿，不是实时推理轨迹；要跑真实链路请用上方「开始逐步诊断」。</p>
 
       <div class="query-box">
-        <div class="who">USER</div>
+        <div class="who">SCRIPT · 示例提问（非用户输入）</div>
         <div class="q">这单为什么比预估贵了 38 块？</div>
       </div>
 
@@ -1418,7 +1418,7 @@
           <div class="walk-no">1</div>
           <div>
             <h3>定位对象</h3>
-            <p>订单 <span class="mono">HL20261105001</span> → 运单 <span class="mono">WB20261105001</span> → 下面挂了 7 条费用项</p>
+            <p>订单 <span class="mono">HL20261105001</span> → 运单 <span class="mono">WB20261105001</span> → 下面挂了 <span data-fact-value="fee_count">—</span> 条费用项</p>
             <span class="soft">先把「这单是谁」定成唯一业务主键，再展开围绕它的对象。</span>
           </div>
         </article>
@@ -1427,8 +1427,8 @@
           <div class="walk-no">2</div>
           <div>
             <h3>展开关系，找差额</h3>
-            <p>多出的 <span class="hl">38 元</span> = 等候费 <b>25</b> + 高速费 <b>13</b>，其余 5 项与预估一致</p>
-            <div class="step-chips"><span>费用项 × 7</span><span class="on">等候费 +25</span><span class="on">高速费 +13</span><span>其余 5 项一致</span></div>
+            <p>多出的 <span class="hl"><span data-fact-value="variance">—</span> 元</span> = 等候费 <b data-fact-value="waiting_actual">—</b> + 高速费 <b data-fact-value="highway_actual">—</b>，其余 <span data-fact-value="other_count">—</span> 项与预估一致</p>
+            <div class="step-chips"><span>费用项 × <b data-fact-value="fee_count">—</b></span><span>等候费 <b data-fact-value="waiting_actual">—</b></span><span>高速费 <b data-fact-value="highway_actual">—</b></span><span>其余 <b data-fact-value="other_count">—</b> 项</span></div>
           </div>
         </article>
 
@@ -1436,7 +1436,7 @@
           <div class="walk-no">3</div>
           <div>
             <h3>取证据，不取结论</h3>
-            <p>司机 09:12 到达装货点，10:05 完成装货——等候 <span class="hl">53 分钟</span>，超过 <span data-ontology-value="waiting.free_minutes">30 分钟</span>免费时长；高速费有 ETC 扣费记录</p>
+            <p>司机 09:12 到达装货点，10:05 完成装货——等候 <span class="hl"><span data-fact-value="waiting_minutes">—</span> 分钟</span>，超过 <span data-ontology-value="waiting.free_minutes" data-ontology-source="fee-analysis">—</span> 分钟免费时长；高速费有 ETC 扣费记录</p>
             <span class="soft">每条证据带：来源系统 · 时间戳 · 版本号</span>
           </div>
         </article>
@@ -1445,7 +1445,7 @@
           <div class="walk-no">4</div>
           <div>
             <h3>套规矩</h3>
-            <p>等候费按每 5 分钟 2.4 元计：<span class="mono">[(53-30)/5] × 2.4 ≈ 12 元</span>… 实际收取 25 元 → <span class="hl">计费异常，多收 13 元</span></p>
+            <p>等候费按本体声明的计费块与单价计算：<span class="mono">规则应计 <span data-fact-value="rule_expected">—</span> 元</span>… 实际收取 <span data-fact-value="waiting_actual">—</span> 元 → <span class="hl">差额 <span data-fact-value="waiting_delta">—</span> 元</span></p>
             <span class="soft">规矩不是散落的 if-else，而是对象上可复用、可解释的声明式校验。</span>
           </div>
         </article>
@@ -1467,9 +1467,9 @@
           <div class="walk-no">6</div>
           <div>
             <h3>回读业务事实</h3>
-            <p>结算单金额 -13、发票金额同步、货主收到解释、审计流留下一条完整链路</p>
+            <p>以下动作需人工确认，剧本里<b>未执行</b>：发起费用申诉、减免、冲正；执行后才会影响结算单与发票，并留下审计记录</p>
             <span class="soft">返回的不是「成功」，是「影响了哪 3 个对象、现在什么状态、下一步能做什么」。</span>
-            <div class="step-chips"><span class="on">结算单 -13</span><span class="on">发票同步</span><span class="on">货主已解释</span><span>审计留痕</span></div>
+            <div class="step-chips"><span>结算单（待确认）</span><span>发票（待确认）</span><span>货主解释（待确认）</span><span>审计留痕（待确认）</span></div>
           </div>
         </article>
       </div>
@@ -6330,7 +6330,13 @@ async function initLabs() {
 }
 
 /* ── 17 核心组件追问：状态机 / 影响面 / 证据链 ── */
+/* 对比实验的默认对象：演示剧本固定运单，界面明确标注，不伪装成用户选择。 */
 const COMP_WAYBILL = 'waybill:WB20261105001';
+/* 演示默认问题：仅在用户未输入时使用，且原样出现在请求参数里。 */
+const COMP_DEMO_QUESTION = '为什么这单贵38';
+function compQuestion() {
+  return (compState.question || '').trim() || COMP_DEMO_QUESTION;
+}
 
 function compKV(rows) {
   return `<table class="comp-kv">${rows.map(([k, v]) =>
@@ -6352,8 +6358,14 @@ function compList(items) {
   return `<ul class="comp-list">${items.map((item) => `<li>${esc(item)}</li>`).join('')}</ul>`;
 }
 
+/* 判定态只能由本次接口返回决定；固定 true 等于给结论发一张假通行证。 */
+function compPass(d, condition) {
+  if (!d || typeof d !== 'object' || d.error || d.ok === false) return false;
+  return condition === undefined ? Object.keys(d).length > 0 : !!condition;
+}
 function compVerdict(html, ok = false) {
-  return `<div class="comp-verdict ${ok ? 'ok' : ''}">${html}</div>`;
+  const basis = ok ? '判定依据：本次接口返回' : '讲解要点 · 非接口判定';
+  return `<div class="comp-verdict ${ok ? 'ok' : ''}"><span style="display:block;font-size:11px;letter-spacing:.04em;opacity:.72;margin-bottom:5px">${basis}</span>${html}</div>`;
 }
 
 async function compTry(fn) {
@@ -6470,26 +6482,29 @@ const COMP_SCENARIOS = [
     id: 'bearing', tier: 'main',
     tag: 'M1 · 承重',
     title: '同一笔费用，换一版本本体，结论会变吗？',
-    summary: '改本体 JSON（免费等候 30→20），代码零改动，诊断结论翻转',
+    summary: '改本体版本快照里的定价声明，代码零改动；结论是否翻转按接口返回判定',
     meta: '4 步 · 实时接口',
     steps: [
       {
         title: '切到 1.1.0-demo 再算同一笔',
         graph_parity: 'impossible',
         question: '代码没动，结论会变吗？',
-        dependency: '版本快照 1.1.0-demo：免费 30→20 分钟',
+        dependency: '版本快照 1.1.0-demo 的定价声明（具体参数由接口返回）',
         note: 'version 参数让引擎加载另一个本体快照，同一事实重新计算。',
         component: 'Version',
         request: () => ({ method: 'GET', path: `/waybills/${COMP_WAYBILL}/fee-analysis?version=1.1.0-demo` }),
         render: (d) => compKV([['本体版本', d.ontology_version], ['免费等候', d.free_wait_minutes + ' 分钟'],
           ['阻断', (d.findings || []).filter((f) => f.severity === 'BLOCKER').map((f) => f.code).join(', ') || '无']])
-          + compVerdict(`版本切到 <b>${esc(d.ontology_version)}</b>：结论翻转并标 BLOCKER。<b>代码零改动。</b>`, true)
+          + compVerdict(`版本切到 <b>${esc(d.ontology_version)}</b>：${
+              (d.findings || []).some(f => f.severity === 'BLOCKER')
+                ? '出现 BLOCKER，结论与当前版本不同' : '未出现 BLOCKER，结论未翻转'
+            }；代码零改动。`, compPass(d, d.ontology_version != null))
       },
       {
         title: '先按当前本体算一遍',
         graph_parity: 'hardcoded',
         question: '免费等候几分钟？规则应计多少？',
-        dependency: 'pricing.waiting.free_minutes = 30；抽掉则该结论不成立',
+        dependency: 'pricing.waiting 的 free_minutes 声明；抽掉则该结论不成立',
         note: '结论绑定本体版本，不是代码常量。',
         component: 'Rule AST',
         request: () => ({ method: 'GET', path: `/waybills/${COMP_WAYBILL}/fee-analysis` }),
@@ -6507,7 +6522,7 @@ const COMP_SCENARIOS = [
         render: (d) => compKV([['case', d.case], ['工具数', d.before.tool_count + ' → ' + d.after.tool_count],
           ['证据 checksum', d.after.evidence_checksum || '—']])
           + compTable(['翻转', '方向'], (d.flips || []).map((f) => [f.code, f.action]))
-          + compVerdict(`<b>${esc((d.flips || [])[0] ? (d.flips || [])[0].code : '—')}</b> 出现：抽掉本体里的工具声明，AI 立刻少一项能力。`, true)
+          + compVerdict(`<b>${esc((d.flips || [])[0] ? (d.flips || [])[0].code : '—')}</b> 出现：抽掉本体里的工具声明，AI 立刻少一项能力。`, compPass(d))
       },
       {
         title: '收束：行为由谁决定',
@@ -6520,7 +6535,10 @@ const COMP_SCENARIOS = [
         run: (ctx) => ({ current: ctx.data(0) ? ctx.data(0).ontology_version : null,
                          demo: ctx.data(1) ? ctx.data(1).ontology_version : null }),
         render: (d) => compKV([['当前本体', d.current || '—'], ['演示本体', d.demo || '—']])
-          + compVerdict(`本体是业务逻辑的<b>唯一真源</b>。改声明，行为立刻翻转。`, true)
+          + compVerdict(`两份声明得到 ${
+              d.current && d.demo && d.current !== d.demo ? '不同的' : '相同的'
+            }版本结论；本步只对照前三步接口输出，不额外下判定。`,
+            compPass(d, !!(d.current && d.demo && d.current !== d.demo)))
       },
     ]
   },
@@ -6541,7 +6559,7 @@ const COMP_SCENARIOS = [
         request: () => ({ method: 'POST', path: '/actions/lab', body: {} }),
         render: (d) => compTable(['场景', '结果', '拒绝码'], (d.cases || []).slice(0, 2).map((c) =>
           [c.case, c.ok ? '放行' : '拒绝', c.code || '—']))
-          + compVerdict(`错角色 <b>FORBIDDEN_ROLE</b>、错状态 <b>${esc((d.cases || [])[1]?.code || 'RULE_REJECTED')}</b>：拦住动作的是本体声明。`, true)
+          + compVerdict(`错角色 <b>FORBIDDEN_ROLE</b>、错状态 <b>${esc((d.cases || [])[1]?.code || 'RULE_REJECTED')}</b>：拦住动作的是本体声明。`, compPass(d))
       },
       {
         title: '看状态机声明与可用动作',
@@ -6571,7 +6589,7 @@ const COMP_SCENARIOS = [
         request: () => ({ method: 'POST', path: '/actions/lab', body: {} }),
         render: (d) => compTable(['场景', '结果', '重放'], (d.cases || []).slice(2).map((c) =>
           [c.case, c.ok ? '放行' : '拒绝', c.result?.replayed ? '是' : '否']))
-          + compVerdict(`同幂等键重放 <b>replayed=true</b>，审计增量 <b>${d.audit_delta}</b>（已回滚）。`, true)
+          + compVerdict(`同幂等键重放 <b>replayed=true</b>，审计增量 <b>${d.audit_delta}</b>（已回滚）。`, compPass(d))
       },
       {
         title: '零污染验证',
@@ -6584,7 +6602,7 @@ const COMP_SCENARIOS = [
         run: (ctx) => ctx.data(1) || {},
         render: (d) => compKV([['审计增量', d.audit_delta], ['状态还原', d.state_restored ? '是' : '否'],
           ['persisted', String(d.persisted)]])
-          + compVerdict(`动作实验在 <b>SAVEPOINT</b> 内执行并回滚，主库零写入。`, true)
+          + compVerdict(`动作实验在 <b>SAVEPOINT</b> 内执行并回滚，主库零写入。`, compPass(d))
       },
     ]
   },
@@ -6606,7 +6624,7 @@ const COMP_SCENARIOS = [
         render: (d) => compKV([['case', d.case], ['before findings', (d.before.findings || []).length],
           ['after findings', (d.after.findings || []).length], ['persisted', String(d.persisted)]])
           + compTable(['翻转', '方向'], (d.flips || []).map((f) => [f.code, f.action]))
-          + compVerdict(`删一行本体认领声明，<b>FEE_SOURCE_UNRESOLVED</b> 立刻出现。`, true)
+          + compVerdict(`删一行本体认领声明，<b>FEE_SOURCE_UNRESOLVED</b> 立刻出现。`, compPass(d))
       },
       {
         title: '正常运单：零缺口',
@@ -6631,7 +6649,7 @@ const COMP_SCENARIOS = [
           ['变更后缺口', (d.after?.findings || []).length],
           ['persisted', String(d.persisted)]])
           + compTable(['翻转', '方向', '次数'], (d.flips || []).map((f) => [f.code, f.action, f.count || '—']))
-          + compVerdict(`缺口数量随声明删除而放大：<b>${esc((d.flips || [])[0]?.code || '—')}</b>。`, true)
+          + compVerdict(`缺口数量随声明删除而放大：<b>${esc((d.flips || [])[0]?.code || '—')}</b>。`, compPass(d))
       },
       {
         title: 'ABox 覆盖率：能表达 ≠ 被证明',
@@ -6644,7 +6662,7 @@ const COMP_SCENARIOS = [
         render: (d) => compKV([['核心类覆盖', JSON.stringify(d.class_coverage || {}).slice(0, 70)],
           ['边覆盖', JSON.stringify(d.edge_coverage || {}).slice(0, 60)],
           ['问题数', d.issue_count]])
-          + compVerdict(`本体不隐瞒"能表达但没被证明"的类，覆盖率可实测。`, true)
+          + compVerdict(`本体不隐瞒"能表达但没被证明"的类，覆盖率可实测。`, compPass(d))
       },
     ]
   },
@@ -6666,7 +6684,7 @@ const COMP_SCENARIOS = [
         run: (ctx, req) => enhApi('/security/guard-output', { method: 'POST', body: JSON.stringify(req.body) }),
         render: (d) => compKV([['对象', d.object_id], ['结果', d.status],
           ['拒绝码', (d.findings || []).map((f) => f.code).join(', ') || '—']])
-          + compVerdict(`匿名视角下 Agent 输出被 <b>OUTPUT_MARKING_DENIED</b> 整段拒绝。`, true)
+          + compVerdict(`匿名视角下 Agent 输出被 <b>OUTPUT_MARKING_DENIED</b> 整段拒绝。`, compPass(d))
       },
       {
         title: '匿名 vs 争议角色',
@@ -6691,7 +6709,7 @@ const COMP_SCENARIOS = [
         render: (d) => compKV([['可见行', d.before.visible_rows + ' → ' + d.after.visible_rows],
           ['总行', d.before.total_rows], ['persisted', String(d.persisted)]])
           + compTable(['翻转', '方向'], (d.flips || []).map((f) => [f.code, f.action]))
-          + compVerdict(`删一条 marking 声明，可见行数翻转。权限跟着本体走。`, true)
+          + compVerdict(`删一条 marking 声明，可见行数翻转。权限跟着本体走。`, compPass(d))
       },
       {
         title: '列级脱敏',
@@ -6724,7 +6742,7 @@ const COMP_SCENARIOS = [
         component: 'Negative Lab',
         request: () => ({ method: 'POST', path: '/agent/declaration-check', body: { omit_type: 'FeeItem' } }),
         render: (d) => compTable(['翻转', '方向'], (d.flips || []).map((f) => [f.code, f.action]))
-          + compVerdict(`删一个类型声明，模型就<b>不可圈定</b>该类型——没有降级替身。`, true)
+          + compVerdict(`删一个类型声明，模型就<b>不可圈定</b>该类型——没有降级替身。`, compPass(d))
       },
       {
         title: '确定性声明检查',
@@ -6736,16 +6754,16 @@ const COMP_SCENARIOS = [
         request: () => ({ method: 'POST', path: '/agent/declaration-check', body: {} }),
         render: (d) => compKV([['工具数', d.before.tool_count], ['可圈定类型', d.before.type_count],
           ['证据 checksum', d.before.evidence_checksum || '—']])
-          + compVerdict(`工具白名单、类型目录、证据 checksum 三项都由本体声明决定。`, true)
+          + compVerdict(`工具白名单、类型目录、证据 checksum 三项都由本体声明决定。`, compPass(d))
       },
       {
         title: '真实推理链（最后一击）',
         graph_parity: 'impossible',
-        question: '让 AI 自己诊断"为什么贵 38"',
+        question: '让 AI 诊断你在上方输入的业务问题',
         dependency: 'LLM 只能在 TBox 圈定范围内选工具',
-        note: '真实调用大模型网关，需几秒。',
+        note: `问题来自上方输入框；留空时使用演示默认问题「${COMP_DEMO_QUESTION}」，请求参数里可见。真实调用大模型网关，需几秒。`,
         component: 'Reasoning Agent',
-        request: () => ({ method: 'POST', path: `/waybills/${COMP_WAYBILL}/reasoning-chain/start?question=${encodeURIComponent('为什么这单贵38')}` }),
+        request: () => ({ method: 'POST', path: `/waybills/${COMP_WAYBILL}/reasoning-chain/start?question=${encodeURIComponent(compQuestion())}` }),
         render: (d) => compKV([['会话', (d.session_id || '').slice(0, 12) + '…'], ['模型', d.model],
           ['待执行', d.pending], ['下一步', d.next_label]])
           + compVerdict(`会话已创建，<b>此时还没调大模型</b>；每步由人点击后才执行。`)
@@ -6760,33 +6778,49 @@ const COMP_SCENARIOS = [
     meta: '3 步 · 可解释结论',
     steps: [
       {
-        title: '裸系统对照',
+        title: '规则应计来自本体声明（对照说明）',
         graph_parity: 'impossible',
         question: '同一份数据直接丢给大模型，它算得对吗？',
         dependency: '规则不在数据里：公式/版本/生效期/车型费率',
-        note: '裸 LLM 把 quoted_amount=0 当应计 → 0 元；本体按规则算 → 12 元。',
-        component: 'Takeaway',
-        request: () => ({ local: true, method: 'LOCAL', path: 'plan/demo_script.md §2 实测' }),
-        run: () => ({ bare: '0.00', ontology: '12.00', gap: '13.00' }),
-        render: () => compKV([['裸大模型', '0.00 元（凭不上）'], ['本体', '12.00 元（规则+版本+证据）'],
-          ['差额', '超收 13 元']]) + compVerdict(`差的 13 元<b>不在数据里</b>，在计价规则里。本体把规则变成机器可执行、可审计的东西。`, true)
+        note: '本步只展示接口实算的规则应计与实收；「裸大模型会算错」是剧本讲解，未在本步实测，不作为结论。',
+        component: 'Fee Analysis',
+        request: () => ({ method: 'GET', path: `/waybills/${COMP_WAYBILL}/fee-analysis` }),
+        render: (d) => {
+          const w = (d.breakdown || []).find(b =>
+            b.fee_type === 'waiting' || /等候/.test(b.label || ''));
+          const actual = w ? w.actual_amount : null;
+          const expected = d.waiting_rule ? d.waiting_rule.expected
+            : (w ? w.rule_expected : null);
+          const gap = (actual != null && expected != null) ? (actual - expected) : null;
+          return compKV([
+            ['规则应计（接口实算）', expected != null ? expected + ' 元' : '—'],
+            ['实收（接口实算）', actual != null ? actual + ' 元' : '—'],
+            ['差额', gap != null ? gap + ' 元' : '—'],
+            ['本体版本', d.ontology_version]])
+            + compVerdict(
+              `本步数值全部来自 <b>fee-analysis</b> 接口；差额来自计价规则，不是讲解稿里的预置数字。`,
+              compPass(d, expected != null && actual != null));
+        }
       },
       {
         title: '规则应计 vs 实收',
         graph_parity: 'hardcoded',
-        question: '53 分钟、免费 <span data-ontology-value="waiting.free_minutes">30 分钟</span>、5 个计费块，各是多少？',
+        question: '等候时长、免费时长、计费块与实收金额，各是多少？',
         dependency: 'pricing.waiting 公式 + evidence checksum',
-        note: '确定性计算，金额整数分。',
+        note: '确定性计算，金额整数分；数值全部由接口返回，取不到显示 —。',
         component: 'Fee Analysis',
         request: () => ({ method: 'GET', path: `/waybills/${COMP_WAYBILL}/fee-analysis` }),
-        render: (d) => compKV([['等候分钟', (d.findings || [])[0]?.waiting_minutes || '53'],
-          ['规则应计', (d.waiting_rule ? d.waiting_rule.expected : '12.00') + ' 元'],
-          ['实收', '25.00 元'], ['本体版本', d.ontology_version]])
+        render: (d) => compKV([
+          ['等候分钟', (d.findings || [])[0]?.waiting_minutes ?? d.waiting_minutes ?? '—'],
+          ['免费分钟', d.free_wait_minutes ?? '—'],
+          ['规则应计', d.waiting_rule ? d.waiting_rule.expected + ' 元' : '—'],
+          ['实收', ((d.breakdown || []).find(b => b.fee_type === 'waiting') || {}).actual_amount ?? '—'],
+          ['本体版本', d.ontology_version]])
       },
       {
         title: '证据链',
         graph_parity: 'same',
-        question: '哪些系统在证明这 53 分钟？',
+        question: '哪些系统在证明这次等候时长？',
         dependency: 'evidence.checksum + data_sources 认领',
         note: '证据可逐条回源，不靠模型记忆。',
         component: 'Evidence',
@@ -6839,13 +6873,17 @@ const COMP_SCENARIOS = [
         note: '未签字的破坏性变更必须 FAIL。', component: 'Change Gate',
         request: () => ({ method: 'GET', path: '/ontology/guard-demo?case=drop_property_unsigned' }),
         render: (d) => compKV([['case', d.case], ['verdict', d.verdict], ['未签字', d.unapproved_count]])
-          + compVerdict(`未签字 → <b>FAIL</b>，影响面非空。`, true) },
+          + compVerdict(`接口 verdict=<b>${esc(d.verdict ?? '—')}</b>：未签字 ${
+              d.verdict === 'FAIL' ? '被拦截' : '未按预期拦截'
+            }。`, compPass(d, d.verdict === 'FAIL')) },
       { title: '补签：放行', question: '补签后会怎样？', dependency: '临时签名目录（不写仓库）',
         graph_parity: 'impossible',
         note: '签字路径与 classify 完全一致才放行。', component: 'Approval',
         request: () => ({ method: 'GET', path: '/ontology/guard-demo?case=drop_property_signed' }),
         render: (d) => compKV([['case', d.case], ['verdict', d.verdict], ['未签字', d.unapproved_count]])
-          + compVerdict(`补签 → <b>PASS</b>。签名只存在于临时目录，不污染仓库。`, true) },
+          + compVerdict(`接口 verdict=<b>${esc(d.verdict ?? '—')}</b>：补签 ${
+              d.verdict === 'PASS' ? '已放行' : '未放行'
+            }；签名只存在于临时目录，不污染仓库。`, compPass(d, d.verdict === 'PASS')) },
       { title: '版本与分支', question: '改坏了怎么办？', dependency: '不可变快照 + checksum',
         graph_parity: 'impossible',
         note: '业务语义的 Git。', component: 'Version',
@@ -6885,7 +6923,7 @@ const COMP_SCENARIOS = [
         render: (d) => compKV([['实现类', d.before.impl_count + ' → ' + d.after.impl_count],
           ['函数接受', d.before.function_accepted + ' → ' + d.after.function_accepted]])
           + compTable(['翻转'], (d.flips || []).map((f) => [f.code]))
-          + compVerdict(`删一条接口声明，多态函数立刻拒绝。`, true) },
+          + compVerdict(`删一条接口声明，多态函数立刻拒绝。`, compPass(d)) },
     ]
   },
   {
@@ -6902,7 +6940,7 @@ const COMP_SCENARIOS = [
         render: (d) => compKV([['创建', d.after.create.ok ? '放行' : '拒绝'],
           ['拒绝码', d.after.create.code || '—'], ['persisted', String(d.persisted)]])
           + compTable(['翻转'], (d.flips || []).map((f) => [f.code]))
-          + compVerdict(`改一行类型声明，创建路径 <b>TYPE_MISMATCH</b>——注册表是契约，不是注释。`, true) },
+          + compVerdict(`改一行类型声明，创建路径 <b>TYPE_MISMATCH</b>——注册表是契约，不是注释。`, compPass(d)) },
       { title: '属性注册表', question: '属性有类型吗？', dependency: 'property_types[waiting_minutes].value_type = number',
         graph_parity: 'hardcoded',
         note: '类型/单位/标记/时序都是注册表字段。', component: 'Registry',
@@ -6914,7 +6952,7 @@ const COMP_SCENARIOS = [
   },
 ];;
 
-const compState = { scenarioId: 'bearing', index: 0, outputs: {}, running: false };
+const compState = { scenarioId: 'bearing', index: 0, outputs: {}, running: false, question: '' };
 
 function compScenario() {
   return COMP_SCENARIOS.find((s) => s.id === compState.scenarioId) || COMP_SCENARIOS[0];
@@ -6970,7 +7008,7 @@ const DEMO_STORY = [
   { act: 'ACT 6 / 6 · 收束', scenario: 'evidence',
     title: '这单到底为什么贵 38？',
     hook: '「同一份数据直接丢给大模型，它算得对吗？」',
-    point: '指裸 LLM 答 0 元 vs 本体按规则算 12 元 + 证据 checksum；差的 13 元不在数据里，在规则里。',
+    point: '指规则应计与实收之间的差额（数值以 fee-analysis 接口实算为准）+ 证据 checksum；差额不在数据里，在计价规则里。',
     say: '本体把规则变成机器可执行、可审计的东西。前面五幕在这里汇成一个能复核的结论。' },
 ];;
 
@@ -7106,6 +7144,12 @@ function renderCompDetail(scenario) {
         </div>
         <span class="comp-component">${esc(step.component)}</span>
       </div>
+      <div class="comp-question-box" style="padding:10px 12px;border:1px solid var(--line);border-radius:6px;margin:0 0 12px;background:#faf8f4">
+        <label for="compQuestionInput" style="display:block;font-size:12px;font-weight:600;margin-bottom:6px">本次业务问题（会作为推理链的 question 参数，执行本步时生效）</label>
+        <input id="compQuestionInput" type="text" style="width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:4px;font:inherit"
+          value="${esc(compState.question)}" placeholder="留空则用演示默认问题：${esc(COMP_DEMO_QUESTION)}">
+        <div style="font-size:11px;opacity:.72;margin-top:6px">当前生效问题：<span data-comp-question-preview>${esc(compQuestion())}</span>　·　演示对象固定为 <span class="mono">${esc(COMP_WAYBILL)}</span></div>
+      </div>
       <div class="comp-io">
         <div class="comp-io-head"><span class="comp-io-tag input">INPUT</span>这一步吃什么</div>
         ${compRequestHtml(req)}
@@ -7204,6 +7248,12 @@ function bindCompEvents() {
       renderCompQuestions();
     }
   });
+  runner.addEventListener('input', (event) => {
+    if (event.target.id !== 'compQuestionInput') return;
+    compState.question = event.target.value;
+    const preview = runner.querySelector('[data-comp-question-preview]');
+    if (preview) preview.textContent = compQuestion();
+  });
   runner.addEventListener('click', (event) => {
     const stepEl = event.target.closest('[data-comp-step]');
     const actionEl = event.target.closest('[data-comp-action]');
@@ -7243,6 +7293,35 @@ function initComp() {
   renderCompRunner();
 }
 
+/* 演示剧本里的金额与本体参数不再写死：由 fee-analysis 接口实时填充；
+   接口不可用统一显示 —，绝不回退到预置数字。 */
+async function hydrateWalkFacts() {
+  const set = (key, value) => document
+    .querySelectorAll(`[data-fact-value="${key}"]`)
+    .forEach(el => {
+      el.textContent = (value == null || value === '') ? '—' : String(value);
+    });
+  try {
+    const d = await api(`/waybills/${COMP_WAYBILL}/fee-analysis`);
+    const rows = d.breakdown || [];
+    const waiting = rows.find(b => b.fee_type === 'waiting' || /等候/.test(b.label || ''));
+    const highway = rows.find(b => b.fee_type === 'highway' || /高速/.test(b.label || ''));
+    set('fee_count', rows.length || null);
+    set('variance', d.variance);
+    set('waiting_actual', waiting && waiting.actual_amount);
+    set('highway_actual', highway && highway.actual_amount);
+    set('other_count', rows.length ? Math.max(0, rows.length - 2) : null);
+    set('waiting_minutes', d.waiting_minutes);
+    set('rule_expected', d.waiting_rule && d.waiting_rule.expected);
+    set('waiting_delta', (d.findings || [])[0]?.delta ?? (waiting && waiting.rule_delta));
+    document.querySelectorAll('[data-ontology-value]')
+      .forEach(el => { el.textContent = d.free_wait_minutes ?? '—'; });
+  } catch (err) {
+    document.querySelectorAll('[data-fact-value], [data-ontology-value]')
+      .forEach(el => { el.textContent = '—'; });
+  }
+}
+
 async function init() {
   buildLines();
   selectObject('waybill');
@@ -7250,6 +7329,7 @@ async function init() {
   await Promise.all([loadFacts(), loadStorage(), loadKnowledge(), loadMcpTools(), initLabs()]);
   initComp();
   renderWalkOntology(1);
+  hydrateWalkFacts();
 }
 
 init();

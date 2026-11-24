@@ -35,37 +35,84 @@ NO_DECLARED_SOURCE = "NO_DECLARED_SOURCE"
 PROPERTY_NOT_DECLARED = "PROPERTY_NOT_DECLARED"
 FEE_SOURCE_UNRESOLVED = "FEE_SOURCE_UNRESOLVED"
 
-# 问句里出现这些词，说明要的是一个**度量值**（而不是某个对象的事实）
+# 度量/规则的**语法**信号（不含任何业务知识常量）：只表达「在问一个数」
+# 或「在按规则问」，具体哪些概念属于声明型，由 _declaration_terms 从本体读。
 _MEASURE_WORDS = ("应收", "应计", "超收", "应得", "该收", "算出来", "算出",
                   "多少钱", "多少", "缺口", "差额", "差异", "超了", "少收")
-_RULE_HINT_WORDS = ("按规则", "规则", "计价", "定价", "口径")
+_RULE_SYNTAX = ("按规则", "规则")
 
 # ---- 知识型/实例型分诊（确定性，0 LLM）----
-# 实例锚：问句点名了具体业务对象（对象 ID / 运单号模式）→ 答案在 ABox
-_INSTANCE_ANCHOR_RE = re.compile(
-    r"(?:waybill|order|fee|stop|settlement|invoice|ticket|cargo|driver|vehicle)"
-    r":[A-Za-z0-9_\-]+|WB\d{6,}", re.IGNORECASE)
-# 知识锚：问句要的是声明（规则/定价/状态/动作/结构），不是某个对象的数
-_KNOWLEDGE_HINT_WORDS = (
-    "规则", "计价", "定价", "口径", "费率", "怎么算", "如何计算",
-    "状态", "流转", "转移", "状态机", "谁能", "什么操作", "哪些操作",
-    "角色", "权限", "免费", "公式", "定义", "字段",
-)
+# 全部是**格式/语法**信号，不写死任何业务词：对象 ID 格式、金额格式、
+# 中文指代、疑问句式。业务概念从 semantic_layer.json 的声明动态派生。
+_OBJECT_ID_RE = re.compile(
+    r"[A-Za-z_][A-Za-z0-9_]*:[A-Za-z0-9_-]+|[A-Z]{2}\d{6,}")
+_AMOUNT_RE = re.compile(r"\d+(?:\.\d+)?\s*(?:元|块)|[￥¥]\s*\d")
+_INSTANCE_DEIXIS = ("这单", "本单", "该单", "此单", "这张运单", "这笔", "该笔")
+_QUESTION_SYNTAX = ("怎么", "如何", "哪些", "是什么", "什么叫", "为什么",
+                    "多少", "是否", "能否", "由谁", "谁能", "定义", "规定", "公式")
 
 
-def classify_question(question: str) -> dict:
+def _declaration_terms(semantic) -> set[str]:
+    """「声明型」术语从本体声明派生：规则 / 定价 / 状态机 / 动作 / 业务域
+    的 id、name、label、alias。改本体声明即改分诊口径，代码里不存业务词表。
+    """
+    raw = getattr(semantic, "raw", {}) or {}
+    texts: list[str] = []
+
+    def collect(node, depth: int = 0) -> None:
+        if depth > 3:
+            return
+        if isinstance(node, dict):
+            for key in ("id", "name", "label", "description", "note"):
+                value = node.get(key)
+                if isinstance(value, str):
+                    texts.append(value)
+            for alias in node.get("aliases") or []:
+                if isinstance(alias, str):
+                    texts.append(alias)
+        elif isinstance(node, list):
+            for item in node[:60]:
+                collect(item, depth + 1)
+
+    for section in ("pricing", "rules", "actions", "state_machines",
+                    "object_type_groups"):
+        collect(raw.get(section))
+    terms: set[str] = set()
+    for text in texts:
+        for chunk in re.findall(r"[一-鿿]{2,8}", text):
+            terms.add(chunk)
+            for size in (4, 3, 2):
+                for i in range(len(chunk) - size + 1):
+                    terms.add(chunk[i:i + size])
+        for word in re.findall(r"[A-Za-z_]{4,}", text):
+            terms.add(word.lower())
+    return {t for t in terms if len(t) >= 2}
+
+
+def classify_question(question: str, semantic=None) -> dict:
     """问句分诊：knowledge / instance / mixed（纯确定性，0 LLM）。
 
-    knowledge：问的是本体声明本身（规则公式、定价参数、状态机、动作
-    权限、结构定义），答案在 TBox，不需要查任何业务实例；
-    instance：点名了具体对象或默认诊断问句，答案在 ABox 事实里；
+    knowledge：问句不含具体对象/金额、且在问声明（疑问句式或命中本体
+    声明术语），答案在 TBox；
+    instance：点名了具体对象、金额或「这单」这类指代，答案在 ABox；
     mixed：两者都有——规则口径读 TBox，金额证据查 ABox。
-    分诊结果只改变提示词与工具引导，不改变任何查询的权限边界。
+    分诊只改变提示词与工具引导，不改变任何查询的权限边界。
     """
     q = (question or "").strip()
-    has_instance = bool(_INSTANCE_ANCHOR_RE.search(q))
-    has_knowledge = any(w in q for w in _KNOWLEDGE_HINT_WORDS)
-    if has_instance and has_knowledge:
+    has_instance = (
+        bool(_OBJECT_ID_RE.search(q))
+        or bool(_AMOUNT_RE.search(q))
+        or any(w in q for w in _INSTANCE_DEIXIS)
+    )
+    syntax = [w for w in _QUESTION_SYNTAX if w in q]
+    declared: list[str] = []
+    if semantic is not None:
+        declared = sorted(
+            (t for t in _declaration_terms(semantic) if t in q),
+            key=len, reverse=True,
+        )[:8]
+    has_knowledge = (not has_instance) and (bool(syntax) or bool(declared))
+    if has_instance and (syntax or declared):
         kind = "mixed"
     elif has_knowledge:
         kind = "knowledge"
@@ -76,9 +123,15 @@ def classify_question(question: str) -> dict:
         "signals": {
             "instance_anchor": has_instance,
             "knowledge_hint": has_knowledge,
+            "question_syntax": syntax,
+            "declaration_terms": declared,
+            "routing_source": (
+                "semantic_layer.json · rules/pricing/actions/state_machines"
+                if semantic is not None else "问句语法（未提供本体）"
+            ),
         },
         "explain": {
-            "knowledge": "问句要的是声明（规则/定价/状态/动作），答案在 TBox",
+            "knowledge": "问句未点名具体对象且命中声明术语/疑问句式，答案在 TBox",
             "instance": "问句点名具体对象或金额，答案在 ABox 事实里",
             "mixed": "声明与实例都要：规则口径读 TBox，金额证据查 ABox",
         }[kind],
@@ -304,7 +357,12 @@ def check_answerable(system, question: str, terms: list[str] | None = None) -> d
 
     # ④ 这个问句要的度量值，本体里有没有声明来源（规则）
     wants_measure = any(w in question for w in _MEASURE_WORDS)
-    rule_hint = any(w in question for w in _RULE_HINT_WORDS)
+    # 规则信号 = 通用语法 + 本体声明派生术语（改声明即改判定，不写死业务词）
+    decl_terms = _declaration_terms(system.sem)
+    rule_hint = (
+        any(w in question for w in _RULE_SYNTAX)
+        or any(t in question for t in decl_terms if len(t) >= 3)
+    )
     sources = _declared_sources(system, fee_types)
     measure = {"requested": wants_measure, "rule_hint": rule_hint,
                "sources": sources, "status": "not_requested"}

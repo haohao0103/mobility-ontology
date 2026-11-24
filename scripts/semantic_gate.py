@@ -1409,13 +1409,19 @@ def check_demo_current_values(root: str) -> dict:
         return item
 
     pattern = re.compile(
-        r'data-ontology-value="([a-z_.]+)"[^>]*>([^<]*)<', re.IGNORECASE)
+        r'data-ontology-value="([a-z_.]+)"([^>]*)>([^<]*)<', re.IGNORECASE)
     checked = 0
-    for path, text in pattern.findall(html):
+    runtime_filled: list[str] = []
+    for path, attrs, text in pattern.findall(html):
         expected = resolve(path)
         if expected is None:
             continue
         checked += 1
+        # 标了 data-ontology-source 的当前值由接口运行时填充：占位符不是
+        # 手写业务值，不参与静态比对；但页面必须真的有填充函数。
+        if "data-ontology-source" in attrs:
+            runtime_filled.append(path)
+            continue
         nums = re.findall(r"\d+(?:\.\d+)?", text)
         if not nums:
             continue
@@ -1428,6 +1434,13 @@ def check_demo_current_values(root: str) -> dict:
                             f"改本体后页面没同步，演示会说错话"),
             })
     item["checked_markers"] = checked
+    item["runtime_filled"] = runtime_filled
+    if runtime_filled and "hydrateWalkFacts" not in html:
+        item["ok"] = False
+        item["issues"].append({
+            "code": "DEMO_VALUE_NOT_HYDRATED", "path": target,
+            "message": "标注为接口填充的当前值没有对应的填充函数，等于没有值",
+        })
     if checked == 0:
         item["ok"] = False
         item["issues"].append({

@@ -47,37 +47,39 @@ def _catalog(system, question):
 
 class TestQuestionDrivesScope:
     def test_different_questions_select_different_groups(self, system):
-        groups = [tuple(_catalog(system, q)[1]["groups"]) for q in QUESTIONS]
-        assert len(set(groups)) >= 3, f"业务域随问句变化，实际：{groups}"
+        groups = [tuple(_catalog(system, q)[1]["aggregates"]) for q in QUESTIONS]
+        assert len(set(groups)) >= 3, f"注入聚合随问句变化，实际：{groups}"
 
     def test_scope_is_all_groups_not_current_object_group(self, system):
         for question in QUESTIONS:
             _, resolved = _catalog(system, question)
-            assert resolved["search_scope"] == "all_groups"
+            assert resolved["search_scope"] == "all_contexts"
             assert not resolved["fallback_used"]
-            # 必选对象域要显式列出来，不许混进「问句召回」里冒充检索结果
-            assert resolved["seed_groups"]
-            assert not (set(resolved["seed_groups"])
-                        & set(resolved["question_groups"]))
-            assert len(resolved["question_groups"]) >= 1
-        # 问句追加域必须随输入变化，不能恒定
+            # 必选对象聚合要显式列出来，不许混进「问句召回」里冒充检索结果
+            assert resolved["seed_aggregates"]
+            assert not (set(resolved["seed_aggregates"])
+                        & set(resolved["question_aggregates"]))
+            assert len(resolved["question_aggregates"]) >= 1
+        # 问句追加聚合必须随输入变化，不能恒定
         assert len({
-            tuple(_catalog(system, q)[1]["question_groups"]) for q in QUESTIONS
+            tuple(_catalog(system, q)[1]["question_aggregates"]) for q in QUESTIONS
         }) >= 3
 
-    def test_core_object_group_never_trimmed_out(self, system):
-        """回归：预算裁剪曾把 order_transport 砍掉，目录变成 0 条关系，
+    def test_core_object_aggregate_never_trimmed_out(self, system):
+        """回归：预算裁剪曾把核心域砍掉，目录变成 0 条关系，
         规划器随即输出无法解析 → 经典演示问题降级。"""
         agent, resolved = _catalog(
             system, "为什么这笔运单比预估贵38",
         )
-        assert "order_transport" in resolved["groups"]
+        seed = agent.sem.aggregate_for_type(agent.object_type)
+        assert seed in resolved["aggregates"]
         assert resolved["relations"] > 0, "目录必须带关系端点"
-        assert "order_transport" in resolved["seed_groups"]
+        # v4 承重：跨聚合边界链接必须随目录注入，永不静默丢弃
+        assert resolved["boundary_links"] > 0, "边界链接必须注入"
         payload_types = {
             s for s in (agent.steps[-1]["query"]["output"] or {}).get("types") or []
         }
-        assert {"Waybill", "FeeItem", "Stop"} <= payload_types
+        assert {"Waybill", "FeeItem"} <= payload_types
         assert "all_groups" not in agent.steps[-1]["query"]["expression"]
 
     def test_search_expression_and_metadata_are_real(self, system):

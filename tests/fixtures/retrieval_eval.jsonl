@@ -1,0 +1,81 @@
+{"question": "为什么这单贵了 38 块", "expected_types": ["FeeVariance", "FeeDetail"], "expected_contexts": ["pricing_billing"], "expect_zero": false}
+{"question": "运费怎么算出来的", "expected_types": ["PricingRule", "Quote"], "expected_contexts": ["pricing_billing"], "expect_zero": false}
+{"question": "这单有哪些费用项", "expected_types": ["FeeItem", "FeeDetail"], "expected_contexts": ["pricing_billing"], "expect_zero": false}
+{"question": "费用明细给我看看", "expected_types": ["FeeDetail"], "expected_contexts": ["pricing_billing"], "expect_zero": false}
+{"question": "多收钱了怎么申诉", "expected_types": ["FeeVariance", "DisputedFee"], "expected_contexts": ["pricing_billing"], "expect_zero": false}
+{"question": "什么时候能结算回款", "expected_types": ["Settlement", "SettlementCycle"], "expected_contexts": ["pricing_billing"], "expect_zero": false}
+{"question": "发票开了没有", "expected_types": ["Invoice"], "expected_contexts": ["pricing_billing"], "expect_zero": false}
+{"question": "等候费怎么收的", "expected_types": ["FeeDetail", "PricingWaitingPrice"], "expected_contexts": ["pricing_billing"], "expect_zero": false}
+{"question": "这笔费用有没有减免", "expected_types": ["FeeWaiver"], "expected_contexts": ["pricing_billing"], "expect_zero": false}
+{"question": "报价有效期到什么时候", "expected_types": ["QuoteValidity", "Quote"], "expected_contexts": ["pricing_billing"], "expect_zero": false}
+{"question": "对账单和系统对不上", "expected_types": ["Settlement", "FeeReconciliation"], "expected_contexts": ["pricing_billing"], "expect_zero": false}
+{"question": "这单的计价规则是哪条", "expected_types": ["PricingRule", "PricingRuleVersion"], "expected_contexts": ["pricing_billing"], "expect_zero": false}
+{"question": "货到哪了", "expected_types": ["Track"], "expected_contexts": ["fulfillment"], "expect_zero": false}
+{"question": "运单现在什么状态", "expected_types": ["Waybill"], "expected_contexts": ["fulfillment"], "expect_zero": false}
+{"question": "签收了吗", "expected_types": ["Stop", "Evidence"], "expected_contexts": ["fulfillment", "evidence_exception"], "expect_zero": false}
+{"question": "在哪装的货", "expected_types": ["Stop", "StopLoading"], "expected_contexts": ["fulfillment"], "expect_zero": false}
+{"question": "这单货有多少件", "expected_types": ["Cargo"], "expected_contexts": ["fulfillment"], "expect_zero": false}
+{"question": "改一下收货地址", "expected_types": ["OrderAmendment"], "expected_contexts": ["fulfillment"], "expect_zero": false}
+{"question": "为什么改派了司机", "expected_types": ["WaybillReassignment"], "expected_contexts": ["fulfillment"], "expect_zero": false}
+{"question": "订单超时了吗", "expected_types": ["OrderSLA"], "expected_contexts": ["fulfillment"], "expect_zero": false}
+{"question": "轨迹走的哪条路", "expected_types": ["Track", "TrackPoint"], "expected_contexts": ["fulfillment"], "expect_zero": false}
+{"question": "一单为什么拆成两车", "expected_types": ["WaybillSegment", "OrderSplit"], "expected_contexts": ["fulfillment"], "expect_zero": false}
+{"question": "这票货入哪个仓", "expected_types": ["Warehouse"], "expected_contexts": ["fulfillment"], "expect_zero": false}
+{"question": "路线是怎么规划的", "expected_types": ["RoutePlan", "Route"], "expected_contexts": ["fulfillment"], "expect_zero": false}
+{"question": "司机证件齐不齐", "expected_types": ["DriverQualificationCert", "Driver"], "expected_contexts": ["capacity"], "expect_zero": false}
+{"question": "这车能装多少吨", "expected_types": ["Vehicle", "VehicleDimension"], "expected_contexts": ["capacity"], "expect_zero": false}
+{"question": "司机这个月出了几次车", "expected_types": ["DriverAttendance", "Driver"], "expected_contexts": ["capacity"], "expect_zero": false}
+{"question": "承运商资质审核过了吗", "expected_types": ["CarrierQualification", "Carrier"], "expected_contexts": ["capacity"], "expect_zero": false}
+{"question": "外协给哪家公司了", "expected_types": ["SubcontractOrder", "Carrier"], "expected_contexts": ["capacity"], "expect_zero": false}
+{"question": "车辆最近有故障吗", "expected_types": ["VehicleFault", "Vehicle"], "expected_contexts": ["capacity"], "expect_zero": false}
+{"question": "油耗超标了没有", "expected_types": ["FuelConsumption"], "expected_contexts": ["capacity"], "expect_zero": false}
+{"question": "这个司机黑名单了吗", "expected_types": ["DriverBlacklist", "Driver"], "expected_contexts": ["capacity"], "expect_zero": false}
+{"question": "承运商考核得分多少", "expected_types": ["CarrierEvaluation"], "expected_contexts": ["capacity"], "expect_zero": false}
+{"question": "车辆年检什么时候到期", "expected_types": ["VehicleInspection", "Vehicle"], "expected_contexts": ["capacity"], "expect_zero": false}
+{"question": "回单照片拍了吗", "expected_types": ["EvidencePhoto", "Evidence"], "expected_contexts": ["evidence_exception"], "expect_zero": false}
+{"question": "货损了怎么赔", "expected_types": ["CargoDamage", "ExceptionTicket"], "expected_contexts": ["evidence_exception"], "expect_zero": false}
+{"question": "这单有什么异常", "expected_types": ["ExceptionTicket", "ExceptionReport"], "expected_contexts": ["evidence_exception"], "expect_zero": false}
+{"question": "保险买了吗保额多少", "expected_types": ["InsurancePolicy", "InsuranceCoverage"], "expected_contexts": ["evidence_exception"], "expect_zero": false}
+{"question": "索赔流程走到哪一步", "expected_types": ["InsuranceClaim"], "expected_contexts": ["evidence_exception"], "expect_zero": false}
+{"question": "证据链完整吗", "expected_types": ["EvidenceChain", "Evidence"], "expected_contexts": ["evidence_exception"], "expect_zero": false}
+{"question": "异常是谁的责任", "expected_types": ["ExceptionAttribution", "ExceptionTicket"], "expected_contexts": ["evidence_exception"], "expect_zero": false}
+{"question": "合规检查有什么问题", "expected_types": ["ComplianceCheck", "ComplianceAudit"], "expected_contexts": ["evidence_exception"], "expect_zero": false}
+{"question": "承运险理赔要什么材料", "expected_types": ["InsuranceClaim", "InsuranceClaimDocument"], "expected_contexts": ["evidence_exception"], "expect_zero": false}
+{"question": "客户的发票抬头是什么", "expected_types": ["InvoiceTitle"], "expected_contexts": ["master_data"], "expect_zero": false}
+{"question": "这单走报关了吗", "expected_types": ["CustomsDeclaration"], "expected_contexts": ["master_data"], "expect_zero": false}
+{"question": "合同什么时候到期", "expected_types": ["Contract", "ContractTermination"], "expected_contexts": ["master_data"], "expect_zero": false}
+{"question": "收货地址在哪个区", "expected_types": ["GeoAddress"], "expected_contexts": ["master_data"], "expect_zero": false}
+{"question": "公司组织架构里有这个人吗", "expected_types": ["Organization", "OrgChart"], "expected_contexts": ["master_data"], "expect_zero": false}
+{"question": "合同里违约条款怎么写", "expected_types": ["ContractClause", "Contract"], "expected_contexts": ["master_data"], "expect_zero": false}
+{"question": "温控设备的温度记录", "expected_types": ["Device", "DeviceStatus"], "expected_contexts": ["master_data"], "expect_zero": false}
+{"question": "提单原件在哪", "expected_types": ["Document"], "expected_contexts": ["master_data"], "expect_zero": false}
+{"question": "关税税率是多少", "expected_types": ["CustomsDuty", "CustomsDeclaration"], "expected_contexts": ["master_data"], "expect_zero": false}
+{"question": "这个客户投诉过几次", "expected_types": ["ServiceComplaint", "ServiceTicket"], "expected_contexts": ["operations"], "expect_zero": false}
+{"question": "本月 KPI 达标了吗", "expected_types": ["KPI", "Metric"], "expected_contexts": ["operations"], "expect_zero": false}
+{"question": "客服工单处理进度", "expected_types": ["ServiceTicket"], "expected_contexts": ["operations"], "expect_zero": false}
+{"question": "客户满意度报表", "expected_types": ["Report", "ServiceSatisfaction"], "expected_contexts": ["operations"], "expect_zero": false}
+{"question": "运费谁承担，多久结算", "expected_types": ["Settlement", "SettlementCycle"], "expected_contexts": ["pricing_billing"], "expect_zero": false}
+{"question": "这单贵不贵，司机是谁", "expected_types": ["FeeVariance", "Driver"], "expected_contexts": ["pricing_billing", "capacity"], "expect_zero": false}
+{"question": "延误了要赔多少，找谁举证", "expected_types": ["WaybillDelay", "EvidenceChain"], "expected_contexts": ["fulfillment", "evidence_exception"], "expect_zero": false}
+{"question": "货主是谁，账期多久", "expected_types": ["Shipper", "SettlementCycle"], "expected_contexts": ["fulfillment", "pricing_billing"], "expect_zero": false}
+{"question": "外协车的费用和资质", "expected_types": ["SubcontractOrder", "CarrierQualification", "FeeDetail"], "expected_contexts": ["capacity", "pricing_billing"], "expect_zero": false}
+{"question": "承运商在途异常和理赔", "expected_types": ["Carrier", "ExceptionTicket", "InsuranceClaim"], "expected_contexts": ["capacity", "evidence_exception"], "expect_zero": false}
+{"question": "改单之后费用怎么变", "expected_types": ["OrderAmendment", "FeeDetail"], "expected_contexts": ["fulfillment", "pricing_billing"], "expect_zero": false}
+{"question": "温度超标了，货物谁负责", "expected_types": ["CargoAttribute", "Cargo"], "expected_contexts": ["fulfillment"], "expect_zero": false}
+{"question": "今天天气怎么样", "expected_types": [], "expected_contexts": [], "expect_zero": true}
+{"question": "附近有什么好吃的餐厅", "expected_types": [], "expected_contexts": [], "expect_zero": true}
+{"question": "帮我写一首诗", "expected_types": [], "expected_contexts": [], "expect_zero": true}
+{"question": "梅西转会了吗", "expected_types": [], "expected_contexts": [], "expect_zero": true}
+{"question": "明天股市会涨吗", "expected_types": [], "expected_contexts": [], "expect_zero": true}
+{"question": "怎么学英语", "expected_types": [], "expected_contexts": [], "expect_zero": true}
+{"question": "推荐一部电影", "expected_types": [], "expected_contexts": [], "expect_zero": true}
+{"question": "美联储加息了吗", "expected_types": [], "expected_contexts": [], "expect_zero": true}
+{"question": "北京的房价", "expected_types": [], "expected_contexts": [], "expect_zero": true}
+{"question": "世界杯谁夺冠", "expected_types": [], "expected_contexts": [], "expect_zero": true}
+{"question": "你好", "expected_types": [], "expected_contexts": [], "expect_zero": true}
+{"question": "费控", "expected_types": [], "expected_contexts": [], "expect_zero": true}
+{"question": "排队等位多久了", "expected_types": ["StopQueue"], "expected_contexts": ["fulfillment"], "expect_zero": false}
+{"question": "油耗补贴标准", "expected_types": ["FuelConsumption", "FuelSubsidy"], "expected_contexts": ["capacity"], "expect_zero": false}
+{"question": "月结对账", "expected_types": ["Settlement", "SettlementCycle"], "expected_contexts": ["pricing_billing"], "expect_zero": false}
+{"question": "吨公里计价", "expected_types": ["PricingMileagePrice", "PricingRule"], "expected_contexts": ["pricing_billing"], "expect_zero": false}
+{"question": "货放久了仓储费", "expected_types": ["WarehouseFee", "Warehouse"], "expected_contexts": ["fulfillment", "pricing_billing"], "expect_zero": false}

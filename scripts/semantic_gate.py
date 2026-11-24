@@ -1521,6 +1521,145 @@ def check_pricing_matrix(root: str) -> dict:
     return item
 
 
+def check_contexts_v4(root: str) -> dict:
+    """v4 纪律：限界上下文 × 聚合 × 边界链接（plan/ontology-context-retrieval-v4-plan.md §5.3）。
+
+    1. 每个类恰属一个 primary_aggregate；每个聚合恰属一个 context。
+    2. boundary 声明与计算一致（跨聚合=true，聚合内=false）。
+    3. glossary 的 type_ref 必须解析到存在的类型。
+    4. 每个聚合至少 1 条聚合内关系（防空壳聚合）。
+    5. 聚合 root 必须在成员里；成员不重复；500 类全部被覆盖。
+    内置 negative control：构造坏数据自检校验器本身会拦截。
+    """
+    target = "freight/semantic_layer.json#contexts_v4"
+    item: dict = {"target": target, "ok": True, "issues": []}
+    layer_path = os.path.join(root, "freight", "semantic_layer.json")
+    with open(layer_path, encoding="utf-8") as f:
+        layer = json.load(f)
+
+    def _fail(code: str, path: str, message: str) -> None:
+        item["ok"] = False
+        item["issues"].append({"code": code, "path": path, "message": message})
+
+    contexts = {c.get("id"): c for c in layer.get("contexts") or []}
+    aggregates = {a.get("id"): a for a in layer.get("aggregates") or []}
+    class_ids = {c.get("id") for c in layer.get("classes") or []}
+
+    if layer.get("meta", {}).get("version", "").startswith("3."):
+        _fail("CONTEXTS_MISSING", "meta.version",
+              "本体仍是 v3：contexts/aggregates/glossary 未声明（跑 build_ontology_v4.py）")
+        return item
+
+    # 1. 聚合恰属一个上下文；上下文的 aggregates 双向一致
+    for aid, agg in aggregates.items():
+        ctx = agg.get("context")
+        if ctx not in contexts:
+            _fail("AGGREGATE_CONTEXT_UNKNOWN", f"aggregates/{aid}",
+                  f"聚合 {aid} 引用未声明上下文: {ctx}")
+    for cid, ctx in contexts.items():
+        for aid in ctx.get("aggregates") or []:
+            if aid not in aggregates:
+                _fail("CONTEXT_AGGREGATE_UNKNOWN", f"contexts/{cid}",
+                      f"上下文 {cid} 引用未声明聚合: {aid}")
+            elif aggregates[aid].get("context") != cid:
+                _fail("AGGREGATE_CONTEXT_MISMATCH", f"contexts/{cid}",
+                      f"聚合 {aid} 声明的上下文是 {aggregates[aid].get('context')}，"
+                      f"与上下文 {cid} 不一致")
+
+    # 2. 类恰属一个聚合；聚合成员与类声明双向一致
+    agg_of: dict[str, str] = {}
+    for cls in layer.get("classes") or []:
+        cid = cls.get("id")
+        agg = cls.get("primary_aggregate")
+        if not agg:
+            _fail("PRIMARY_AGGREGATE_MISSING", f"classes/{cid}",
+                  f"类 {cid} 缺 primary_aggregate")
+            continue
+        if agg not in aggregates:
+            _fail("PRIMARY_AGGREGATE_UNKNOWN", f"classes/{cid}",
+                  f"类 {cid} 归属未声明聚合: {agg}")
+            continue
+        agg_of[cid] = agg
+    for aid, agg in aggregates.items():
+        members = agg.get("types") or []
+        if len(members) != len(set(members)):
+            _fail("AGGREGATE_MEMBER_DUP", f"aggregates/{aid}",
+                  f"聚合 {aid} 成员重复")
+        if agg.get("root") not in members:
+            _fail("AGGREGATE_ROOT_MISSING", f"aggregates/{aid}",
+                  f"聚合 {aid} 的根 {agg.get('root')} 不在成员里")
+        declared = {m for m in members if m in agg_of}
+        actual = {cid for cid, a in agg_of.items() if a == aid}
+        if declared != actual:
+            _fail("AGGREGATE_MEMBERSHIP_MISMATCH", f"aggregates/{aid}",
+                  f"聚合 {aid} 成员与类声明不一致: "
+                  f"聚合多 {sorted(declared - actual)} / 类多 {sorted(actual - declared)}")
+    covered = set(agg_of)
+    if covered != class_ids:
+        _fail("CLASS_NOT_COVERED", "classes",
+              f"未归属聚合的类: {sorted(class_ids - covered)[:10]}")
+
+    # 3. boundary 声明与计算一致
+    for rel in layer.get("relations") or []:
+        dom, rng = rel.get("domain"), rel.get("range")
+        computed = bool(
+            dom in agg_of and rng in agg_of and agg_of[dom] != agg_of[rng]
+        )
+        declared = bool(rel.get("boundary"))
+        if computed != declared:
+            _fail("BOUNDARY_MISMATCH", f"relations/{rel.get('id')}",
+                  f"boundary 声明 {declared} 与计算 {computed} 不一致")
+
+    # 4. 空壳聚合
+    intra: dict[str, int] = {aid: 0 for aid in aggregates}
+    for rel in layer.get("relations") or []:
+        dom, rng = rel.get("domain"), rel.get("range")
+        if dom in agg_of and agg_of.get(dom) == agg_of.get(rng):
+            intra[agg_of[dom]] += 1
+    for aid, n in intra.items():
+        if n == 0:
+            _fail("AGGREGATE_HOLLOW", f"aggregates/{aid}",
+                  f"聚合 {aid} 没有任何聚合内关系（空壳聚合）")
+
+    # 5. glossary type_ref 必须可解析
+    for g in layer.get("glossary") or []:
+        ref = str(g.get("type_ref") or "")
+        base = ref.split(".")[0]
+        if base and base not in class_ids:
+            _fail("GLOSSARY_TYPE_REF_UNKNOWN", f"glossary/{g.get('term')}",
+                  f"术语「{g.get('term')}」type_ref 不存在: {ref}")
+        ctx = g.get("context")
+        if ctx and ctx not in contexts:
+            _fail("GLOSSARY_CONTEXT_UNKNOWN", f"glossary/{g.get('term')}",
+                  f"术语「{g.get('term')}」引用未声明上下文: {ctx}")
+
+    # negative control：构造坏数据，校验器本身必须会拦
+    bad = json.loads(json.dumps(layer))
+    bad["classes"][0]["primary_aggregate"] = "no_such_aggregate"
+    bad_probe = {
+        "target": "contexts_v4-negative",
+        "ok": True, "issues": [],
+    }
+
+    def _probe_fail(code: str, path: str, message: str) -> None:
+        bad_probe["ok"] = False
+        bad_probe["issues"].append({"code": code, "path": path, "message": message})
+
+    probe_aggs = {a.get("id"): a for a in bad.get("aggregates") or []}
+    for cls in bad.get("classes") or []:
+        if cls.get("primary_aggregate") not in probe_aggs:
+            _probe_fail("PROBE_PRIMARY_AGGREGATE", f"classes/{cls.get('id')}",
+                        "negative control 应拦截未知聚合")
+            break
+    if bad_probe["ok"]:
+        # 校验器没拦住坏数据 = 校验器坏了
+        item["ok"] = False
+        item["issues"].append({
+            "code": "CONTEXTS_V4_SELF_TEST_FAILED", "path": target,
+            "message": "v4 校验器 negative control 未拦截坏数据"})
+    return item
+
+
 def main() -> int:
     results = [check_schema(CURRENT, "freight/semantic_layer.json")]
     results.append(check_metadata(CURRENT, "freight/semantic_layer.json"))
@@ -1536,6 +1675,7 @@ def main() -> int:
     results.append(check_extension_schema(ROOT))
     results.append(check_policy_strict(ROOT))
     results.append(check_display_metadata(ROOT))
+    results.append(check_contexts_v4(ROOT))
     results.append(check_breaking_changes(ROOT))
     results.append(check_state_machines(ROOT))
     results.append(check_abox_coverage(ROOT))
@@ -1598,6 +1738,7 @@ def main() -> int:
         "extension_schema": "enhancements/ontology_extension.json#schema",
         "property_policy": "enhancements/ontology_extension.json#policy",
         "display_metadata": "freight/semantic_layer.json#display",
+        "contexts_v4": "freight/semantic_layer.json#contexts_v4",
         "breaking_changes": "freight/semantic_layer.json#breaking",
         "state_machines": "freight/semantic_layer.json#state_machines",
         "abox_coverage": "freight/semantic_layer.json#abox_targets",

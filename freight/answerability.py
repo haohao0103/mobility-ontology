@@ -63,19 +63,26 @@ def _declaration_terms(semantic) -> set[str]:
         if depth > 3:
             return
         if isinstance(node, dict):
-            for key in ("id", "name", "label", "description", "note"):
+            for key in ("id", "name", "label", "description", "note", "term"):
                 value = node.get(key)
                 if isinstance(value, str):
                     texts.append(value)
-            for alias in node.get("aliases") or []:
-                if isinstance(alias, str):
-                    texts.append(alias)
+            alias_lists = (
+                node.get("aliases"), node.get("synonyms"),
+                node.get("colloquial"),
+            )
+            for aliases in alias_lists:
+                for alias in aliases or []:
+                    if isinstance(alias, str):
+                        texts.append(alias)
         elif isinstance(node, list):
             for item in node[:60]:
                 collect(item, depth + 1)
 
+    # v4：glossary（业务术语表）纳入声明术语派生——用户用业务词问规则
+    # （「等候费怎么收」「月结对账」）是知识型问题的强信号。
     for section in ("pricing", "rules", "actions", "state_machines",
-                    "object_type_groups"):
+                    "object_type_groups", "glossary"):
         collect(raw.get(section))
     terms: set[str] = set()
     for text in texts:
@@ -126,7 +133,7 @@ def classify_question(question: str, semantic=None) -> dict:
             "question_syntax": syntax,
             "declaration_terms": declared,
             "routing_source": (
-                "semantic_layer.json · rules/pricing/actions/state_machines"
+                "semantic_layer.json · rules/pricing/actions/state_machines/glossary"
                 if semantic is not None else "问句语法（未提供本体）"
             ),
         },

@@ -45,6 +45,7 @@ class SemanticLayer:
 
     def _index(self, raw: dict) -> None:
         self.raw = raw
+        self._retriever = None  # v4 检索器懒加载（object_type_search 时构建）
         self.classes = {c["id"]: c for c in self.raw["classes"]}
         self.relations = {r["id"]: r for r in self.raw["relations"]}
         self.actions = {a["id"]: a for a in self.raw["actions"]}
@@ -66,6 +67,23 @@ class SemanticLayer:
         ]
         self.object_type_group_map = {
             group["id"]: group for group in self.object_type_groups
+        }
+        # v4 限界上下文 × 聚合（Palantir Groups 模式：旧 35 域降级为多标签，
+        # 仅 UI 导航；裁剪与闭包单位 = 聚合；跨聚合关系 = 显式边界链接）。
+        self.contexts = {
+            c["id"]: c for c in (self.raw.get("contexts") or []) if c.get("id")
+        }
+        self.aggregates = {
+            a["id"]: a for a in (self.raw.get("aggregates") or []) if a.get("id")
+        }
+        self.glossary = [
+            g for g in (self.raw.get("glossary") or []) if g.get("term")
+        ]
+        self.aggregate_of_type = {
+            cid: cls.get("primary_aggregate") for cid, cls in self.classes.items()
+        }
+        self.context_of_aggregate = {
+            aid: agg.get("context") for aid, agg in self.aggregates.items()
         }
         # 属性类型注册表（Palantir Property Type）：类只引用属性名，类型在注册表里。
         # 这里只建索引；权威定义仍在 JSON，禁止在代码里写属性类型。
@@ -672,6 +690,66 @@ class SemanticLayer:
             if wanted & set(group.get("types") or [])
         ]
 
+    # ── v4 聚合 / 上下文访问 ──────────────────────────────────────
+    def aggregate_for_type(self, type_id: str) -> str | None:
+        """类型 → 聚合 id（恰属一个；未声明返回 None）。"""
+        return self.aggregate_of_type.get(type_id)
+
+    def context_for_aggregate(self, aggregate_id: str) -> str | None:
+        return self.context_of_aggregate.get(aggregate_id)
+
+    def context_for_type(self, type_id: str) -> str | None:
+        agg = self.aggregate_for_type(type_id)
+        return self.context_for_aggregate(agg) if agg else None
+
+    def aggregate_types(self, aggregate_id: str) -> list[str]:
+        """聚合成员（根类型在前，声明顺序）。"""
+        agg = self.aggregates.get(aggregate_id)
+        if not agg:
+            raise BusinessReject(
+                f"未声明的聚合: {aggregate_id}", "SCHEMA_ERROR",
+                {"allowed": sorted(self.aggregates)})
+        return [t for t in (agg.get("types") or []) if t in self.classes]
+
+    def boundary_links(self,
+                       aggregate_ids: list[str] | set[str] | None = None) -> list[dict]:
+        """跨聚合边界链接（boundary=true）。
+
+        aggregate_ids 给定时只返回「至少一端在这些聚合里」的边界链接——
+        这是注入层的保证：命中聚合相关的跨聚合关系永不静默丢弃，
+        另一端带聚合名与类型摘要，供规划器跨域圈类型。
+        """
+        selected = set(aggregate_ids or [])
+        out: list[dict] = []
+        for rel in self.raw["relations"]:
+            if not rel.get("boundary"):
+                continue
+            if selected:
+                dom_agg = self.aggregate_of_type.get(rel["domain"])
+                rng_agg = self.aggregate_of_type.get(rel["range"])
+                if dom_agg not in selected and rng_agg not in selected:
+                    continue
+            out.append(rel)
+        return out
+
+    def context_ids_for_types(self, type_ids: list[str] | set[str]) -> list[str]:
+        """类型集合 → 去重上下文 id 列表（保持声明顺序）。"""
+        wanted: list[str] = []
+        for cid in type_ids or []:
+            ctx = self.context_for_type(cid)
+            if ctx and ctx not in wanted:
+                wanted.append(ctx)
+        return wanted
+
+    def aggregate_ids_for_types(self, type_ids: list[str] | set[str]) -> list[str]:
+        """类型集合 → 去重聚合 id 列表（保持命中顺序）。"""
+        wanted: list[str] = []
+        for cid in type_ids or []:
+            agg = self.aggregate_for_type(cid)
+            if agg and agg not in wanted:
+                wanted.append(agg)
+        return wanted
+
     def catalog_budget(self, default: int = 6000) -> int:
         try:
             budget = int(self.catalog_config.get("context_budget_chars") or default)
@@ -680,19 +758,29 @@ class SemanticLayer:
         return max(500, budget)
 
     def _catalog_payload(self, type_ids: list[str], group_ids: list[str] | None,
-                         mode: str, budget: int) -> dict:
+                         mode: str, budget: int,
+                         aggregate_ids: list[str] | None = None) -> dict:
         selected = [cid for cid in self.classes if cid in set(type_ids)]
         selected_set = set(selected)
         max_desc = self.catalog_config.get("description_max_chars") or 80
-        compact = mode in ("full", "group")
+        compact = mode in ("full", "group", "aggregate")
+        agg_mode = mode == "aggregate"
         types = []
         for cid in selected:
             cls = self.classes[cid]
-            entry = {
-                "id": cid,
-                "label": cls.get("label", cid),
-                "groups": self.group_ids_for_types([cid]),
-            }
+            if agg_mode:
+                # 聚合模式紧凑格式：label + 聚合（层级信息在 groups 节里）
+                entry = {
+                    "id": cid,
+                    "label": cls.get("label", cid),
+                    "aggregate": self.aggregate_for_type(cid) or "",
+                }
+            else:
+                entry = {
+                    "id": cid,
+                    "label": cls.get("label", cid),
+                    "groups": self.group_ids_for_types([cid]),
+                }
             if not compact:
                 description = str(cls.get("description", ""))
                 if len(description) > max_desc:
@@ -704,54 +792,112 @@ class SemanticLayer:
                 })
             types.append(entry)
         relations = []
+        boundary_links = []
         for rel in self.raw["relations"]:
             domain, range_ = rel.get("domain"), rel.get("range")
+            dom_in = domain in selected_set
+            rng_in = range_ in selected_set
             if compact:
-                # 紧凑目录只保留组内关系；跨组边界用 schema / search-around 展开。
-                if domain not in selected_set or range_ not in selected_set:
+                if not dom_in and not rng_in:
+                    continue  # 两端都不在选中集合：与当前目录无关
+                if not (dom_in and rng_in):
+                    # v4：跨聚合边界链接保留端点摘要，永不静默丢弃
+                    # （v3 在这里直接 continue，是「0 条关系」事故的根源）。
+                    entry = {
+                        "id": rel["id"],
+                        "label": rel.get("label", rel["id"]),
+                        "domain": domain,
+                        "range": range_,
+                        "boundary": True,
+                        "domain_aggregate": self.aggregate_for_type(domain) or "",
+                        "range_aggregate": self.aggregate_for_type(range_) or "",
+                    }
+                    relations.append(entry)
+                    boundary_links.append(entry)
                     continue
-            elif domain not in selected_set and range_ not in selected_set:
+            elif not dom_in and not rng_in:
                 continue
             entry = {
                 "id": rel["id"],
-                "label": rel.get("label", rel["id"]),
                 "domain": domain,
                 "range": range_,
+                "boundary": bool(rel.get("boundary")),
             }
-            if not compact:
-                entry["boundary"] = (
-                    domain not in selected_set or range_ not in selected_set
-                )
+            if not agg_mode or rel.get("boundary"):
+                # 聚合模式紧凑：聚合内关系省略 label（id 自解释，
+                # waybill_has_cargo 即「运单有货物」）；boundary 保留
+                # （跨域语义必须可读）。
+                entry["label"] = rel.get("label", rel["id"])
             relations.append(entry)
-        groups = []
-        for group in self.object_type_groups:
-            members = [t for t in (group.get("types") or []) if t in selected_set]
-            if not members:
-                continue
-            entry = {
-                "id": group["id"],
-                "label": group.get("label", group["id"]),
-                "types": members,
-            }
-            if not compact:
-                entry.update({
-                    "description": group.get("description", ""),
-                    "aliases": list(group.get("aliases") or []),
-                })
-            groups.append(entry)
-        fee_types = list(self.pricing)
+        groups: list[dict] = []
+        if mode == "aggregate" and aggregate_ids:
+            # 聚合模式：目录按「上下文 → 聚合 → 类型」组织（可导航层级）
+            by_context: dict[str, list[str]] = {}
+            for aid in aggregate_ids:
+                agg = self.aggregates.get(aid)
+                if not agg:
+                    continue
+                ctx = agg.get("context") or ""
+                by_context.setdefault(ctx, []).append(aid)
+            for ctx, aids in by_context.items():
+                ctx_spec = self.contexts.get(ctx, {})
+                agg_entries = []
+                for aid in aids:
+                    agg = self.aggregates[aid]
+                    members = [t for t in (agg.get("types") or [])
+                               if t in selected_set]
+                    if not members:
+                        continue
+                    agg_entries.append({
+                        "id": aid,
+                        "label": agg.get("label", aid),
+                        "root": agg.get("root"),
+                        "types": members,
+                    })
+                if agg_entries:
+                    groups.append({
+                        "id": ctx or "ungrouped",
+                        "label": ctx_spec.get("label", ctx or "未分组"),
+                        "aggregates": agg_entries,
+                    })
+        else:
+            for group in self.object_type_groups:
+                members = [t for t in (group.get("types") or []) if t in selected_set]
+                if not members:
+                    continue
+                entry = {
+                    "id": group["id"],
+                    "label": group.get("label", group["id"]),
+                    "types": members,
+                }
+                if not compact:
+                    entry.update({
+                        "description": group.get("description", ""),
+                        "aliases": list(group.get("aliases") or []),
+                    })
+                groups.append(entry)
+        # fee_types：聚合模式下仅当选中集合含费用类型时注入
+        # （非费用问句不需要 54 个费用名锚点，省下的预算给跨聚合席位）。
+        if agg_mode:
+            fee_types = list(self.pricing) if any(
+                t.startswith("Fee") for t in selected_set) else []
+        else:
+            fee_types = list(self.pricing)
         payload = {
             "mode": mode,
             "group_ids": group_ids or [],
+            "aggregate_ids": list(aggregate_ids or []),
             "budget": budget,
             "types": types,
             "relations": relations,
+            "boundary_links": boundary_links,
             "groups": groups,
             "fee_types": fee_types,
             "stats": {
                 "types": len(types),
                 "relations": len(relations),
                 "groups": len(groups),
+                "boundary_links": len(boundary_links),
             },
         }
         payload["characters"] = len(json.dumps(
@@ -763,9 +909,51 @@ class SemanticLayer:
         return payload
 
     def catalog(self, group_ids: list[str] | None = None,
-                budget: int | None = None) -> dict:
-        """返回紧凑 TBox 目录；装得下时全量返回，装不下时只返回业务域索引。"""
+                budget: int | None = None,
+                aggregate_ids: list[str] | None = None,
+                context_ids: list[str] | None = None) -> dict:
+        """返回紧凑 TBox 目录；装得下时全量返回，装不下时只返回业务域索引。
+
+        v4 聚合模式（aggregate_ids / context_ids）：
+        - 类型按聚合成员声明顺序（根在前）；目录按「上下文 → 聚合」组织；
+        - 聚合内关系全保留；跨聚合边界链接保留端点摘要（boundary=true），
+          永不静默丢弃——这是 v4 相对 v3 的核心区别。
+        """
         limit = max(500, int(budget)) if budget else self.catalog_budget()
+        if aggregate_ids or context_ids:
+            requested: list[str] = []
+            if context_ids:
+                for ctx in context_ids:
+                    if ctx not in self.contexts:
+                        raise BusinessReject(
+                            f"未定义的上下文: {ctx}", "SCHEMA_ERROR",
+                            {"unknown": ctx, "allowed": sorted(self.contexts)})
+                    requested.extend(
+                        (self.contexts[ctx].get("aggregates") or []))
+            requested.extend(str(a) for a in (aggregate_ids or []) if a)
+            requested = list(dict.fromkeys(requested))
+            unknown = [a for a in requested if a not in self.aggregates]
+            if unknown:
+                raise BusinessReject(
+                    f"未定义的聚合: {', '.join(unknown)}", "SCHEMA_ERROR",
+                    {"unknown": unknown, "allowed": sorted(self.aggregates)})
+            type_ids: list[str] = []
+            for aid in requested:
+                for cid in (self.aggregates[aid].get("types") or []):
+                    if cid in self.classes and cid not in type_ids:
+                        type_ids.append(cid)
+            payload = self._catalog_payload(
+                type_ids, None, "aggregate", limit, aggregate_ids=requested)
+            payload["context_ids"] = sorted(
+                {self.context_of_aggregate.get(a) for a in requested
+                 if self.context_of_aggregate.get(a)})
+            payload["message"] = (
+                f"已按 {len(requested)} 个聚合（"
+                f"{payload['context_ids']} 上下文）注入目录，"
+                f"{len(payload['types'])} 个类型、{len(payload['relations'])} 条关系"
+                f"（含 {len(payload['boundary_links'])} 条边界链接）。"
+            )
+            return payload
         if group_ids:
             requested = list(dict.fromkeys(str(g) for g in group_ids if g))
             unknown = [g for g in requested if g not in self.object_type_group_map]
@@ -827,184 +1015,26 @@ class SemanticLayer:
         return groups
 
     def object_type_search(self, question: str, top_k: int = 8,
-                           group_ids: list[str] | None = None) -> dict:
-        """按对象类型元数据检索锚点类型，对应 AIP Analyst 的 object type search。"""
-        query = (question or "").strip().lower()
-        terms: dict[str, int] = {}
-        for i in range(max(0, len(query) - 1)):
-            gram = query[i:i + 2]
-            if gram.strip():
-                terms[gram] = terms.get(gram, 0) + 2
-        for word in re.findall(r"[a-z0-9_]{2,}", query):
-            terms[word] = terms.get(word, 0) + 3
+                           group_ids: list[str] | None = None,
+                           context_ids: list[str] | None = None) -> dict:
+        """按对象类型元数据检索锚点类型（v4：五路召回 + RRF + 阈值 + 零命中）。
 
-        allowed_groups = set(group_ids or [])
-        if allowed_groups:
-            unknown = [g for g in allowed_groups if g not in self.object_type_group_map]
-            if unknown:
-                raise BusinessReject(
-                    f"未定义的对象类型组: {', '.join(sorted(unknown))}",
-                    "SCHEMA_ERROR",
-                    {"unknown": sorted(unknown), "allowed": sorted(self.object_type_group_map)},
-                )
+        旧 bigram 单通道实现已删除（git 历史 v3-final tag 可查）。
+        委托 freight/retrieval.py；LLM/embedding 不参与在线打分。
+        """
+        # 函数级 import 避免 semantic <-> retrieval 循环依赖
+        from freight.retrieval import Retriever
+        if self._retriever is None:
+            self._retriever = Retriever(self)
+        return self._retriever.search(
+            question, top_k=top_k, group_ids=group_ids, context_ids=context_ids)
 
-        hits = []
-        for cid, cls in self.classes.items():
-            member_groups = self.group_ids_for_types([cid])
-            if allowed_groups and not (set(member_groups) & allowed_groups):
-                continue
-            label = str(cls.get("label", cid))
-            aliases = [str(x) for x in (cls.get("aliases") or [])]
-            group_text = " ".join(
-                f"{self.object_type_group_map[g].get('label', g)} "
-                f"{self.object_type_group_map[g].get('description', '')} "
-                f"{' '.join(map(str, self.object_type_group_map[g].get('aliases') or []))}"
-                for g in member_groups
-            )
-            fields = {
-                "id": cid.lower(),
-                "label": label.lower(),
-                "description": str(cls.get("description", "")).lower(),
-                "aliases": " ".join(aliases).lower(),
-                "group": group_text.lower(),
-            }
-            score = 0
-            matched_fields = set()
-            if query:
-                if query == fields["id"] or query == fields["label"]:
-                    score += 20
-                    matched_fields.add("id" if query == fields["id"] else "label")
-                elif query in fields["id"]:
-                    score += 8
-                    matched_fields.add("id")
-                if query in fields["label"] and "label" not in matched_fields:
-                    score += 6
-                    matched_fields.add("label")
-                if query in fields["description"]:
-                    score += 3
-                    matched_fields.add("description")
-                if query in fields["aliases"]:
-                    score += 6
-                    matched_fields.add("aliases")
-                if query in fields["group"]:
-                    score += 2
-                    matched_fields.add("group")
-            for term, weight in terms.items():
-                for field_name, text in fields.items():
-                    if term in text:
-                        # 类型名称与检索词完全一致时优先锚定，避免被同域
-                        # 生成类型的描述/别名淹没。
-                        score += weight + (4 if field_name == "label" and term == text else 0)
-                        matched_fields.add(field_name)
-            if score <= 0:
-                continue
-            hits.append({
-                "kind": "class",
-                "id": cid,
-                "label": label,
-                "score": score,
-                "matched_fields": sorted(matched_fields),
-                "groups": member_groups,
-            })
-
-        # 派生对象类型也参与类型发现（kind="derived"）：
-        # 用户问"承运资源/司机车辆"能锚定到派生视图，而非只知道实体类。
-        for did, dt in {d["id"]: d
-                        for d in self.raw.get("derived_types", [])}.items():
-            label = str(dt.get("label", did))
-            aliases = [str(x) for x in (dt.get("aliases") or [])]
-            fields = {
-                "id": did.lower(),
-                "label": label.lower(),
-                "description": str(dt.get("description", "")).lower(),
-                "aliases": " ".join(aliases).lower(),
-            }
-            score = 0
-            matched_fields = set()
-            if query:
-                if query in fields["id"]:
-                    score += 8
-                    matched_fields.add("id")
-                if query in fields["label"]:
-                    score += 6
-                    matched_fields.add("label")
-                if query in fields["aliases"]:
-                    score += 6
-                    matched_fields.add("aliases")
-                if query in fields["description"]:
-                    score += 3
-                    matched_fields.add("description")
-            for term, weight in terms.items():
-                for field_name, text in fields.items():
-                    if term in text:
-                        score += weight
-                        matched_fields.add(field_name)
-            if score <= 0:
-                continue
-            hits.append({
-                "kind": "derived",
-                "id": did,
-                "label": label,
-                "score": score,
-                "matched_fields": sorted(matched_fields),
-                "groups": [],
-            })
-
-        # 费用类型命中时，把费用关联回它的本体作用域（通常是 FeeItem）。
-        fee_anchor_scores: dict[str, int] = {}
-        for fee_type in self.pricing:
-            fee_text = self._fee_text(fee_type).lower()
-            fee_score = sum(weight for term, weight in terms.items() if term in fee_text)
-            if fee_type.lower() in query:
-                fee_score += 5
-            if fee_score <= 0:
-                continue
-            pricing = self.pricing.get(fee_type) or {}
-            rule = self.rules.get(pricing.get("rule_id") or "") or {}
-            domain = rule.get("domain")
-            if domain in self.classes:
-                fee_anchor_scores[domain] = max(
-                    fee_anchor_scores.get(domain, 0), fee_score,
-                )
-        by_id = {hit["id"]: hit for hit in hits}
-        for cid, fee_score in fee_anchor_scores.items():
-            member_groups = self.group_ids_for_types([cid])
-            if allowed_groups and not (set(member_groups) & allowed_groups):
-                continue
-            hit = by_id.get(cid)
-            if hit is None:
-                hit = {
-                    "kind": "class",
-                    "id": cid,
-                    "label": self.classes[cid].get("label", cid),
-                    "score": 0,
-                    "matched_fields": [],
-                    "groups": member_groups,
-                }
-                hits.append(hit)
-                by_id[cid] = hit
-            hit["score"] += fee_score
-            if "fee_type" not in hit["matched_fields"]:
-                hit["matched_fields"].append("fee_type")
-        hits.sort(key=lambda item: (-item["score"], item["id"]))
-        hits = hits[:max(1, min(int(top_k), 20))]
-
-        group_hits = []
-        for gid in self.group_ids_for_types([h["id"] for h in hits]):
-            group = self.object_type_group_map[gid]
-            group_hits.append({
-                "id": gid,
-                "label": group.get("label", gid),
-                "aliases": list(group.get("aliases") or []),
-                "types": [t for t in (group.get("types") or []) if t in self.classes],
-            })
-        return {
-            "question": question,
-            "group_ids": sorted(allowed_groups),
-            "types": hits,
-            "groups": group_hits,
-            "message": "命中对象类型锚点。" if hits else "没有命中对象类型锚点。",
-        }
+    def record_retrieval_history(self, question: str, effective_types: list[str]) -> None:
+        """推理结束后回写查询历史（C5 通道数据源，落 runs/ 不入库）。"""
+        from freight.retrieval import Retriever
+        if self._retriever is None:
+            self._retriever = Retriever(self)
+        self._retriever.record_history(question, effective_types)
 
     def schema_search_around(self, type_ids: list[str],
                              link_type_ids: list[str] | None = None,

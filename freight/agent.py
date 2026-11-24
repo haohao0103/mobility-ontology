@@ -296,6 +296,7 @@ class ReasoningAgent:
         self.catalog_mode = "full"
         self.catalog_fits = False
         self.catalog_group_ids: list[str] = []
+        self.catalog_aggregate_ids: list[str] = []
         self.catalog_anchor_ids: list[str] = []
         self.catalog_context = ""
 
@@ -897,40 +898,63 @@ class ReasoningAgent:
 
     @staticmethod
     def _catalog_context(payload: dict, mode: str,
-                         anchors: list[str], group_ids: list[str]) -> str:
-        """把紧凑目录压成可直接注入模型上下文的文本。"""
-        label = "全量" if mode == "full" else "业务域缩域"
+                         anchors: list[str], aggregate_ids: list[str]) -> str:
+        """把紧凑目录压成可直接注入模型上下文的文本。
+
+        v4 聚合模式：按「上下文 → 聚合 → 类型」渲染层级；跨聚合边界链接
+        带 boundary 标记与端点聚合名（v3 在这里把跨组关系整体丢弃，
+        导致规划器看不到任何跨域路径）。
+        """
+        label = "全量" if mode == "full" else "聚合缩域"
         lines = [
             f"【紧凑 TBox 目录（{label}；{payload.get('characters', 0)} 字符）】",
-            "只含类型 ID、名称、业务域和关系端点，不含对象实例。",
+            "只含类型 ID、名称、聚合归属和关系端点，不含对象实例。",
         ]
-        if group_ids:
-            lines.append("业务域：" + "、".join(group_ids))
+        if aggregate_ids:
+            lines.append("注入聚合：" + "、".join(aggregate_ids))
         if anchors:
             lines.append("检索锚点：" + "、".join(anchors))
+        for group in payload.get("groups") or []:
+            if group.get("aggregates"):
+                # 聚合模式层级：上下文 → 聚合（根 + 成员）
+                lines.append(
+                    f"context|{group['id']}|{group.get('label', group['id'])}"
+                )
+                for agg in group["aggregates"]:
+                    lines.append(
+                        f"aggregate|{agg['id']}|{agg.get('label', agg['id'])}"
+                        f"|root={agg.get('root')}"
+                        f"|{'/'.join(agg.get('types') or [])}"
+                    )
+            else:
+                members = group.get("types")
+                detail = "/".join(members) if members else \
+                    f"{group.get('type_count', '?')} 个类型"
+                lines.append(
+                    f'group|{group["id"]}|{group.get("label", group["id"])}'
+                    f'|{detail}'
+                )
         for cls in payload.get("types") or []:
+            agg = cls.get("aggregate") or ""
             groups = "、".join(cls.get("groups") or [])
+            suffix = f"|aggregate={agg}" if agg else f"|groups={groups or '—'}"
             lines.append(
                 f'class|{cls["id"]}|{cls.get("label", cls["id"])}'
-                f'|groups={groups or "—"}'
+                f'{suffix}'
             )
         for rel in payload.get("relations") or []:
+            boundary = ""
+            if rel.get("boundary"):
+                boundary = (
+                    f"|boundary={rel.get('domain_aggregate', '?')}"
+                    f"→{rel.get('range_aggregate', '?')}"
+                )
             lines.append(
                 f'relation|{rel["id"]}|{rel.get("label", rel["id"])}'
-                f'|{rel["domain"]}->{rel["range"]}'
+                f'|{rel["domain"]}->{rel["range"]}{boundary}'
             )
         for fee_type in payload.get("fee_types") or []:
             lines.append(f"pricing|{fee_type}")
-        for group in payload.get("groups") or []:
-            members = group.get("types")
-            if members:
-                detail = "/".join(members)
-            else:
-                detail = f"{group.get('type_count', '?')} 个类型"
-            lines.append(
-                f'group|{group["id"]}|{group.get("label", group["id"])}'
-                f'|{detail}'
-            )
         text = "\n".join(lines)
         if len(text) > TBOX_CONTEXT_LIMIT:
             text = (
@@ -939,88 +963,102 @@ class ReasoningAgent:
             )
         return text
 
-    def _groups_for_anchors(self, anchors: list[str]) -> list[str]:
-        """锚点 → 业务域，按锚点相关性保序（不是按域的声明顺序）。"""
-        groups: list[str] = []
-        for cid in anchors:
-            for gid in self.sem.group_ids_for_types([cid]):
-                if gid not in groups:
-                    groups.append(gid)
-        return groups
+    def _aggregates_for_anchors(self, anchors: list[str]) -> list[str]:
+        """锚点 → 聚合 id，按锚点 RRF 排名保序（不是按聚合声明顺序）。"""
+        return self.sem.aggregate_ids_for_types(anchors)
 
-    def _fit_groups_to_budget(self, group_ids: list[str],
-                              budget: int) -> tuple[list[str], bool, list[str]]:
-        """按顺序累加业务域，实际测字符数；放不下的跳过，不连坐后面的域。
+    def _fit_aggregates_to_budget(self, aggregate_ids: list[str],
+                                  budget: int) -> tuple[list[str], bool, list[str]]:
+        """按顺序累加聚合，实际测字符数；放不下的跳过，不连坐后面的聚合。
 
-        只截断「装不进预算」的域，而不是一遇超预算就 break——否则排在
-        后面的小域会被无辜砍掉，最容易把核心域挤出去。
+        只截断「装不进预算」的聚合，而不是一遇超预算就 break——否则排在
+        后面的小聚合会被无辜砍掉，最容易把核心聚合挤出去。
         """
         selected: list[str] = []
         trimmed = False
         skipped: list[str] = []
-        for gid in group_ids:
-            trial = selected + [gid]
-            payload = self.sem.catalog(group_ids=trial)
+        for aid in aggregate_ids:
+            trial = selected + [aid]
+            payload = self.sem.catalog(aggregate_ids=trial)
             if int(payload.get("characters") or 0) <= budget:
                 selected = trial
             else:
                 trimmed = True
-                skipped.append(gid)
+                skipped.append(aid)
                 if not selected:
-                    # 至少保留一个真实存在的域，避免 catalog 退化成空目录。
+                    # 至少保留一个真实存在的聚合，避免目录退化成空目录。
                     selected = trial
         return selected, trimmed, skipped
 
     def _step_catalog(self) -> None:
-        """全量目录优先；装不下时 = 必选对象域 + 按问句召回的域。"""
+        """v4：全量目录优先；装不下时 = 当前对象聚合闭包（必选） + 问句召回聚合。
+
+        与 v3 的本质区别：
+        - 注入单位从「35 个平行域」改为「聚合」（限界上下文内的一致性单元），
+          seed 由当前对象所属聚合声明推出，不再靠「核心类恰好都在」的运气；
+        - 跨聚合关系作为边界链接注入（端点带聚合名），永不静默丢弃——
+          v3 在组内过滤处直接 continue，是「0 条关系」事故的根源；
+        - 检索证据（五路通道、降级、零命中）随轨迹落盘，可审计。
+        """
         full = self.sem.catalog()
         payload = full
         mode = full.get("mode") or "full"
         anchors: list[str] = []
-        group_ids: list[str] = []
-        candidate_groups: list[str] = []
-        seed_groups: list[str] = []
-        question_groups: list[str] = []
-        skipped_groups: list[str] = []
+        aggregate_ids: list[str] = []
+        candidate_aggregates: list[str] = []
+        seed_aggregates: list[str] = []
+        question_aggregates: list[str] = []
+        skipped_aggregates: list[str] = []
         search_result: dict = {}
+        retrieval_evidence: dict = {}
         trimmed = False
         fallback_used = False
         budget = int(full.get("budget") or self.sem.catalog_budget())
-        all_groups = [g["id"] for g in full.get("groups") or []]
+        all_contexts = sorted(self.sem.contexts)
         if not full.get("fits"):
-            # 当前对象所在域必选：该对象的类型、关系端点全在里面，
-            # 缺了它目录会变成「一堆同名扩展类 + 0 条关系」，规划无法进行。
-            # 它是业务约束，不冒充检索结果；轨迹里单独列为 seed_groups。
-            seed_groups = self.sem.group_ids_for_types([self.object_type])
-            # 其余域完全由问句在全部业务域里召回的锚点相关性决定。
+            # 当前对象所在聚合必选：该对象的类型、关系端点全在里面，
+            # 缺了它目录会变成「一堆孤立类型 + 0 条关系」，规划无法进行。
+            # 它是业务约束，不冒充检索结果；轨迹里单独列为 seed_aggregates。
+            obj_agg = self.sem.aggregate_for_type(self.object_type)
+            if obj_agg:
+                seed_aggregates = [obj_agg]
+            # 其余聚合完全由问句在全部上下文里召回的锚点相关性决定。
             search_result = self.sem.object_type_search(
                 self.question, top_k=SEARCH_TOP_K,
             )
             anchors = [hit["id"] for hit in search_result.get("types") or []]
-            question_groups = [
-                g for g in self._groups_for_anchors(anchors)
-                if g not in seed_groups
+            retrieval_evidence = {
+                "channels_used": search_result.get("channels_used") or [],
+                "degraded": search_result.get("degraded") or [],
+                "threshold": search_result.get("threshold"),
+                "zero_hit": bool(search_result.get("zero_hit")),
+            }
+            question_aggregates = [
+                a for a in self._aggregates_for_anchors(anchors)
+                if a not in seed_aggregates
             ]
-            candidate_groups = list(dict.fromkeys(seed_groups + question_groups))
-            fallback_used = not question_groups
-            group_ids, trimmed, skipped_groups = self._fit_groups_to_budget(
-                candidate_groups, budget,
-            )
-            if not group_ids:
-                # 当前对象不属于任何已声明域时，至少给一个真实存在的域。
-                group_ids = all_groups[:1]
-            payload = self.sem.catalog(group_ids=group_ids)
-            mode = "group"
+            candidate_aggregates = list(dict.fromkeys(
+                seed_aggregates + question_aggregates))
+            fallback_used = not question_aggregates
+            aggregate_ids, trimmed, skipped_aggregates = (
+                self._fit_aggregates_to_budget(candidate_aggregates, budget))
+            if not aggregate_ids:
+                # 当前对象不属于任何已声明聚合时，至少给一个真实存在的聚合。
+                aggregate_ids = sorted(self.sem.aggregates)[:1]
+            payload = self.sem.catalog(aggregate_ids=aggregate_ids)
+            mode = "aggregate"
 
         items = self._catalog_items(payload, anchors)
         types = [cls["id"] for cls in payload.get("types") or []]
         fee_types = list(payload.get("fee_types") or [])
+        boundary_links = list(payload.get("boundary_links") or [])
         self.catalog_mode = mode
         self.catalog_fits = bool(payload.get("fits"))
-        self.catalog_group_ids = list(group_ids)
+        self.catalog_group_ids = list(aggregate_ids)
+        self.catalog_aggregate_ids = list(aggregate_ids)
         self.catalog_anchor_ids = list(anchors)
         self.catalog_context = self._catalog_context(
-            payload, mode, anchors, group_ids,
+            payload, mode, anchors, aggregate_ids,
         )
 
         characters = int(payload.get("characters") or 0)
@@ -1036,7 +1074,7 @@ class ReasoningAgent:
                 "不预计算全局强依赖闭包。"
             )
             query_explain = (
-                f"先尝试全量紧凑目录：只含类型 ID、名称、业务域和关系端点，"
+                f"先尝试全量紧凑目录：只含类型 ID、名称、聚合归属和关系端点，"
                 f"不返回对象实例。{characters} 字符未超出 {budget} 字符预算，"
                 "因此不缩域、不做闭包，直接把目录交给模型。"
             )
@@ -1044,65 +1082,70 @@ class ReasoningAgent:
             expression = (
                 "ontology.catalog() → ontology.object_type_search("
                 + json.dumps(self.question, ensure_ascii=False)
-                + f", top_k={SEARCH_TOP_K}) → ontology.catalog(group_ids="
-                + json.dumps(group_ids, ensure_ascii=False)
+                + f", top_k={SEARCH_TOP_K}) → ontology.catalog(aggregate_ids="
+                + json.dumps(aggregate_ids, ensure_ascii=False)
                 + ")"
             )
-            title = "必选对象域 + 按问句召回域（不调用大模型）"
+            title = "必选对象聚合 + 按问句召回聚合（不调用大模型）"
             fallback_note = (
-                "；问句零命中，目录只含必选对象域（显式标注，不冒充召回结果）"
+                "；问句零命中，目录只含必选对象聚合（显式标注，不冒充召回结果）"
                 if fallback_used else ""
             )
             trim_note = (
-                f"；预算内放不下而跳过 {len(skipped_groups)} 个域："
-                f"{'、'.join(skipped_groups)}" if trimmed else ""
+                f"；预算内放不下而跳过 {len(skipped_aggregates)} 个聚合："
+                f"{'、'.join(skipped_aggregates)}" if trimmed else ""
             )
             conclusion = (
                 f"全量目录 {full.get('characters', 0)} 字符超出 {budget} 预算；"
-                f"必选对象域 {'、'.join(seed_groups) or '—'}"
+                f"必选对象聚合 {'、'.join(seed_aggregates) or '—'}"
                 "（当前对象的类型与关系端点所在，业务约束）；"
-                f"在 {len(all_groups)} 个业务域里按问句召回 {len(anchors)} 个锚点，"
-                f"追加 {len(question_groups)} 个问句域"
-                f"{'、'.join(question_groups) or '—'}；"
-                f"保留 {len(group_ids)} 个域：{'、'.join(group_ids) or '—'}；"
+                f"在 {len(all_contexts)} 个上下文、{len(self.sem.aggregates)} 个聚合里"
+                f"按问句召回 {len(anchors)} 个锚点，"
+                f"追加 {len(question_aggregates)} 个问句聚合"
+                f"{'、'.join(question_aggregates) or '—'}；"
+                f"保留 {len(aggregate_ids)} 个聚合：{'、'.join(aggregate_ids) or '—'}；"
                 f"注入 {len(types)} 个类型、{relation_count} 条关系"
+                f"（含 {len(boundary_links)} 条边界链接）"
                 f"{fallback_note}{trim_note}。"
             )
             query_explain = (
-                f"全量目录装不下：当前对象所在域必选（含该对象的类型与关系端点，"
-                f"缺了目录会只剩同名扩展类且 0 条关系），它不冒充检索结果，"
-                f"轨迹里单列为 seed_groups。其余域由 object_type_search 在全部 "
-                f"{len(all_groups)} 个业务域、{len(self.sem.classes)} 个类型里"
+                f"全量目录装不下：当前对象所在聚合必选（含该对象的类型与关系端点，"
+                f"缺了目录会只剩孤立类型且 0 条关系），它不冒充检索结果，"
+                f"轨迹里单列为 seed_aggregates。其余聚合由 object_type_search 在全部 "
+                f"{len(all_contexts)} 个上下文、{len(self.sem.aggregates)} 个聚合里"
                 "按问句元数据打分召回的锚点决定；按顺序逐个加入目录并实测字符数，"
-                "放不下的域跳过，不连坐后面的域"
+                "放不下的聚合跳过，不连坐后面的聚合"
                 + ("；本次问句零命中，已显式标注" if fallback_used else "")
-                + "。没有预计算全局强依赖闭包。"
+                + "。跨聚合关系作为边界链接注入（端点带聚合名），不静默丢弃。"
             )
 
         output_scope = {
             "types": types,
             "fee_types": fee_types,
-            "groups": group_ids or [g["id"] for g in payload.get("groups") or []],
+            "aggregates": aggregate_ids or [g["id"] for g in payload.get("groups") or []],
+            "groups": aggregate_ids or [g["id"] for g in payload.get("groups") or []],
             "anchors": anchors,
         }
         step = self._tbox_step(
             items, {"types": types, "fee_types": fee_types},
-            {"reason": "Palantir 全量目录优先，超预算时按业务域缩域"},
+            {"reason": "v4：全量目录优先，超预算时按聚合缩域（边界链接不丢）"},
             len(self.steps) + 1,
         )
         step["title"] = title
         step["tag"] = "TBox · 紧凑目录"
-        step["query"]["label"] = "先全量紧凑目录；超预算再业务域缩域 + 锚点检索"
+        step["query"]["label"] = "先全量紧凑目录；超预算再聚合缩域 + 锚点检索"
         step["query"]["expression"] = expression
         step["query"]["api"] = (
             "semantic_layer.json · catalog(full_if_fits) + "
-            "object_type_groups + object_type_search"
+            "aggregates/contexts + object_type_search"
         )
         step["query"]["params"] = {
             "object_type": self.object_type,
             "question": self.question,
             "question_source": "default" if self.question_is_default else "user",
-            "search_scope": f"all_groups({len(all_groups)})" if mode != "full" else "full",
+            "search_scope": (
+                f"all_contexts({len(all_contexts)})" if mode != "full" else "full"
+            ),
         }
         step["query"]["input"] = step["query"]["params"]
         step["query"]["scope"] = output_scope
@@ -1116,27 +1159,36 @@ class ReasoningAgent:
             "budget": budget,
             "types": len(types),
             "relations": relation_count,
-            "groups": group_ids or [
+            "boundary_links": len(boundary_links),
+            "groups": aggregate_ids or [
+                group["id"] for group in payload.get("groups") or []
+            ],
+            "aggregates": aggregate_ids or [
                 group["id"] for group in payload.get("groups") or []
             ],
             "anchors": anchors,
-            "candidate_groups": candidate_groups,
-            "seed_groups": seed_groups,
-            "question_groups": question_groups,
-            "skipped_groups": skipped_groups,
-            "search_scope": "all_groups" if mode != "full" else "full",
+            "candidate_aggregates": candidate_aggregates,
+            "seed_aggregates": seed_aggregates,
+            "question_aggregates": question_aggregates,
+            "skipped_aggregates": skipped_aggregates,
+            # 兼容 v3 字段名（报告与旧测试读 seed_groups/question_groups）
+            "seed_groups": seed_aggregates,
+            "question_groups": question_aggregates,
+            "search_scope": "all_contexts" if mode != "full" else "full",
             "trimmed_by_budget": trimmed,
             "fallback_used": fallback_used,
             "question_source": "default" if self.question_is_default else "user",
+            "retrieval": retrieval_evidence,
         }
         step["layers"]["tbox"]["source"] = (
-            "semantic_layer.json · 紧凑目录 + 对象类型组 + 对象类型检索"
+            "semantic_layer.json · 紧凑目录 + 聚合/上下文 + 对象类型检索"
         )
         step["layers"]["tbox"]["query"] = expression
         step["layers"]["tbox"]["query_explain"] = query_explain
         step["layers"]["tbox"]["note"] = (
-            "装不下时：当前对象所在域必选（单独列为 seed_groups），其余域由"
-            "问句在全量业务域里召回的锚点决定；逐个实测字符数，放不下的跳过。"
+            "装不下时：当前对象所在聚合必选（单独列为 seed_aggregates），其余聚合由"
+            "问句在全量上下文里召回的锚点决定；逐个实测字符数，放不下的跳过；"
+            "跨聚合关系作为边界链接注入。"
         )
         step["operations"] = [
             f"读取全量紧凑目录：{full.get('characters', 0)} 字符 / "
@@ -1144,34 +1196,36 @@ class ReasoningAgent:
             (
                 "装得下：直接注入全量目录，不缩域、不做闭包"
                 if mode == "full" else
-                f"装不下：必选对象域 {'、'.join(seed_groups) or '—'} + "
-                f"在 {len(all_groups)} 个域里按问句召回 {len(anchors)} 个锚点 → "
-                f"追加 {len(question_groups)} 个问句域 → "
-                f"预算内保留 {len(group_ids)} 个（{'、'.join(group_ids) or '—'}）"
+                f"装不下：必选对象聚合 {'、'.join(seed_aggregates) or '—'} + "
+                f"在 {len(all_contexts)} 个上下文里按问句召回 {len(anchors)} 个锚点 → "
+                f"追加 {len(question_aggregates)} 个问句聚合 → "
+                f"预算内保留 {len(aggregate_ids)} 个（{'、'.join(aggregate_ids) or '—'}）"
                 + ("；零命中已标注" if fallback_used else "")
-                + (f"；因超预算跳过 {'、'.join(skipped_groups)}" if trimmed else "")
+                + (f"；因超预算跳过 {'、'.join(skipped_aggregates)}" if trimmed else "")
             ),
-            f"注入 {len(types)} 个类型、{relation_count} 条关系、"
+            f"注入 {len(types)} 个类型、{relation_count} 条关系"
+            f"（含 {len(boundary_links)} 条边界链接）、"
             f"{len(fee_types)} 个费用类型",
-            "目录只含 ID、名称、业务域和关系端点，不含业务事实",
+            "目录只含 ID、名称、聚合归属和关系端点，不含业务事实",
             f"按 target={self.object_type} 生成对象级能力集，共 {len(self.catalog)} 个",
         ]
         step["facts"] = [
             {"label": "目录模式",
-             "value": "全量" if mode == "full" else "必选对象域 + 问句召回域"},
+             "value": "全量" if mode == "full" else "必选对象聚合 + 问句召回聚合"},
             {"label": "字符预算", "value": f"{characters}/{budget}"},
             {"label": "检索范围",
-             "value": f"全部 {len(all_groups)} 域" if mode != "full" else "全量目录"},
+             "value": f"全部 {len(all_contexts)} 上下文" if mode != "full" else "全量目录"},
             {"label": "问题来源",
              "value": "默认问句（用户未提供）" if self.question_is_default else "用户输入"},
-            {"label": "必选对象域",
-             "value": "、".join(seed_groups) or "—"},
-            {"label": "问句追加域",
-             "value": "、".join(question_groups) or "—（零命中）"},
+            {"label": "必选对象聚合",
+             "value": "、".join(seed_aggregates) or "—"},
+            {"label": "问句追加聚合",
+             "value": "、".join(question_aggregates) or "—（零命中）"},
             {"label": "类型", "value": str(len(types))},
             {"label": "关系", "value": str(relation_count)},
-            {"label": "业务域", "value": str(len(group_ids) or group_count)},
-            {"label": "候选业务域", "value": str(len(candidate_groups))},
+            {"label": "边界链接", "value": str(len(boundary_links))},
+            {"label": "聚合", "value": str(len(aggregate_ids) or group_count)},
+            {"label": "候选聚合", "value": str(len(candidate_aggregates))},
             {"label": "锚点类型", "value": "、".join(anchors) or "—（零命中）"},
             {"label": "费用候选", "value": str(len(fee_types))},
             {"label": "可用能力", "value": str(len(self.catalog))},
@@ -2467,6 +2521,20 @@ class ReasoningAgent:
             self.final_action, self.observations, len(self.steps) + 1,
             self.error, self.plan,
         ))
+        # C5 查询历史回写：本次问句实际生效的类型（规划选定 ∪ 目录锚点），
+        # 落 runs/ 不入库；供后续同类问句的 history 通道召回。
+        self._record_history()
+
+    def _record_history(self) -> None:
+        """推理结束回写「问句 → 实际使用类型」（失败不阻塞主链路）。"""
+        try:
+            planned = [str(t) for t in ((self.plan or {}).get("types") or [])
+                       if str(t) in self.sem.classes]
+            effective = list(dict.fromkeys(planned + self.catalog_anchor_ids))
+            if not self.question_is_default and effective:
+                self.sem.record_retrieval_history(self.question, effective)
+        except Exception:  # noqa: BLE001 历史回写是增强，不是承重
+            pass
 
     @staticmethod
     def _clip(text: str, limit: int = 90) -> str:
@@ -2950,9 +3018,9 @@ class ReasoningAgent:
                 else "全量紧凑目录（超出预算）"
         else:
             catalog_note = (
-                "按业务域缩域后的紧凑目录（业务域 "
-                + ("、".join(self.catalog_group_ids) or "—")
-                + "）"
+                "按聚合缩域后的紧凑目录（聚合 "
+                + ("、".join(self.catalog_aggregate_ids) or "—")
+                + "；跨聚合边界链接已注入）"
             )
         tools_hint = "、".join(sorted(self.catalog.keys())) or "无"
         if self.question_kind == "knowledge":
@@ -2974,10 +3042,15 @@ class ReasoningAgent:
             "role": "system",
             "content": (
                 "你是本体范围规划器。系统已按 Palantir 路径先给紧凑 TBox 目录："
-                "全量装得下就直接给全量，装不下才按 object type group 缩域，"
-                "不预计算全局强依赖闭包。你只能从下面目录候选里选择后续要查定义"
-                "和事实的最小充分类型集合；目录只是索引，字段、规则和关系端点在"
-                "tbox.describe 或 ontology.search_around 中再按需读取。"
+                "全量装得下就直接给全量，装不下才按聚合缩域——当前对象所在聚合"
+                "必选（业务约束），其余聚合由问句在全部上下文里检索召回的锚点"
+                "决定；跨聚合关系作为边界链接注入（端点带聚合名，不会静默"
+                "丢失）。不预计算全局强依赖闭包。你只能从下面目录候选里选择"
+                "后续要查定义和事实的最小充分类型集合；目录只是索引，字段、"
+                "规则和关系端点在 tbox.describe 或 ontology.search_around 中"
+                "再按需读取。目录按「上下文 → 聚合 → 类型」组织：同聚合类型"
+                "是同一业务对象的整体，边界链接表示跨业务对象的路径，规划时"
+                "可以沿它进入相邻聚合的类型。"
                 "不要用问题关键词做意图分类，只按目录元数据和工具契约选择。"
                 "不要输出任何目录之外的本体 ID。只输出一个 JSON 对象，"
                 "不要 Markdown，不要解释。\n"

@@ -99,6 +99,110 @@
     },
     "abox_targets": {
       "$ref": "#/$defs/aboxTargets"
+    },
+    "contexts": {
+      "type": "array",
+      "description": "v4：限界上下文（fulfillment/pricing_billing/capacity/evidence_exception/master_data/operations）。裁剪与闭包的顶层单位。跨引用一致性由 semantic_gate.py#contexts_v4 负责，结构上允许扩展元数据属性。",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "label"
+        ],
+        "additionalProperties": true,
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": {
+            "type": "string"
+          },
+          "aggregates": {
+            "$ref": "#/$defs/stringArray"
+          },
+          "version": {
+            "type": "string"
+          },
+          "labels": {
+            "$ref": "#/$defs/stringArray"
+          },
+          "invariants": {
+            "type": "array"
+          }
+        }
+      }
+    },
+    "aggregates": {
+      "type": "array",
+      "description": "v4：聚合（上下文内的一致性单元：根类型 + 成员 + 聚合内关系）。seed 注入单位。跨引用一致性由 semantic_gate.py#contexts_v4 负责，结构上允许扩展元数据属性。",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "context",
+          "root",
+          "types"
+        ],
+        "additionalProperties": true,
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1
+          },
+          "context": {
+            "type": "string",
+            "minLength": 1
+          },
+          "root": {
+            "$ref": "#/$defs/typeId"
+          },
+          "types": {
+            "$ref": "#/$defs/stringArray"
+          }
+        }
+      }
+    },
+    "glossary": {
+      "type": "array",
+      "description": "v4：业务术语表（检索一等公民）。term/synonyms/colloquial → type_ref，口语与同义词是精确通道的强信号。",
+      "items": {
+        "type": "object",
+        "required": [
+          "term",
+          "type_ref"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "term": {
+            "type": "string",
+            "minLength": 1
+          },
+          "synonyms": {
+            "$ref": "#/$defs/stringArray"
+          },
+          "colloquial": {
+            "$ref": "#/$defs/stringArray"
+          },
+          "type_ref": {
+            "type": "string",
+            "minLength": 1
+          },
+          "context": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
     }
   },
   "$defs": {
@@ -208,6 +312,15 @@
         },
         "display_metadata": {
           "$ref": "#/$defs/displayMetadata"
+        },
+        "primary_aggregate": {
+          "type": "string",
+          "minLength": 1,
+          "description": "v4：该类型恰属一个的聚合 id（限界上下文内的一致性单元）。检索与注入以聚合为单位。"
+        },
+        "labels": {
+          "$ref": "#/$defs/stringArray",
+          "description": "v4：旧 35 域降级为 UI 多标签（仅导航；不参与裁剪与闭包）。"
         }
       }
     },
@@ -268,6 +381,10 @@
         "rid": {
           "$ref": "#/$defs/rid",
           "description": "不可变标识（对标 Palantir Link Type rid）。"
+        },
+        "boundary": {
+          "type": "boolean",
+          "description": "v4：跨聚合边界链接（domain/range 分属不同聚合）。注入层永不静默丢弃，端点带聚合名。"
         },
         "display_metadata": {
           "$ref": "#/$defs/displayMetadata"

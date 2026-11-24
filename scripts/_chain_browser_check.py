@@ -110,6 +110,12 @@ def main() -> int:
             "title") or ""
         check("总览参与方按真实步骤聚合", "Agent → 人工" in part_title,
               part_title[:60])
+        handoff_txt = page.locator(
+            "#chainSummary .sum-handoff").first.inner_text() if page.locator(
+            "#chainSummary .sum-handoff").count() else ""
+        check("阶段间交接说明可见（catalog → plan）",
+              "推进" in handoff_txt and "白名单" in handoff_txt,
+              handoff_txt[:60])
 
         check("全程无 JS 错误", not errors, " || ".join(errors[:2]))
         browser.close()

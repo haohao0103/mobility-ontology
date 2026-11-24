@@ -544,6 +544,10 @@
     font-size:9px;border-radius:3px;padding:0 4px;margin-left:4px;
     color:#4c5d84;background:#f0f4fb;border:1px solid #dbe4f3;
   }
+  .sum-handoff{
+    display:block;margin-top:3px;font-style:normal;
+    font-size:10px;line-height:1.4;color:#64748b;
+  }
   .sum-who{color:#2f3b52}
   .sum-action{color:#2f3b52}
   .sum-output{
@@ -2771,7 +2775,7 @@ function renderChainSummary(data) {
             </span>
             <span class="sum-who">${esc(stage.who || '')}</span>
             <span class="sum-action">${esc(stage.action || '')}</span>
-            <span class="sum-output" title="${esc(stage.output || '')}">${esc(stage.output || '')}</span>
+            <span class="sum-output" title="${esc(stage.output || '')}">${esc(stage.output || '')}${stage.handoff ? `<i class="sum-handoff">⤵ ${esc(stage.handoff)}</i>` : ''}</span>
           </div>${details ? `<div class="chain-summary-sub">${details}</div>` : ''}`;
       }).join('')
     : steps.map((step, index) => {
@@ -2789,9 +2793,15 @@ function renderChainSummary(data) {
           </div>`;
       }).join('');
   const degraded = data.agent && data.agent.degraded;
+  const nextLabel = data.next_label || '等待执行';
+  // 取证循环中的"大模型决策"必须说明决策机制，否则读者无法从
+  // "做了什么"推出"下一步凭什么"——这是阶段间因果的口头版。
+  const decideHint = /大模型决策/.test(nextLabel)
+    ? '（每轮大模型看到全部已取回的观察：信息不够就继续调工具，够了就给最终结论触发收口）'
+    : '';
   const nextText = finished
     ? `链路已结束：共 ${summary.total_stages || stages.length || executed} 个业务阶段、${executed} 个执行动作${degraded ? '（含降级收口）' : ''}；动作出口等人工确认，下面可以逐步回看`
-    : `下一步涉及：${summary.next_actor || 'Agent'} · ${data.next_label || '等待执行'}`;
+    : `下一步涉及：${summary.next_actor || 'Agent'} · ${nextLabel}${decideHint}`;
   return `
     <div class="chain-summary-head">
       <div class="chain-summary-title">

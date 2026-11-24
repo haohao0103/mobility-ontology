@@ -391,6 +391,12 @@ class TestStageSummaries:
         assert "12 行声明" in stages["tbox"]["output"]
         # 骨架文案不再宣称"状态机"——describe 不返回独立状态机声明
         assert "状态机" not in stages["tbox"]["action"]
+        # 阶段间因果显式化：每段都有交接说明（谁触发 + 带走什么）
+        for stage in stages.values():
+            assert stage.get("handoff"), f'{stage["id"]} 缺交接说明'
+        assert "describe() 入参" in stages["plan"]["handoff"]
+        assert "final" in stages["facts"]["handoff"]
+        assert "人工确认" in stages["action"]["handoff"]
 
     def test_action_exit_stage_proposed(self, system):
         """动作出口阶段：有提案步骤时状态为「等人工确认」——

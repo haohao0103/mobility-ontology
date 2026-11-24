@@ -2283,22 +2283,28 @@ class ReasoningAgent:
     _PLANNED_STAGES = [
         ("catalog", "紧凑 TBox 目录装载", "本体引擎（TBox）",
          "按强依赖白名单展开对象能力集（全量优先，不调用大模型）",
-         "工具白名单 + 可圈定类型"),
+         "工具白名单 + 可圈定类型",
+         "代码固定推进 → 目录与工具白名单装进规划提示词，大模型只能从中挑"),
         ("plan", "链路规划", "大模型",
          "把业务问题拆成取数计划：类型/口径/事实 + 取证重点裁剪与假设清单",
-         "行动计划（任务清单 + 待验证假设）"),
+         "行动计划（任务清单 + 待验证假设）",
+         "代码固定推进 → types/fee_types 作为 describe() 入参，圈定要查的本体声明"),
         ("tbox", "本体声明查询", "本体引擎（TBox）",
          "命中类定义、计价规则、关系与定价参数（取证中可按需回查）",
-         "命中的本体声明"),
+         "命中的本体声明",
+         "代码固定推进 → 命中的规则公式与取证任务拼进决策提示词，进入取证循环"),
         ("facts", "业务事实取证", "大模型决策 + 业务系统（ABox）",
          "多轮「大模型决策 → 工具调用」循环取证，直到信息足够或预算用尽",
-         "事实数据（每次调用带行数与证据）"),
+         "事实数据（每次调用带行数与证据）",
+         "大模型决定收口 → 返回 final 动作（或预算用尽被迫归纳），全部观察随对话历史交给结论汇总"),
         ("final", "结论汇总", "大模型 + 规则",
          "复核并归纳结论：假设逐条裁定，附证据、版本与 checksum",
-         "诊断结论 + 收口三件套"),
+         "诊断结论 + 收口三件套",
+         "代码固定推进 → 结论与假设裁定交给本地提案器，按角色生成动作提案（不调大模型）"),
         ("action", "动作出口", "按角色 · Agent",
          "提案谁补证、谁退费、找哪个系统；动作等人工确认后才执行",
-         "动作提案（含未决项清单）"),
+         "动作提案（含未决项清单）",
+         "等人工确认 → 确认前不写任何业务数据；链路到此为止"),
     ]
 
     @classmethod
@@ -2366,7 +2372,8 @@ class ReasoningAgent:
             return (f"{len(roles)} 条角色提案 · 未决项 {len(items)} 条"
                     " · 等人工确认")
         # 其余（catalog / 未开始阶段）：骨架产出
-        for psid, _, _, _, output in self._PLANNED_STAGES:
+        for row in self._PLANNED_STAGES:
+            psid, output = row[0], row[4]
             if psid == sid:
                 return output
         return "—"
@@ -2384,9 +2391,10 @@ class ReasoningAgent:
         """
         groups: dict[str, dict] = {}
         order: list[str] = []
-        for sid, name, who, action, output in self._PLANNED_STAGES:
+        for sid, name, who, action, output, handoff in self._PLANNED_STAGES:
             groups[sid] = {"id": sid, "name": name, "who": who,
                            "action": action, "output": output,
+                           "handoff": handoff,
                            "status": "pending", "details": [],
                            "counts": {"steps": 0, "llm": 0, "tool": 0, "rows": 0},
                            "degraded": False}
@@ -2400,6 +2408,7 @@ class ReasoningAgent:
                 group = {"id": key, "name": tag,
                          "who": str(step.get("source") or "Agent"),
                          "action": step.get("title") or tag, "output": "",
+                         "handoff": "",
                          "status": "done", "details": [],
                          "counts": {"steps": 0, "llm": 0, "tool": 0, "rows": 0},
                          "degraded": False}
@@ -2471,6 +2480,7 @@ class ReasoningAgent:
             "action": groups[key]["action"],
             "output": self._clip(self._stage_output(key, groups[key])
                                  or "—", 90),
+            "handoff": groups[key]["handoff"],
             "status": groups[key]["status"],
             "counts": groups[key]["counts"],
             "degraded": groups[key]["degraded"],

@@ -8,6 +8,7 @@
 """
 from __future__ import annotations
 
+import json
 import os
 import sys
 import tempfile
@@ -447,3 +448,67 @@ class TestStageSummaries:
         assert "Agent → 人工" in participants
         assert "业务系统（ABox）" in participants       # · 计价/· 结算 归并
         assert "本体引擎（TBox）" in participants
+
+
+def test_catalog_context_exposes_abox_availability_and_omitted_index(sem):
+    """目录上下文必须显式区分「有实例」与「只有声明」，并给出未注入
+    聚合的回查入口，避免被预算裁掉的聚合静默消失。"""
+    aggregate_id = sem.aggregate_for_type("Waybill")
+    assert aggregate_id
+    payload = sem.catalog(aggregate_ids=[aggregate_id])
+    context = ReasoningAgent._catalog_context(
+        payload, "aggregate", [], [aggregate_id],
+        omitted_aggregates=[{"id": "fee", "label": "费用"}],
+        instance_counts={"Waybill": 3, "FeeEstimate": 0},
+    )
+    assert "未注入聚合" in context
+    assert "fee=费用" in context
+    assert "aggregate_ids" in context
+    assert "实例可用性（ABox 实测" in context
+    assert "Waybill=3" in context
+    # 零实例类型不作为可取证白名单列出，只在计数里说明
+    assert "FeeEstimate=0" not in context
+
+
+def test_instance_plan_drops_zero_instance_types(system):
+    """实例型问题必须剔除 ABox 零实例类型，只保留可取证类型。"""
+    agent = _agent(system)
+    agent.question_kind = "instance"
+    agent._step_catalog()
+    assert agent.instance_counts
+    assert int(agent.instance_counts.get("Waybill", 0)) > 0
+    assert int(agent.instance_counts.get("FeeEstimate", 0)) == 0
+
+    raw_plan = json.dumps({
+        "types": ["Waybill", "FeeEstimate"],
+        "fee_types": ["freight"],
+        "focus_fee_types": ["freight"],
+        "reason": "测试实例型规划",
+    }, ensure_ascii=False)
+    _offline_plan(agent, raw_plan)
+    plan = agent.planned
+    assert "Waybill" in plan["types"]
+    assert "FeeEstimate" not in plan["types"]
+    assert plan["excluded_no_instance"] == ["FeeEstimate"]
+    check = next(
+        c for c in agent.steps[-1]["checks"]
+        if c["label"] == "实例型计划只保留有实例类型（ABox 实测）"
+    )
+    assert check["pass"]
+
+    # 全部零实例时不清空检查项糊弄过去：计划类型为空，并明确标注事实。
+    all_zero_agent = _agent(system)
+    all_zero_agent.question_kind = "instance"
+    all_zero_agent._step_catalog()
+    _offline_plan(all_zero_agent, json.dumps({
+        "types": ["FeeEstimate"],
+        "fee_types": ["freight"],
+        "focus_fee_types": ["freight"],
+        "reason": "测试全部零实例",
+    }, ensure_ascii=False))
+    assert all_zero_agent.planned["types"] == []
+    zero_check = next(
+        c for c in all_zero_agent.steps[-1]["checks"]
+        if c["label"] == "实例型计划只保留有实例类型（ABox 实测）"
+    )
+    assert zero_check["pass"]

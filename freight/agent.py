@@ -298,6 +298,7 @@ class ReasoningAgent:
         self.catalog_group_ids: list[str] = []
         self.catalog_aggregate_ids: list[str] = []
         self.catalog_anchor_ids: list[str] = []
+        self.instance_counts: dict[str, int] | None = None
         self.catalog_context = ""
 
     @property
@@ -327,7 +328,9 @@ class ReasoningAgent:
         self.catalog_mode = "full"
         self.catalog_fits = False
         self.catalog_group_ids = []
+        self.catalog_aggregate_ids = []
         self.catalog_anchor_ids = []
+        self.instance_counts = None
         self.catalog_context = ""
         self.tbox_queries = 0
         self.final_action: dict | None = None
@@ -898,12 +901,19 @@ class ReasoningAgent:
 
     @staticmethod
     def _catalog_context(payload: dict, mode: str,
-                         anchors: list[str], aggregate_ids: list[str]) -> str:
+                         anchors: list[str], aggregate_ids: list[str],
+                         omitted_aggregates: list[dict] | None = None,
+                         instance_counts: dict[str, int] | None = None) -> str:
         """把紧凑目录压成可直接注入模型上下文的文本。
 
         v4 聚合模式：按「上下文 → 聚合 → 类型」渲染层级；跨聚合边界链接
         带 boundary 标记与端点聚合名（v3 在这里把跨组关系整体丢弃，
         导致规划器看不到任何跨域路径）。
+
+        额外注入两类确定性事实：
+        - 未注入聚合索引：被预算裁掉的聚合仍可用 catalog(aggregate_ids=...)
+          回查，不会静默消失；
+        - ABox 实测实例可用性：区分「声明存在」与「有实例可取证」。
         """
         label = "全量" if mode == "full" else "聚合缩域"
         lines = [
@@ -914,6 +924,42 @@ class ReasoningAgent:
             lines.append("注入聚合：" + "、".join(aggregate_ids))
         if anchors:
             lines.append("检索锚点：" + "、".join(anchors))
+        injected_types = [str(cls["id"]) for cls in payload.get("types") or []]
+        if omitted_aggregates:
+            pairs = "、".join(
+                f"{a['id']}={a.get('label') or a['id']}"
+                for a in omitted_aggregates
+            )
+            lines.append(
+                "未注入聚合（可回查完整目录："
+                f"ontology.catalog(aggregate_ids=[...])）：{pairs}"
+            )
+        if instance_counts is None:
+            lines.append("实例可用性（ABox 实测）：事实库不可读，仅按声明规划。")
+        elif not instance_counts:
+            lines.append("实例可用性（ABox 实测）：事实库当前没有任何对象实例。")
+        else:
+            available = [
+                (tid, int(instance_counts.get(tid, 0)))
+                for tid in injected_types if int(instance_counts.get(tid, 0)) > 0
+            ]
+            zero_count = len(injected_types) - len(available)
+            if available:
+                shown = "、".join(
+                    f"{tid}={count}" for tid, count in available[:40]
+                )
+                if len(available) > 40:
+                    shown += f"…（共 {len(available)} 类）"
+                lines.append(
+                    "实例可用性（ABox 实测，仅注入类型）：有实例 "
+                    f"{len(available)} 类：{shown}；其余 {zero_count} 类零实例，"
+                    "只能读声明，不得作为取证对象。"
+                )
+            else:
+                lines.append(
+                    "实例可用性（ABox 实测，仅注入类型）：注入类型均无实例，"
+                    "只能读声明，不得作为取证对象。"
+                )
         for group in payload.get("groups") or []:
             if group.get("aggregates"):
                 # 聚合模式层级：上下文 → 聚合（根 + 成员）
@@ -990,6 +1036,23 @@ class ReasoningAgent:
                     selected = trial
         return selected, trimmed, skipped
 
+    def _instance_counts(self) -> dict[str, int] | None:
+        """ABox 实测：每个类型当前有多少对象实例。
+
+        规划器必须知道「声明存在」和「实例可用」不是一回事。这份清单直接
+        来自事实库，不来自 TBox 声明；读取失败时返回 None，由提示词显式
+        标注，避免把「没读到」伪装成「零实例」。
+        """
+        try:
+            rows = self.facts.all(
+                "SELECT type, COUNT(*) AS n FROM objects GROUP BY type")
+        except Exception:  # noqa: BLE001 - 事实库未就绪时不阻断目录步骤
+            return None
+        return {
+            str(row["type"]): int(row["n"] or 0)
+            for row in rows if row.get("type")
+        }
+
     def _step_catalog(self) -> None:
         """v4：全量目录优先；装不下时 = 当前对象聚合闭包（必选） + 问句召回聚合。
 
@@ -1057,8 +1120,24 @@ class ReasoningAgent:
         self.catalog_group_ids = list(aggregate_ids)
         self.catalog_aggregate_ids = list(aggregate_ids)
         self.catalog_anchor_ids = list(anchors)
+        loaded = set(aggregate_ids)
+        omitted_aggregates = [
+            {
+                "id": aid,
+                "label": agg.get("label", aid),
+                "context": agg.get("context") or "",
+            }
+            for aid, agg in sorted(
+                self.sem.aggregates.items(),
+                key=lambda item: (item[1].get("context") or "", item[0]),
+            )
+            if aid not in loaded
+        ] if mode == "aggregate" else []
+        self.instance_counts = self._instance_counts()
         self.catalog_context = self._catalog_context(
             payload, mode, anchors, aggregate_ids,
+            omitted_aggregates=omitted_aggregates,
+            instance_counts=self.instance_counts,
         )
 
         characters = int(payload.get("characters") or 0)
@@ -1226,6 +1305,8 @@ class ReasoningAgent:
             {"label": "边界链接", "value": str(len(boundary_links))},
             {"label": "聚合", "value": str(len(aggregate_ids) or group_count)},
             {"label": "候选聚合", "value": str(len(candidate_aggregates))},
+            {"label": "未注入聚合",
+             "value": f"{len(omitted_aggregates)} 个（目录末尾给回查索引）"},
             {"label": "锚点类型", "value": "、".join(anchors) or "—（零命中）"},
             {"label": "费用候选", "value": str(len(fee_types))},
             {"label": "可用能力", "value": str(len(self.catalog))},
@@ -1312,13 +1393,44 @@ class ReasoningAgent:
                 f"取证重点：{focus}；任务 {len(plan['tasks'])} 条；"
                 f"假设 {len(plan['hypotheses'])} 条"
             ),
-            next_text=f"查询本体定义：{types}",
+            next_text=(
+                f"查询本体定义：{types}" if plan["types"]
+                else "ABox 无有实例类型可取证，读取声明后直接收口"
+            ),
             thinking=False,
         )
         # 规划质量可度量：裁剪率 + 任务/假设计数 + 工具合法性
         catalog_fee_count = len(self.sem.pricing)
         focus_count = len(plan["focus_fee_types"])
         tools_ok = all(t["tool_hint"] in self.catalog for t in plan["tasks"])
+        counts = self.instance_counts or {}
+        injected_types = [
+            item["id"] for item in self.catalog_index if item["kind"] == "class"
+        ]
+        available_count = sum(
+            1 for t in injected_types if int(counts.get(t, 0)) > 0
+        )
+        zero_in_plan = [
+            t for t in plan["types"] if int(counts.get(t, 0)) <= 0
+        ] if counts else []
+        excluded_no_instance = plan.get("excluded_no_instance") or []
+        instance_ok = (
+            self.question_kind != "instance"
+            or (self.instance_counts is not None and not zero_in_plan)
+        )
+        if self.instance_counts is None:
+            instance_actual = "ABox 实例数不可读"
+        elif not self.instance_counts:
+            instance_actual = "事实库当前没有任何对象实例"
+        elif zero_in_plan:
+            instance_actual = "仍含零实例：" + "、".join(
+                f"{t}=0" for t in zero_in_plan
+            )
+        else:
+            instance_actual = "全部有实例" + (
+                f"；已剔除 {len(excluded_no_instance)} 个零实例"
+                if excluded_no_instance else ""
+            )
         step["facts"] = [
             {"label": "规划类型", "value": f"{len(plan['types'])} 个"
              + ("（模型圈定）" if plan["type_source"] == "model"
@@ -1328,6 +1440,10 @@ class ReasoningAgent:
                                         f"（裁剪率 {round(100 * (1 - focus_count / max(catalog_fee_count, 1)))}%）"},
             {"label": "取证任务", "value": f"{len(plan['tasks'])} 条"},
             {"label": "待验证假设", "value": f"{len(plan['hypotheses'])} 条"},
+            {"label": "ABox 实例可用性",
+             "value": "未读取" if self.instance_counts is None else
+             f"注入类型有实例 {available_count} 个；"
+             f"计划剔除零实例 {len(excluded_no_instance)} 个"},
         ]
         step["checks"] = [
             {"pass": focus_count > 0, "label": "取证重点非空",
@@ -1342,6 +1458,9 @@ class ReasoningAgent:
              "expected": "全部合法", "actual": "合法" if tools_ok else "存在越界工具"},
             {"pass": bool(plan["hypotheses"]), "label": "假设清单非空",
              "expected": "≥1 条", "actual": f"{len(plan['hypotheses'])} 条"},
+            {"pass": instance_ok,
+             "label": "实例型计划只保留有实例类型（ABox 实测）",
+             "expected": "全部 >0", "actual": instance_actual},
         ]
         # 注意挂到 step["data"]["datasets"]：前端 renderChainData 只读这个键
         step["data"]["datasets"] = [
@@ -3106,7 +3225,12 @@ class ReasoningAgent:
                 "金额与证据部分照常规划实例取证。"
             )
         else:
-            kind_rule = ""
+            kind_rule = (
+                "\n本次是**实例型问题**：types 只能列 ABox 实测有实例的类型；"
+                "零实例类型只允许用 tbox.describe 读声明，不得作为取证对象。"
+                "若没有任何有实例的类型，直接给出「无实例可取证」的判断，"
+                "不要臆造事实。"
+            )
         messages = [{
             "role": "system",
             "content": (
@@ -3193,6 +3317,17 @@ class ReasoningAgent:
             type_source = "catalog_anchors"
             if not types:
                 raise LLMError("本体规划输出没有合法类型，未进入后续查询")
+        # 实例型问题：用 ABox 实测剔除零实例类型，避免把「只有声明」
+        # 的类型排进事实取证范围。混合/知识型保留零实例类型用于读声明。
+        excluded_no_instance: list[str] = []
+        counts = self.instance_counts or {}
+        if self.question_kind == "instance" and self.instance_counts is not None:
+            zero_types = [
+                t for t in types if int(counts.get(t, 0)) <= 0
+            ]
+            if zero_types:
+                types = [t for t in types if t not in zero_types]
+                excluded_no_instance = zero_types
         # focus：模型没给 / 不合法时，按问句在本体里的命中确定焦点；
         # 不用「英文 fee_type 是否为中文问句子串」这种恒不命中的判断。
         raw_focus = planned.get("focus_fee_types")
@@ -3206,6 +3341,10 @@ class ReasoningAgent:
         return {
             "types": types,
             "type_source": type_source,
+            "excluded_no_instance": excluded_no_instance,
+            "instance_counts": {
+                t: int(counts.get(t, 0)) for t in types
+            } if counts else {},
             "fee_types": fees,
             "focus_fee_types": focus,
             "focus_source": self.focus_source,
@@ -4136,7 +4275,7 @@ class ReasoningAgent:
 - 裸编号 {self.waybill_id} 只用于展示和搜索关键字，不要直接传给工具。
 
 【本体目录与检索工具（TBox，按需调用，禁止编造）】
-ontology.catalog|读取紧凑 TBox 目录；全量装得下直接返回，装不下只返回业务域索引|参数={{"group_ids":["<业务域 ID，可空>"],"budget":6000}}
+ontology.catalog|读取紧凑 TBox 目录；全量装得下直接返回，装不下按聚合/上下文缩域；未注入聚合可用 aggregate_ids 回查|参数={{"group_ids":["<业务域 ID，可空>"],"aggregate_ids":["<聚合 ID，可空>"],"context_ids":["<上下文 ID，可空>"],"budget":6000}}
 ontology.object_type_search|按对象类型 ID、名称、描述、别名和业务域召回锚点类型|参数={{"question":"<自然语言问题>","top_k":8,"group_ids":["<业务域 ID，可空>"]}}
 ontology.schema|读取完整 schema，结构扩展固定沿强依赖白名单执行|参数={{"question":"<自然语言问题，可空>","types":["<类型，可空>"],"top_k":12,"depth":2}}
 ontology.path|查询两个类型之间所有合法关系路径|参数={{"from_type":"<类型>","to_type":"<类型>","max_depth":4,"limit":10}}

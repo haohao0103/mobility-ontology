@@ -571,12 +571,18 @@ class FactMCP:
         )
 
     def catalog(self, group_ids: list[str] | None = None,
-                budget: int | None = None) -> dict:
+                budget: int | None = None,
+                aggregate_ids: list[str] | None = None,
+                context_ids: list[str] | None = None) -> dict:
         return self._record(
             "ontology.catalog",
-            {"group_ids": group_ids, "budget": budget},
+            {"group_ids": group_ids, "budget": budget,
+             "aggregate_ids": aggregate_ids, "context_ids": context_ids},
             "本体",
-            lambda: self.sem.catalog(group_ids=group_ids, budget=budget),
+            lambda: self.sem.catalog(
+                group_ids=group_ids, budget=budget,
+                aggregate_ids=aggregate_ids, context_ids=context_ids,
+            ),
         )
 
     def check_answerable(self, question: str,
@@ -1590,7 +1596,8 @@ class FactMCP:
         start = self.begin()
         handlers: dict[str, Callable[[], Any]] = {
             "ontology.catalog": lambda: self.catalog(
-                args.get("group_ids"), args.get("budget")),
+                args.get("group_ids"), args.get("budget"),
+                args.get("aggregate_ids"), args.get("context_ids")),
             "ontology.check_answerable": lambda: self.check_answerable(
                 args["question"], args.get("terms")),
             "ontology.object_type_search": lambda: self.object_type_search(

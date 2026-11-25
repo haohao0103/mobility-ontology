@@ -1,0 +1,88 @@
+{
+  "_note": "往返验证候选：由 tools/roundtrip_business_text.md 的业务描述，按 R1–R10 生成。字段名从业务语义推导，未参考人工版原始字段名。用于与 ontology/domains_04_risk.py 人工版对比。",
+  "classes": [
+    {
+      "id": "ExceptionReport", "label": "异常上报", "key": "report_id",
+      "description": "一线发现运单异常后的上报记录，必须带现场证据才能进入调查。",
+      "properties": ["report_id", "waybill_id", "category_code", "report_desc", "reported_by", "reported_at", "geo_code", "evidence_ids", "status"],
+      "property_types": {"report_id": "id", "waybill_id": "str", "category_code": "str", "report_desc": "txt", "reported_by": "str", "reported_at": "dt", "geo_code": "str", "evidence_ids": "json", "status": "enum"},
+      "state_machine": {"initial": "SUBMITTED", "terminal": "REJECTED", "states": ["SUBMITTED", "TRIAGED", "ACCEPTED", "REJECTED", "OTHER"]},
+      "aliases": ["异常上报"], "group": "exception_domain",
+      "why": "R3: 上报是已发生的事，有上报时间 reported_at 和上报人 reported_by，需追责谁报的，故建事件类"
+    },
+    {
+      "id": "ExceptionInvestigation", "label": "异常调查", "key": "investigation_id",
+      "description": "对已受理异常的事实调查，回答发生了什么、何时何地、谁知道。",
+      "properties": ["investigation_id", "exception_id", "investigator_id", "findings", "concluded_at", "conclusion_text", "status"],
+      "property_types": {"investigation_id": "id", "exception_id": "str", "investigator_id": "str", "findings": "json", "concluded_at": "dt", "conclusion_text": "txt", "status": "enum"},
+      "state_machine": {"initial": "OPEN", "terminal": "CONCLUDED", "states": ["OPEN", "IN_PROGRESS", "CONCLUDED", "REOPENED", "OTHER"]},
+      "aliases": ["异常调查"], "group": "exception_domain",
+      "why": "R3: 调查是已发生的事，有结论时间 concluded_at 和调查员 investigator_id，需回答谁查的，故建事件类"
+    },
+    {
+      "id": "ExceptionAttribution", "label": "责任归因", "key": "attribution_id",
+      "description": "异常责任方判定，决定费用承担方。",
+      "properties": ["attribution_id", "exception_id", "liable_party", "attribution_basis", "attribution_pct", "attributed_by", "disputed", "status"],
+      "property_types": {"attribution_id": "id", "exception_id": "str", "liable_party": "enum", "attribution_basis": "str", "attribution_pct": "dec", "attributed_by": "str", "disputed": "bool", "status": "enum"},
+      "state_machine": {"initial": "PENDING", "terminal": "CONFIRMED", "states": ["PENDING", "ATTRIBUTED", "DISPUTED", "CONFIRMED", "OTHER"]},
+      "aliases": ["责任归因"], "group": "exception_domain",
+      "why": "R3: 归责是已发生的判定，有判定人 attributed_by 和比例，需追责谁定的，故建事件类"
+    },
+    {
+      "id": "ExceptionResolution", "label": "异常处理", "key": "resolution_id",
+      "description": "异常的处理方案与执行结果，补货换车退款赔付均记于此。",
+      "properties": ["resolution_id", "exception_id", "resolution_type", "resolution_detail", "cost_incurred", "resolved_at", "status"],
+      "property_types": {"resolution_id": "id", "exception_id": "str", "resolution_type": "enum", "resolution_detail": "txt", "cost_incurred": "dec", "resolved_at": "dt", "status": "enum"},
+      "state_machine": {"initial": "PLANNED", "terminal": "DONE", "states": ["PLANNED", "EXECUTING", "DONE", "FAILED", "OTHER"]},
+      "aliases": ["异常处理"], "group": "exception_domain",
+      "why": "R3: 处理是已执行的动作，有完成时间 resolved_at 和费用，需追责处理结果与成本，故建事件类"
+    },
+    {
+      "id": "ExceptionEscalation", "label": "异常升级", "key": "escalation_id",
+      "description": "超时未处理或金额超限时的升级记录。",
+      "properties": ["escalation_id", "exception_id", "from_level", "to_level", "escalate_reason", "escalated_at", "handler_id", "status"],
+      "property_types": {"escalation_id": "id", "exception_id": "str", "from_level": "int", "to_level": "int", "escalate_reason": "enum", "escalated_at": "dt", "handler_id": "str", "status": "enum"},
+      "state_machine": {"initial": "ESCALATED", "terminal": "RESOLVED", "states": ["ESCALATED", "ACCEPTED", "RESOLVED", "OTHER"]},
+      "aliases": ["异常升级"], "group": "exception_domain",
+      "why": "R3: 升级是已发生的事，有升级时间 escalated_at 和接手人 handler_id，需追责，故建事件类"
+    },
+    {
+      "id": "ExceptionClosure", "label": "异常关闭", "key": "closure_id",
+      "description": "异常关闭结论，须处理完成且责任费用落实后才能关闭。",
+      "properties": ["closure_id", "exception_id", "closure_type", "closure_note", "closed_at", "closed_by", "status"],
+      "property_types": {"closure_id": "id", "exception_id": "str", "closure_type": "enum", "closure_note": "txt", "closed_at": "dt", "closed_by": "str", "status": "enum"},
+      "state_machine": {"initial": "CHECKING", "terminal": "CLOSED", "states": ["CHECKING", "CLOSED", "REOPENED", "OTHER"]},
+      "aliases": ["异常关闭"], "group": "exception_domain",
+      "why": "R3: 关闭是已发生的事，有关闭时间 closed_at 和关闭人 closed_by，需追责谁关的，故建事件类"
+    },
+    {
+      "id": "ExceptionPenalty", "label": "异常处罚", "key": "penalty_id",
+      "description": "因异常对各方的处罚，金额与依据必须可追溯。",
+      "properties": ["penalty_id", "exception_id", "penalized_party", "penalty_amount", "penalty_basis", "executed_at", "disputed", "status"],
+      "property_types": {"penalty_id": "id", "exception_id": "str", "penalized_party": "enum", "penalty_amount": "dec", "penalty_basis": "str", "executed_at": "dt", "disputed": "bool", "status": "enum"},
+      "state_machine": {"initial": "PROPOSED", "terminal": "EXECUTED", "states": ["PROPOSED", "EXECUTED", "DISPUTED", "REVOKED", "OTHER"]},
+      "aliases": ["异常处罚"], "group": "exception_domain",
+      "why": "R3: 处罚是已执行的事，有执行时间 executed_at 和依据，金额要可追溯，故建事件类"
+    },
+    {
+      "id": "ExceptionCompensation", "label": "异常赔付", "key": "compensation_id",
+      "description": "向受害方赔付，上限受货值申报与保险条款约束。",
+      "properties": ["compensation_id", "exception_id", "compensation_amount", "compensation_basis", "paid_at", "payer", "status"],
+      "property_types": {"compensation_id": "id", "exception_id": "str", "compensation_amount": "dec", "compensation_basis": "enum", "paid_at": "dt", "payer": "enum", "status": "enum"},
+      "state_machine": {"initial": "CALCULATED", "terminal": "PAID", "states": ["CALCULATED", "APPROVED", "PAID", "REJECTED", "OTHER"]},
+      "aliases": ["异常赔付"], "group": "exception_domain",
+      "why": "R3: 赔付是已发生的事，有支付时间 paid_at 和付款方 payer，需追责，故建事件类"
+    }
+  ],
+  "relations": [
+    {"id": "report_follows_waybill", "label": "上报针对运单", "domain": "ExceptionReport", "range": "Waybill", "cardinality": "many_to_one", "why": "R8: 一张运单可能有多次上报，一次上报针对一张运单"},
+    {"id": "investigation_of_report", "label": "调查针对上报", "domain": "ExceptionInvestigation", "range": "ExceptionReport", "cardinality": "many_to_one", "why": "R8: 一次上报可能多次调查(重开)，一次调查对应一次上报"},
+    {"id": "resolution_of_exception", "label": "处理针对异常", "domain": "ExceptionResolution", "range": "ExceptionReport", "cardinality": "many_to_one", "why": "R8: 一个异常可能有多个处理动作"},
+    {"id": "compensation_from_exception", "label": "赔付源自异常", "domain": "ExceptionCompensation", "range": "ExceptionReport", "cardinality": "many_to_one", "why": "R8: 一个异常可能产生多笔赔付"}
+  ],
+  "enums": [
+    {"id": "liable_party", "label": "责任方", "values": ["客户", "司机", "承运商", "场站", "平台", "OTHER"], "why": "R5: 责任方各类互斥，一次归因只落一方，含OTHER兜底"},
+    {"id": "resolution_type", "label": "处理方式", "values": ["补货", "换车", "退款", "赔付", "OTHER"], "why": "R5: 处理方式一次只选一种，含OTHER兜底"},
+    {"id": "payer", "label": "付款方", "values": ["平台", "承运商", "保险", "OTHER"], "why": "R5: 付款方互斥且含OTHER兜底"}
+  ]
+}

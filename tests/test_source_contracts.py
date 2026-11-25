@@ -36,10 +36,8 @@ def db():
 def _mutated_layer(mutate):
     raw = json.loads(json.dumps(SemanticLayer().raw))
     mutate(raw)
-    fd, path = tempfile.mkstemp(suffix=".json", prefix="src_mut_")
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
-        json.dump(raw, f, ensure_ascii=False)
-    return SemanticLayer(path), path
+    # 内存实验通道：发布 pin 只为磁盘发布物把门，不挡改声明看行为的承重测试
+    return SemanticLayer.from_raw(raw), None
 
 
 class TestOwnershipMatrix:
@@ -66,36 +64,39 @@ class TestOwnershipMatrix:
                 # 注意：TMS 在 data_sources 里有多条记录，只有 FeeItem 那条声明了 fee_types
                 if ds.get("system") == "TMS" and ds.get("fee_types"):
                     ds["fee_types"] = [t for t in ds["fee_types"] if t != "waiting"]
-        sem, path = _mutated_layer(mutate)
+        sem, _path = _mutated_layer(mutate)
         try:
             codes = {i["code"] for i in source_coverage.check_fee_type_ownership(sem)}
             assert "FEE_TYPE_NO_OWNER" in codes
         finally:
-            os.remove(path)
+            if _path and os.path.exists(_path):
+                os.remove(_path)
 
     def test_double_claim_is_caught(self):
         def mutate(raw):
             for ds in raw["data_sources"]:
                 if ds.get("system") == "TMS" and ds.get("fee_types"):
                     ds["fee_types"] = list(ds["fee_types"]) + ["highway"]
-        sem, path = _mutated_layer(mutate)
+        sem, _path = _mutated_layer(mutate)
         try:
             codes = {i["code"] for i in source_coverage.check_fee_type_ownership(sem)}
             assert "FEE_TYPE_MULTI_OWNER" in codes
         finally:
-            os.remove(path)
+            if _path and os.path.exists(_path):
+                os.remove(_path)
 
     def test_claim_outside_pricing_is_caught(self):
         def mutate(raw):
             for ds in raw["data_sources"]:
                 if ds.get("system") == "TMS" and ds.get("fee_types"):
                     ds["fee_types"] = list(ds["fee_types"]) + ["drone_fee"]
-        sem, path = _mutated_layer(mutate)
+        sem, _path = _mutated_layer(mutate)
         try:
             codes = {i["code"] for i in source_coverage.check_fee_type_ownership(sem)}
             assert "FEE_TYPE_NOT_IN_PRICING" in codes
         finally:
-            os.remove(path)
+            if _path and os.path.exists(_path):
+                os.remove(_path)
 
 
 class TestFeeTypeCoverage:

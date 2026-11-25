@@ -122,6 +122,9 @@ def health():
                 "relations": len(sys.sem.relations),
                 "rules": len(sys.sem.rules),
                 "actions": len(sys.sem.actions),
+                "payload_sha256": str(
+                    (sys.sem.raw.get("meta") or {}).get("payload_sha256") or ""),
+                "pin_verified": bool(getattr(sys.sem, "pin_verified", False)),
             },
             "facts": {
                 "transport": "MCP / API",

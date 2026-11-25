@@ -89,15 +89,9 @@ class TestStateMachineValidation:
     def _validate_with(self, mutate):
         raw = json.loads(json.dumps(SemanticLayer().raw))
         mutate(raw)
-        tmp = tempfile.NamedTemporaryFile("w", suffix=".json", delete=False,
-                                          encoding="utf-8")
-        json.dump(raw, tmp, ensure_ascii=False)
-        tmp.close()
-        try:
-            sem = SemanticLayer(tmp.name)
-            return {i["code"] for i in sem.validate_state_machines()}
-        finally:
-            os.remove(tmp.name)
+        # 内存实验通道：发布 pin 只为磁盘发布物把门
+        sem = SemanticLayer.from_raw(raw)
+        return {i["code"] for i in sem.validate_state_machines()}
 
     def test_undeclared_machine_caught(self):
         def mutate(raw):

@@ -69,11 +69,8 @@ class TestOntologyIsTheSourceOfTruth:
         for row in raw["pricing"]["waiting"]["matrix"]:
             if row.get("id") == "vehicle:4.2米厢货":
                 row["params"]["per_block"] = 3.0     # 2.4 -> 3.0
-        td = tempfile.mkdtemp(prefix="pv_mut_")
-        path = os.path.join(td, "layer.json")
-        with open(path, "w", encoding="utf-8") as fh:
-            json.dump(raw, fh, ensure_ascii=False)
-        mutated = SemanticLayer(path)
+        # 内存实验通道：发布 pin 只为磁盘发布物把门，不挡改声明看行为的承重测试
+        mutated = SemanticLayer.from_raw(raw)
         wprops = json.loads(system.facts.get_row("waybill:WB20261105001")["props"])
         # 不传显式参数：参数必须从声明来，不能由调用方塞
         ctx = mutated._fee_context("waiting", {}, wprops, "4.2米厢货")

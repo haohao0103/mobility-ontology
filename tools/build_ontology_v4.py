@@ -26,6 +26,9 @@ import json
 import os
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from freight.semantic import ontology_pin_digest  # noqa: E402  发布 pin 单一事实源
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ONTOLOGY_JSON = os.path.join(ROOT, "freight", "semantic_layer.json")
 MEMBERSHIP_MD = os.path.join(ROOT, "plan", "v4_type_membership.md")
@@ -490,6 +493,14 @@ def main() -> int:
         "跨聚合关系显式边界链接（boundary），注入层永不静默丢弃；"
         "glossary 业务术语表是检索一等公民。"
     )
+    raw["meta"] = meta
+
+    # 发布钉死：内容摘要写进 meta.payload_sha256（OntoSmith packs 模式）。
+    # 摘要函数与加载侧同一来源（freight.semantic.ontology_pin_digest），
+    # 排除 pin 字段自身避免自引用；加载时复核，不符即拒。
+    meta.pop("payload_sha256", None)
+    raw["meta"] = meta
+    meta["payload_sha256"] = ontology_pin_digest(raw)
     raw["meta"] = meta
 
     # v4 目录预算重标定：注入单位从「域」改为「聚合」——聚合是语义完整

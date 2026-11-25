@@ -294,10 +294,9 @@ def run_ontology() -> dict:
         for row in raw["pricing"]["waiting"]["matrix"]:
             if row.get("id") == "vehicle:4.2米厢货":
                 row["params"]["free_minutes"] = 20
-        tmp = os.path.join(td, "mut_layer.json")
-        with open(tmp, "w", encoding="utf-8") as fh:
-            json.dump(raw, fh, ensure_ascii=False)
-        mutated = SemanticLayer(tmp)
+        # 内存实验通道：发布 pin 只为磁盘发布物把门；变更实验是「改声明
+        # 看行为」，本就该走 from_raw
+        mutated = SemanticLayer.from_raw(raw)
         wprops = json.loads(system.facts.get_row(WAYBILL)["props"])
         ctx = mutated._fee_context("waiting", {}, wprops, "4.2米厢货")
         ast_node = (mutated.rules["R-WAIT-01"].get("judge") or {}).get("ast")
@@ -380,11 +379,8 @@ def drift_experiment(svc: PropertyGraphService) -> dict:
     for row in raw["pricing"]["waiting"]["matrix"]:
         if row.get("id") == "vehicle:4.2米厢货":
             row["params"]["free_minutes"] = 20
-    td = tempfile.mkdtemp(prefix="parity_drift_")
-    path = os.path.join(td, "layer.json")
-    with open(path, "w", encoding="utf-8") as fh:
-        json.dump(raw, fh, ensure_ascii=False)
-    mutated = SemanticLayer(path)
+    # 内存实验通道（同 Q6 变更实验）：发布 pin 只为磁盘发布物把门
+    mutated = SemanticLayer.from_raw(raw)
     wprops = {"waiting_minutes": minutes, "free_wait_minutes": 30}
     ctx = mutated._fee_context("waiting", {}, wprops, "4.2米厢货")
     ast_node = (mutated.rules["R-WAIT-01"].get("judge") or {}).get("ast")

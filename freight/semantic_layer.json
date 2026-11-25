@@ -4,7 +4,8 @@
   "version": "4.0.0",
   "scope": "覆盖 6 个限界上下文 / 30 个聚合，共 500 类 / 503 条链接（边界链接 57 条）/ 45 条术语。",
   "note": "schema v4：限界上下文 × 聚合两层声明（Palantir Groups 降级为多标签）；跨聚合关系显式边界链接（boundary），注入层永不静默丢弃；glossary 业务术语表是检索一等公民。",
-  "storage_policy": "projection"
+  "storage_policy": "projection",
+  "payload_sha256": "a580fd745ba6123986adaf85da6980b05a0baf25502894cfc95aec79123bb8a1"
  },
  "catalog": {
   "mode": "full_if_fits",

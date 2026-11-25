@@ -228,6 +228,11 @@
           "type": "string",
           "minLength": 1
         },
+        "payload_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "发布 pin：本体内容（排除本字段自身）的 sha256。build_ontology_v4.py 渲染时写入，SemanticLayer 加载时逐字节复核，不符 raise ONTOLOGY_PIN_MISMATCH——「改了内容却没重新发布」不可能静默发生。"
+        },
         "scope": {
           "type": "string"
         },

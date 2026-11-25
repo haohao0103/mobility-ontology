@@ -990,21 +990,16 @@ def check_state_machines(root: str) -> dict:
         base_raw = json.load(f)
     for label, mutate, expect_code in negatives:
         bad_raw = mutate(json.loads(json.dumps(base_raw)))
-        tmp = os.path.join(root, "logs", ".state_machine_negative.json")
-        os.makedirs(os.path.dirname(tmp), exist_ok=True)
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(bad_raw, f, ensure_ascii=False)
+        # 负向用例是内存实验：发布 pin 只为磁盘发布物把门，改声明看拦截
+        # 行为必须走 from_raw（否则 pin 先把负向用例自己拦了）
         try:
-            bad_sem = SemanticLayer(tmp)
+            bad_sem = SemanticLayer.from_raw(bad_raw)
             codes = {i["code"] for i in bad_sem.validate_state_machines()}
         except Exception as exc:  # noqa: BLE001 - 负向用例崩了也算没拦住
             codes = set()
             item["issues"].append({
                 "code": "STATE_MACHINE_NEGATIVE_CRASH", "path": target,
                 "message": f"负向用例执行异常: {exc}"})
-        finally:
-            if os.path.exists(tmp):
-                os.remove(tmp)
         if expect_code not in codes:
             item["ok"] = False
             item["issues"].append({
@@ -1127,13 +1122,10 @@ def check_source_contracts(root: str) -> dict:
 
         # ---- 负向用例 ----
         def _temp_layer(mutate):
-            import tempfile
+            # 负向用例是内存实验：发布 pin 只为磁盘发布物把门
             raw = json.loads(json.dumps(sem.raw))
             mutate(raw)
-            fd, path = tempfile.mkstemp(suffix=".json", prefix="src_neg_")
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                json.dump(raw, f, ensure_ascii=False)
-            return path
+            return SemanticLayer.from_raw(raw)
 
         def _drop_claim(raw):
             for ds in raw.get("data_sources") or []:
@@ -1152,17 +1144,15 @@ def check_source_contracts(root: str) -> dict:
             ("删掉一个费用类型的认领", _drop_claim, "FEE_TYPE_NO_OWNER"),
             ("两个来源认领同一费用类型", _double_claim, "FEE_TYPE_MULTI_OWNER"),
         ):
-            tmp = _temp_layer(mutate)
+            bad = _temp_layer(mutate)
             try:
                 codes = {i["code"] for i in
-                         source_coverage.check_fee_type_ownership(SemanticLayer(tmp))}
+                         source_coverage.check_fee_type_ownership(bad)}
             except Exception as exc:  # noqa: BLE001
                 codes = set()
                 item["issues"].append({
                     "code": "SOURCE_NEGATIVE_CRASH", "path": target,
                     "message": f"负向用例执行异常: {exc}"})
-            finally:
-                os.remove(tmp)
             if expect not in codes:
                 item["ok"] = False
                 item["issues"].append({

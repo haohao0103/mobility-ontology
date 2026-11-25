@@ -1,5 +1,40 @@
 # Changelog
 
+## 4.0.1 (2026-11-25) — 本体发布钉死 + 结论引用溯源（借鉴 OntoSmith）
+
+调研 `Dongbumlee/ontosmith`（MIT，2026-10 创建）后落地的两项工程借鉴。它的两个核心机制与
+本项目短板正好互补：**发布即钉死**（我们的 semantic_layer.json 缺“改了没人知道”）与
+**证据随行**（我们的 fact_store 是演示替身、LLM 结论引用无人校验）。
+
+### 发布钉死（payload_sha256 pin）
+- `tools/build_ontology_v4.py` 渲染时把内容摘要写进 `meta.payload_sha256`；摘要函数
+  `freight.semantic.ontology_pin_digest` 为 build 与加载**单一事实源**，排除 pin 字段
+  自身避免自引用。
+- `SemanticLayer.__init__`（磁盘加载）逐字节复核，不符 **fail-closed** raise
+  `ONTOLOGY_PIN_MISMATCH`：「改了内容却没重新发布」从此不可能静默进到检索/注入/规则链路。
+- `from_raw`（demo lab / 改声明看行为的承重测试）只记录 `pin_verified=False` 不抛——
+  实验沙箱不是发布通道；parity_lab、semantic_gate 负向用例、test_prevention /
+  test_source_contracts / test_state_machine / test_abox_coverage 的“改本体验行为”
+  统一改走该通道。
+- pin 暴露：`/freight/health` 返回 `payload_sha256` + `pin_verified`；推理链目录步
+  resolved 带 `ontology_pin` / `pin_verified`（结论可回溯到本体版本字节）。
+- schema 接纳 `meta.payload_sha256`（64 位小写 hex）；门禁 35 项全绿。
+- 回归 `tests/test_ontology_pin.py` 8 项：发布物自洽 / 改一字节即拒 / 更新 pin 放行 /
+  无 pin 历史版跳过并标注 / from_raw 只记录 / pin 排除自身 / build 端到端自洽。
+
+### 结论引用溯源（quote 逐字校验的工程化版）
+- `ReasoningAgent._answer_citation_check`：最终答案里引用的**对象 ID / 证据 ID / 规则 ID**
+  必须逐字出现在本次观察语料（observation.result + arguments + fee_analysis 确定性汇总）
+  里；编造引用被确定性抓住，红在 final 步的「结论硬引用可溯源」check 行上。
+- 金额是软引用（合计/差额是合法派生值）：只列「待复核」不判 fail——不做假精确。
+- 回归 `tests/test_answer_citation_check.py` 8 项：命中通过 / 编对象 ID、编规则 ID 被抓 /
+  analysis 里的真规则 ID 放行 / 金额软引用 / 空答案 noop / final 步带 check 行 / 编造即红。
+
+### 未做（诚实记录）
+- OntoSmith 的 attestation 内容哈希幂等键、manifest↔图对账：数据模型差异大，本轮不搬；
+  已评估可搬性（见对话记录），留待接真实语料时再上。
+- STG `stg-121` 仍 DNS 不可达，本轮为本地验证。
+
 ## 4.0.0 (2026-11-24) — 上下文检索 v4：聚合注入 + 五路召回 + 边界链接不丢
 
 按 `plan/ontology-context-retrieval-v4-plan.md` 执行（D1-D7 用户已批准）。旧 v3 实现整体删除、不留双口径，tag `v3-final` 可回滚。

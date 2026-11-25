@@ -127,10 +127,9 @@ class TestCoverageNegatives:
         from scripts.semantic_gate import check_abox_coverage
         raw = json.loads(json.dumps(SemanticLayer().raw))
         raw["abox_targets"]["core_types"] = raw["abox_targets"]["core_types"] + ["WaybillCost"]
-        tmp = os.path.join(tempfile.mkdtemp(prefix="abox_decl_"), "layer.json")
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(raw, f, ensure_ascii=False)
-        sem = SemanticLayer(tmp)
+        # 改本体的实验走 from_raw（内存通道）——发布 pin 只为磁盘上的
+        # semantic_layer.json 把门，不挡「改声明看行为」的承重测试。
+        sem = SemanticLayer.from_raw(raw)
         db = abox.build_db(prefix="abox_decl_db_")
         try:
             codes = {i["code"] for i in abox.check(sem, db)}

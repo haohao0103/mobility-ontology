@@ -1350,6 +1350,9 @@ class ReasoningAgent:
         step["query"]["resolved"] = {
             "mode": mode,
             "fits": self.catalog_fits,
+            "ontology_pin": str(
+                (self.sem.raw.get("meta") or {}).get("payload_sha256") or ""),
+            "pin_verified": bool(getattr(self.sem, "pin_verified", False)),
             "characters": characters,
             "budget": budget,
             "types": len(types),
@@ -4004,6 +4007,53 @@ class ReasoningAgent:
             "elapsed_ms": 0,
         }
 
+    # 结论里的硬引用形态：对象 ID（type:key）、规则 ID（R-WAIT-01 / F001）、
+    # 证据 ID（EV- 前缀）。金额单独作为软引用（合计/差额是合法派生值）。
+    _CITE_ID_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*:[A-Za-z0-9_-]{2,}")
+    _CITE_RULE_RE = re.compile(r"\b(?:R-[A-Z0-9]{2,}(?:-[A-Z0-9]+)*|F\d{3}|EV-[A-Za-z0-9_-]{2,})\b")
+    _CITE_MONEY_RE = re.compile(r"\d+(?:\.\d{1,2})?\s*(?:元|块)|\b\d+\.\d{2}\b")
+
+    def _answer_citation_check(self, answer: str, observations: list[dict],
+                               analysis: dict | None) -> dict:
+        """答案引用溯源：硬引用（对象/证据/规则 ID）必须逐字出现在观察语料。
+
+        语料 = 全部观察的 result + arguments + fee_analysis 的确定性汇总
+        （breakdown / findings / evidence / waiting_rule）。返回
+        checked / matched / unmatched_hard / soft_unmatched，由调用方决定
+        怎么展示（final 步的 check 行）。不抛异常——校验失败要让人看见，
+        不是让链路崩掉。
+        """
+        text = str(answer or "")
+        if not text.strip():
+            return {"checked": 0, "matched": 0, "unmatched_hard": [],
+                    "soft_unmatched": []}
+        parts: list[str] = []
+        for obs in observations or []:
+            parts.append(json.dumps(
+                {"result": obs.get("result"), "arguments": obs.get("arguments")},
+                ensure_ascii=False, default=str))
+        if analysis:
+            parts.append(json.dumps(
+                {k: analysis.get(k) for k in
+                 ("breakdown", "findings", "evidence", "waiting_rule")},
+                ensure_ascii=False, default=str))
+        corpus = "\n".join(parts)
+        hard_hits: list[str] = []
+        for rx in (self._CITE_ID_RE, self._CITE_RULE_RE):
+            hard_hits.extend(rx.findall(text))
+        unmatched_hard = [h for h in dict.fromkeys(hard_hits) if h not in corpus]
+        money_hits = self._CITE_MONEY_RE.findall(text)
+        soft_unmatched = [
+            m.strip() for m in dict.fromkeys(money_hits)
+            if m.strip() not in corpus and m.strip().rstrip("元块").strip() not in corpus
+        ]
+        return {
+            "checked": len(dict.fromkeys(hard_hits)),
+            "matched": len(dict.fromkeys(hard_hits)) - len(unmatched_hard),
+            "unmatched_hard": unmatched_hard,
+            "soft_unmatched": soft_unmatched,
+        }
+
     def _final_step(self, action: dict, observations: list[dict],
                     index: int, error: str | None,
                     plan: dict | None = None) -> dict:
@@ -4180,6 +4230,31 @@ class ReasoningAgent:
         question = action.get("question") or "现有 ABox 观察是否足以支撑诊断结论？"
         thought = action.get("thought") or ""
         answer = action.get("answer") or "Agent 未给出最终结论，请查看前序观察数据。"
+        # 引用溯源（借鉴 OntoSmith 的 quote 逐字校验）：结论里引用的对象 ID /
+        # 证据 ID / 规则 ID 必须在本次观察语料里逐字出现过——LLM 编造引用在
+        # 此被确定性抓住，check 行直接红给用户看。金额是软引用（合计/差额是
+        # 合法派生值，不判 fail，只列出来供人工复核）。
+        citation = self._answer_citation_check(answer, observations, analysis)
+        if citation["checked"]:
+            checks.append({
+                "pass": not citation["unmatched_hard"],
+                "label": "结论硬引用可溯源（对象 / 证据 / 规则 ID）",
+                "expected": "全部命中本次观察语料",
+                "actual": (
+                    f'{citation["matched"]}/{citation["checked"]} 命中'
+                    + (f'；不可溯源: {"、".join(citation["unmatched_hard"][:5])}'
+                       if citation["unmatched_hard"] else "")
+                ),
+            })
+            facts.append({
+                "label": "引用溯源",
+                "value": (
+                    f'硬引用 {citation["checked"]} 处，'
+                    f'不可溯源 {len(citation["unmatched_hard"])} 处'
+                    + (f'；金额派生值待复核 {len(citation["soft_unmatched"])} 处'
+                       if citation["soft_unmatched"] else "")
+                ),
+            })
         note = (
             "TBox 只提供类、关系、规则与定价参数；金额、证据、结算状态全部来自 ABox。"
         )

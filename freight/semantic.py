@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import ast
+import hashlib
 import json
 import math
 import os
@@ -25,12 +26,63 @@ class BusinessReject(Exception):
         self.details = details or {}
 
 
+# ---------------------------------------------------------------- 发布钉死（pin）
+# 借鉴 OntoSmith（packs/pack.json 的 payload.sha256）：本体文件发布时把内容
+# 摘要写进 meta.payload_sha256，加载时逐字节复核，不符即拒——「改了内容却
+# 没重新发布」从此不可能静默发生。pin 字段自身排除在摘要外（否则自引用）。
+ONTOLOGY_PIN_FIELD = "payload_sha256"
+
+
+def ontology_pin_digest(raw: dict) -> str:
+    """本体内容的规范化 sha256（排除 meta.payload_sha256 自身）。
+
+    build 与加载共用同一函数：build 写入 pin，加载复核 pin，两边永远同源。
+    """
+    clone = json.loads(json.dumps(raw))
+    meta = clone.get("meta")
+    if isinstance(meta, dict):
+        meta.pop(ONTOLOGY_PIN_FIELD, None)
+    canonical = json.dumps(
+        clone, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def verify_ontology_pin(raw: dict) -> tuple[bool, str]:
+    """复核本体的发布 pin。返回 (verified, detail)。
+
+    - 无 pin 字段（历史发布物 / releases 快照）：跳过，verified=True，
+      detail 说明未钉死——不阻断既有数据，但调用方应能把状态显示出来。
+    - 有 pin 且不符：verified=False，detail 给出实际摘要，**不抛异常**；
+      抛给谁由调用方决定（加载路径必须 fail-closed，见 _index 调用处）。
+    """
+    meta = raw.get("meta") if isinstance(raw, dict) else None
+    pin = meta.get(ONTOLOGY_PIN_FIELD) if isinstance(meta, dict) else None
+    if not pin:
+        return True, "unpinned"
+    actual = ontology_pin_digest(raw)
+    if actual == str(pin):
+        return True, "verified"
+    return False, f"pin={str(pin)[:16]}… actual=sha256:{actual[:16]}…"
+
+
 class SemanticLayer:
     def __init__(self, path: str = DEFAULT_PATH):
         with open(path, encoding="utf-8") as f:
             raw = json.load(f)
         self.path = path
         self._index(raw)
+        # 发布钉死 fail-closed：磁盘上的本体文件必须与自身声明的 pin 逐字节
+        # 一致。改了内容却没重新发布（或发布流程被绕过）在此拦截，不让一个
+        # 「来路不明的本体」进到检索/注入/规则链路里。
+        if not self.pin_verified:
+            raise BusinessReject(
+                f"本体发布 pin 不符（{self.path}）：{self.pin_detail}。"
+                "内容被改动但未重新发布——若是正式改动，请跑 "
+                "tools/build_ontology_v4.py 重新生成（pin 随渲染写入）；"
+                "若只是本地实验，请改用 SemanticLayer.from_raw。",
+                "ONTOLOGY_PIN_MISMATCH",
+                {"path": self.path, "pin_detail": self.pin_detail},
+            )
 
     @classmethod
     def from_raw(cls, raw: dict, path: str = "<memory>") -> "SemanticLayer":
@@ -45,6 +97,7 @@ class SemanticLayer:
 
     def _index(self, raw: dict) -> None:
         self.raw = raw
+        self.pin_verified, self.pin_detail = verify_ontology_pin(raw)
         self._retriever = None  # v4 检索器懒加载（object_type_search 时构建）
         self.classes = {c["id"]: c for c in self.raw["classes"]}
         self.relations = {r["id"]: r for r in self.raw["relations"]}

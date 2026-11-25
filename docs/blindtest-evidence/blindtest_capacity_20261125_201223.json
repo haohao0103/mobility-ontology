@@ -1,0 +1,881 @@
+{
+ "domain": "ontology.domains_02_capacity",
+ "business_input": "tools/blindtest_capacity_business_text.md",
+ "human_class_count": 98,
+ "max_tokens": 8192,
+ "max_tokens_note": "生产 agent 默认 OPENAI_CHAT_STEP_TOKENS=1600；盲测单独放大并分阶段（单次输出装不下 98 类）",
+ "thresholds": {
+  "class_recall_min": 0.7,
+  "type_accuracy_min": 0.85
+ },
+ "sections": [
+  {
+   "title": "车这块",
+   "chars": 641
+  },
+  {
+   "title": "人这块",
+   "chars": 356
+  },
+  {
+   "title": "合作方这块",
+   "chars": 322
+  },
+  {
+   "title": "外包这块",
+   "chars": 301
+  },
+  {
+   "title": "修车这块",
+   "chars": 259
+  },
+  {
+   "title": "油电这块",
+   "chars": 246
+  }
+ ],
+ "stage_a": {
+  "human_class_count": 98,
+  "llm_class_count": 113,
+  "matched_class_count": 25,
+  "class_recall": 0.2551,
+  "missed_classes": [
+   {
+    "id": "VehicleCapacity",
+    "label": "核定载重"
+   },
+   {
+    "id": "VehicleDimension",
+    "label": "车厢尺寸"
+   },
+   {
+    "id": "VehicleInspection",
+    "label": "车辆年检"
+   },
+   {
+    "id": "VehicleLicense",
+    "label": "道路运输证"
+   },
+   {
+    "id": "VehicleDeviceBinding",
+    "label": "车辆设备绑定"
+   },
+   {
+    "id": "VehicleFault",
+    "label": "车辆故障"
+   },
+   {
+    "id": "VehicleTelematics",
+    "label": "车联网数据"
+   },
+   {
+    "id": "VehicleRestriction",
+    "label": "车辆限行"
+   },
+   {
+    "id": "VehicleSubstitute",
+    "label": "替车记录"
+   },
+   {
+    "id": "VehicleOwnership",
+    "label": "车辆归属"
+   },
+   {
+    "id": "VehicleScrap",
+    "label": "车辆报废"
+   },
+   {
+    "id": "VehicleInsurancePolicy",
+    "label": "车辆保险单"
+   },
+   {
+    "id": "VehicleMileageLog",
+    "label": "车辆里程台账"
+   },
+   {
+    "id": "VehicleComplianceCheck",
+    "label": "车辆合规校验"
+   },
+   {
+    "id": "DriverProfile",
+    "label": "司机档案"
+   },
+   {
+    "id": "DriverShift",
+    "label": "司机排班"
+   },
+   {
+    "id": "DriverAttendance",
+    "label": "司机考勤"
+   },
+   {
+    "id": "DriverPerformance",
+    "label": "司机绩效"
+   },
+   {
+    "id": "DriverViolation",
+    "label": "司机违章"
+   },
+   {
+    "id": "DriverTraining",
+    "label": "司机培训"
+   },
+   {
+    "id": "DriverBlacklist",
+    "label": "司机黑名单"
+   },
+   {
+    "id": "DriverBankAccount",
+    "label": "司机收款账户"
+   },
+   {
+    "id": "DriverContract",
+    "label": "司机协议"
+   },
+   {
+    "id": "DriverTeam",
+    "label": "司机班组"
+   },
+   {
+    "id": "DriverCheckin",
+    "label": "出车签到"
+   },
+   {
+    "id": "DriverHealthCheck",
+    "label": "司机健康检查"
+   },
+   {
+    "id": "DriverReward",
+    "label": "司机奖励"
+   },
+   {
+    "id": "DriverAvailability",
+    "label": "司机可用性"
+   },
+   {
+    "id": "DriverRoutePreference",
+    "label": "司机线路偏好"
+   },
+   {
+    "id": "CarrierProfile",
+    "label": "承运商档案"
+   },
+   {
+    "id": "CarrierQualification",
+    "label": "承运资质"
+   },
+   {
+    "id": "CarrierContract",
+    "label": "承运商合同"
+   },
+   {
+    "id": "CarrierSettlementRule",
+    "label": "承运商结算规则"
+   },
+   {
+    "id": "CarrierBankAccount",
+    "label": "承运商收款账户"
+   },
+   {
+    "id": "CarrierPenalty",
+    "label": "承运商处罚"
+   },
+   {
+    "id": "CarrierSuspension",
+    "label": "暂停合作"
+   },
+   {
+    "id": "CarrierOnboarding",
+    "label": "承运商准入"
+   },
+   {
+    "id": "CarrierLiabilityInsurance",
+    "label": "承运人责任险"
+   },
+   {
+    "id": "CarrierAudit",
+    "label": "承运商审核"
+   },
+   {
+    "id": "CarrierBlacklist",
+    "label": "承运商黑名单"
+   },
+   {
+    "id": "CarrierServiceArea",
+    "label": "承运商服务范围"
+   },
+   {
+    "id": "CarrierPriceList",
+    "label": "承运商价格表"
+   },
+   {
+    "id": "SubcontractQuote",
+    "label": "分包报价"
+   },
+   {
+    "id": "SubcontractSettlement",
+    "label": "分包结算"
+   },
+   {
+    "id": "SubcontractInvoice",
+    "label": "分包发票"
+   },
+   {
+    "id": "SubcontractMargin",
+    "label": "分包毛利"
+   },
+   {
+    "id": "SubcontractAdjustment",
+    "label": "分包调整"
+   },
+   {
+    "id": "SubcontractApproval",
+    "label": "分包审批"
+   },
+   {
+    "id": "SubcontractCancellation",
+    "label": "分包取消"
+   },
+   {
+    "id": "SubcontractPerformance",
+    "label": "分包履约"
+   },
+   {
+    "id": "SubcontractDocument",
+    "label": "分包单据"
+   },
+   {
+    "id": "SubcontractTax",
+    "label": "分包税务"
+   },
+   {
+    "id": "SubcontractTemplate",
+    "label": "分包模板"
+   },
+   {
+    "id": "SubcontractAllocation",
+    "label": "费用分摊"
+   },
+   {
+    "id": "SubcontractConfirmation",
+    "label": "分包确认"
+   },
+   {
+    "id": "MaintenanceOrder",
+    "label": "维保工单"
+   },
+   {
+    "id": "MaintenanceRecord",
+    "label": "维保记录"
+   },
+   {
+    "id": "MaintenanceSupplier",
+    "label": "维修商"
+   },
+   {
+    "id": "MaintenanceCost",
+    "label": "维保费用"
+   },
+   {
+    "id": "RepairPartsUsage",
+    "label": "配件领用"
+   },
+   {
+    "id": "TireRecord",
+    "label": "轮胎台账"
+   },
+   {
+    "id": "TireChange",
+    "label": "换胎记录"
+   },
+   {
+    "id": "RoadRescue",
+    "label": "道路救援"
+   },
+   {
+    "id": "MaintenanceWarranty",
+    "label": "维保质保"
+   },
+   {
+    "id": "FuelPrice",
+    "label": "油价"
+   },
+   {
+    "id": "FuelConsumption",
+    "label": "油耗"
+   },
+   {
+    "id": "FuelSubsidy",
+    "label": "油补"
+   },
+   {
+    "id": "FuelQuota",
+    "label": "油卡额度"
+   },
+   {
+    "id": "FuelAnomaly",
+    "label": "加油异常"
+   },
+   {
+    "id": "EnergyCost",
+    "label": "能源成本"
+   },
+   {
+    "id": "EmissionRecord",
+    "label": "排放记录"
+   },
+   {
+    "id": "CarbonFootprint",
+    "label": "碳足迹"
+   },
+   {
+    "id": "FuelCardRecharge",
+    "label": "油卡充值"
+   }
+  ],
+  "extra_classes": [
+   {
+    "id": "CapacityApproval",
+    "label": "载量核定记录"
+   },
+   {
+    "id": "VehicleCompartment",
+    "label": "车厢规格"
+   },
+   {
+    "id": "AnnualInspection",
+    "label": "年检记录"
+   },
+   {
+    "id": "Certificate",
+    "label": "证照"
+   },
+   {
+    "id": "TelematicsDevice",
+    "label": "车载设备"
+   },
+   {
+    "id": "DeviceInstallationEvent",
+    "label": "设备安装事件"
+   },
+   {
+    "id": "TelematicsSnapshot",
+    "label": "车联网快照"
+   },
+   {
+    "id": "RepairRecord",
+    "label": "故障维修记录"
+   },
+   {
+    "id": "RestrictedRoadSection",
+    "label": "限行路段"
+   },
+   {
+    "id": "RestrictedTimeWindow",
+    "label": "限行时段"
+   },
+   {
+    "id": "OwnershipTransferEvent",
+    "label": "过户转卖事件"
+   },
+   {
+    "id": "ScrapRecord",
+    "label": "报废记录"
+   },
+   {
+    "id": "InsurancePolicy",
+    "label": "保险保单"
+   },
+   {
+    "id": "InsuranceClaimEvent",
+    "label": "理赔事件"
+   },
+   {
+    "id": "MileageRecord",
+    "label": "行驶里程记录"
+   },
+   {
+    "id": "ComplianceCheckEvent",
+    "label": "合规检查事件"
+   },
+   {
+    "id": "Driver",
+    "label": "司机"
+   },
+   {
+    "id": "Driver",
+    "label": "司机"
+   },
+   {
+    "id": "LaborContract",
+    "label": "劳动合同"
+   },
+   {
+    "id": "BankAccount",
+    "label": "结算银行卡"
+   },
+   {
+    "id": "Fleet",
+    "label": "车队"
+   },
+   {
+    "id": "Team",
+    "label": "班组"
+   },
+   {
+    "id": "Trip",
+    "label": "趟车任务"
+   },
+   {
+    "id": "ShiftSchedule",
+    "label": "排班记录"
+   },
+   {
+    "id": "AttendanceRecord",
+    "label": "考勤打卡记录"
+   },
+   {
+    "id": "PerformanceRecord",
+    "label": "绩效记录"
+   },
+   {
+    "id": "ViolationRecord",
+    "label": "违章记录"
+   },
+   {
+    "id": "TrainingRecord",
+    "label": "培训考证记录"
+   },
+   {
+    "id": "BlacklistRecord",
+    "label": "拉黑记录"
+   },
+   {
+    "id": "ArrivalSignRecord",
+    "label": "跟车到站签到记录"
+   },
+   {
+    "id": "HealthExam",
+    "label": "健康体检记录"
+   },
+   {
+    "id": "RewardRecord",
+    "label": "奖励记录"
+   },
+   {
+    "id": "LeaveRecord",
+    "label": "休假记录"
+   },
+   {
+    "id": "Route",
+    "label": "常用路线"
+   },
+   {
+    "id": "Carrier",
+    "label": "承运商"
+   },
+   {
+    "id": "QualificationCertificate",
+    "label": "资质证书"
+   },
+   {
+    "id": "QualificationReview",
+    "label": "资质复核"
+   },
+   {
+    "id": "CooperationContract",
+    "label": "合作合同"
+   },
+   {
+    "id": "SettlementRule",
+    "label": "结算规则"
+   },
+   {
+    "id": "PaymentAccount",
+    "label": "收款账户"
+   },
+   {
+    "id": "ViolationPenalty",
+    "label": "违规罚款"
+   },
+   {
+    "id": "Suspension",
+    "label": "停运处置"
+   },
+   {
+    "id": "OnboardingApplication",
+    "label": "入驻申请"
+   },
+   {
+    "id": "CarrierBlacklistRecord",
+    "label": "承运商黑名单记录"
+   },
+   {
+    "id": "ServiceLane",
+    "label": "承运线路"
+   },
+   {
+    "id": "LanePriceQuote",
+    "label": "线路报价"
+   },
+   {
+    "id": "route",
+    "label": "线路"
+   },
+   {
+    "id": "subcontract",
+    "label": "分包单"
+   },
+   {
+    "id": "subcontractor",
+    "label": "分包商"
+   },
+   {
+    "id": "quotation",
+    "label": "报价单"
+   },
+   {
+    "id": "settlement",
+    "label": "结算单"
+   },
+   {
+    "id": "invoice",
+    "label": "发票"
+   },
+   {
+    "id": "priceAdjustmentEvent",
+    "label": "调价事件"
+   },
+   {
+    "id": "approvalEvent",
+    "label": "分包审批事件"
+   },
+   {
+    "id": "cancellationEvent",
+    "label": "分包取消事件"
+   },
+   {
+    "id": "allocationEvent",
+    "label": "分配事件"
+   },
+   {
+    "id": "acceptanceEvent",
+    "label": "接单确认事件"
+   },
+   {
+    "id": "withholdingTaxRecord",
+    "label": "代扣代缴记录"
+   },
+   {
+    "id": "disputeResolutionEvent",
+    "label": "争议裁决事件"
+   },
+   {
+    "id": "performanceRecord",
+    "label": "履约记录"
+   },
+   {
+    "id": "paperDocument",
+    "label": "纸质单据"
+   },
+   {
+    "id": "contractTemplate",
+    "label": "合同模板"
+   },
+   {
+    "id": "settlementTemplate",
+    "label": "结算模板"
+   },
+   {
+    "id": "financialSummary",
+    "label": "收入成本毛利核算"
+   },
+   {
+    "id": "Vehicle",
+    "label": "车辆"
+   },
+   {
+    "id": "MaintenanceWorkOrder",
+    "label": "保养工单"
+   },
+   {
+    "id": "MaintenanceItemExecution",
+    "label": "保养项目执行记录"
+   },
+   {
+    "id": "PartSupplier",
+    "label": "配件供应商"
+   },
+   {
+    "id": "MaintenanceCostRecord",
+    "label": "保养成本记录"
+   },
+   {
+    "id": "RepairWorkOrder",
+    "label": "维修工单"
+   },
+   {
+    "id": "RepairPartUsage",
+    "label": "维修用件记录"
+   },
+   {
+    "id": "Tire",
+    "label": "轮胎"
+   },
+   {
+    "id": "TireChangeRecord",
+    "label": "轮胎更换记录"
+   },
+   {
+    "id": "RoadsideAssistanceRecord",
+    "label": "道路救援记录"
+   },
+   {
+    "id": "Warranty",
+    "label": "厂家保修"
+   },
+   {
+    "id": "WarrantyClaim",
+    "label": "保修索赔"
+   },
+   {
+    "id": "Vehicle",
+    "label": "车辆"
+   },
+   {
+    "id": "FuelRechargeRecord",
+    "label": "油卡充值记录"
+   },
+   {
+    "id": "FuelPriceAdjustment",
+    "label": "油价调价记录"
+   },
+   {
+    "id": "VehicleFuelConsumption",
+    "label": "车辆油耗标准"
+   },
+   {
+    "id": "FuelConsumptionAnomaly",
+    "label": "油耗异常核查"
+   },
+   {
+    "id": "FuelSubsidyPolicy",
+    "label": "燃油补贴标准"
+   },
+   {
+    "id": "FuelSubsidyGrant",
+    "label": "燃油补贴发放"
+   },
+   {
+    "id": "MonthlyFuelQuota",
+    "label": "月度油量配额"
+   },
+   {
+    "id": "Waybill",
+    "label": "运单"
+   },
+   {
+    "id": "MonthlyEnergyCostSummary",
+    "label": "月度能耗费用汇总"
+   },
+   {
+    "id": "VehicleCarbonEmission",
+    "label": "车辆碳排放记录"
+   },
+   {
+    "id": "WaybillCarbonFootprint",
+    "label": "运单碳足迹"
+   }
+  ],
+  "blocks": [
+   {
+    "title": "车这块",
+    "raw_chars": 3275,
+    "parsed": true,
+    "class_count": 21
+   },
+   {
+    "title": "人这块",
+    "raw_chars": 4137,
+    "parsed": true,
+    "class_count": 19
+   },
+   {
+    "title": "合作方这块",
+    "raw_chars": 3466,
+    "parsed": true,
+    "class_count": 16
+   },
+   {
+    "title": "外包这块",
+    "raw_chars": 3163,
+    "parsed": true,
+    "class_count": 20
+   },
+   {
+    "title": "修车这块",
+    "raw_chars": 2882,
+    "parsed": true,
+    "class_count": 19
+   },
+   {
+    "title": "油电这块",
+    "raw_chars": 2825,
+    "parsed": true,
+    "class_count": 18
+   }
+  ],
+  "elapsed_seconds": 245.9
+ },
+ "stage_b": {
+  "type_accuracy": 0.68,
+  "type_accuracy_denominator": 50,
+  "type_match_count": 34,
+  "property_recall": 0.2688,
+  "property_recall_denominator": 186,
+  "type_mismatches": [
+   {
+    "class": "VehicleType",
+    "property": "suitable_cargo",
+    "human_type": "json",
+    "llm_type": "txt"
+   },
+   {
+    "class": "VehicleRegistration",
+    "property": "vehicle_id",
+    "human_type": "str",
+    "llm_type": "id"
+   },
+   {
+    "class": "VehiclePhoto",
+    "property": "vehicle_id",
+    "human_type": "str",
+    "llm_type": "id"
+   },
+   {
+    "class": "DriverLicense",
+    "property": "license_no",
+    "human_type": "str",
+    "llm_type": "id"
+   },
+   {
+    "class": "DriverLicense",
+    "property": "license_class",
+    "human_type": "str",
+    "llm_type": "enum"
+   },
+   {
+    "class": "DriverQualificationCert",
+    "property": "cert_no",
+    "human_type": "str",
+    "llm_type": "id"
+   },
+   {
+    "class": "SubcontractSegment",
+    "property": "segment_no",
+    "human_type": "int",
+    "llm_type": "id"
+   },
+   {
+    "class": "MaintenancePlan",
+    "property": "vehicle_id",
+    "human_type": "str",
+    "llm_type": "id"
+   },
+   {
+    "class": "MaintenanceReminder",
+    "property": "vehicle_id",
+    "human_type": "str",
+    "llm_type": "id"
+   },
+   {
+    "class": "RepairQuote",
+    "property": "valid_until",
+    "human_type": "dt",
+    "llm_type": "date"
+   },
+   {
+    "class": "BreakdownRecord",
+    "property": "vehicle_id",
+    "human_type": "str",
+    "llm_type": "id"
+   },
+   {
+    "class": "VehicleAnnualReview",
+    "property": "vehicle_id",
+    "human_type": "str",
+    "llm_type": "id"
+   },
+   {
+    "class": "FuelCard",
+    "property": "card_no",
+    "human_type": "str",
+    "llm_type": "id"
+   },
+   {
+    "class": "FuelTransaction",
+    "property": "station_id",
+    "human_type": "str",
+    "llm_type": "id"
+   },
+   {
+    "class": "FuelStation",
+    "property": "address",
+    "human_type": "str",
+    "llm_type": "txt"
+   },
+   {
+    "class": "FuelAllocation",
+    "property": "waybill_id",
+    "human_type": "str",
+    "llm_type": "id"
+   }
+  ],
+  "type_mismatch_count": 16,
+  "classes_with_types": 109,
+  "blocks": [
+   {
+    "title": "车这块",
+    "raw_chars": 8268,
+    "parsed": true,
+    "class_count": 21
+   },
+   {
+    "title": "人这块",
+    "raw_chars": 7837,
+    "parsed": true,
+    "class_count": 19
+   },
+   {
+    "title": "合作方这块",
+    "raw_chars": 7921,
+    "parsed": true,
+    "class_count": 16
+   },
+   {
+    "title": "外包这块",
+    "raw_chars": 6447,
+    "parsed": true,
+    "class_count": 20
+   },
+   {
+    "title": "修车这块",
+    "raw_chars": 8386,
+    "parsed": true,
+    "class_count": 19
+   },
+   {
+    "title": "油电这块",
+    "raw_chars": 7926,
+    "parsed": true,
+    "class_count": 18
+   }
+  ],
+  "elapsed_seconds": 366.7
+ },
+ "verdict": {
+  "class_recall_pass": false,
+  "type_accuracy_pass": false,
+  "overall": "FAIL"
+ }
+}

@@ -14,3 +14,6 @@ generated/
 logs/
 .idea/
 scripts/_out/
+
+# 盲测/评测产物（报告本体另行归档到 docs/blindtest-evidence/）
+tools/_out/

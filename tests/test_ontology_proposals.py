@@ -53,17 +53,24 @@ def test_catalog_is_closed_to_deletions(sem):
         sem)
     assert report["verdict"] == "INVALID"
     assert "INVALID_MUTATION" in _error_codes(report)
-    assert "t3" not in {MUTATION_CATALOG[m]["tier"] for m in MUTATION_CATALOG}
+    # 目录只开「新增」不开放「删除」：没有任何删除类变异在目录里
+    assert not [m for m in MUTATION_CATALOG
+                if m.startswith(("delete_", "remove_", "drop_"))]
 
 
-def test_catalog_contains_exactly_four_governed_mutations():
+def test_catalog_contains_exactly_seven_governed_mutations():
     assert set(MUTATION_CATALOG) == {
         "glossary_add_term", "class_add_alias",
-        "matrix_add_row", "rule_adjust_param"}
+        "matrix_add_row", "rule_adjust_param",
+        "class_add", "relation_add", "group_add_type"}
     # 只有非结构层可能是 t0（auto-ontology 边界：LLM 只提术语/别名）
     for name, spec in MUTATION_CATALOG.items():
         if spec["tier"] == "t0":
             assert spec["layer"] == "non-structural"
+    # 结构层新增一律 t3（全人审，AI 候选永不自动进生产）
+    for name in ("class_add", "relation_add", "group_add_type"):
+        assert MUTATION_CATALOG[name]["tier"] == "t3"
+        assert MUTATION_CATALOG[name]["layer"] == "structural"
 
 
 def test_catalog_overview_documents_governance():

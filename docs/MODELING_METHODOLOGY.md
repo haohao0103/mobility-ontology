@@ -14,10 +14,12 @@
 |---|---|---|
 | 建模 DSL | `ontology/__init__.py` 的 `C()/L()/I()` | 声明对象类型/链接/接口，属性类型**强制人工标注**，禁止脚本猜 |
 | 人工建模 | `ontology/domains_01~06.py` + `core_classes.py` | **500 类、503 关系是人工一个一个 `C()` 写出来的** |
-| 渲染 | `tools/build_ontology_v3.py` | 合并建模包 → 注册表 → 结构校验 → `semantic_layer.json` |
+| 渲染 | `tools/build_ontology_v3.py` | 合并建模包 → 注册表 → 结构校验 → `semantic_layer.json`（**唯一渲染器**） |
+| 结构层加工 | `tools/build_ontology_v4.py` | 在 v3 渲染结果上做**限界上下文 × 聚合 × 边界链接**（读 `semantic_layer.json` 再写回，幂等）——不是渲染器，别当入口用 |
 | 分支评审 | `tools/proposal.py` | create→review→merge，只放行 PASS 分支，生成 release 快照 |
 | 变更门禁 | `freight/change_gate.py` + `breaking_approvals.json` | 破坏性变更要签字，路径完全匹配 |
 | 多格式导出 | `tools/export_shacl.py`、`scripts/benchmark/export_owl.py` | 已能导出 SHACL-TTL 和 OWL-Turtle（JSON 也是源格式） |
+| **AI 候选通道** | `freight/proposals.py`（结构层提议目录） | AI 产出的类/关系/分类归属走封闭目录 + 后置校验 + 独立裁决 + 台账 → 人审 → 人改 build 源 → 重 build 出新 pin；**全 t3 人审，AI 永不自动进生产** |
 
 **唯一真缺的**：从「业务方用自己的话说清对象和关系」到「写出 `C()/L()` 声明」之间那一步。现在这一步是**纯人工**——这就是 500 类写得慢、建模门槛高的根因，也正是文章说"本体建模可全程由 AI 完成，前提是按可溯源方法论"要解决的那一步。
 
@@ -27,6 +29,12 @@
 2. **可回溯**：每个建模选择都能回到方法论的一条理由，事后能复查——**这和"把一段业务描述直接丢给 AI 自己决定怎么分对象"是两回事**。
 
 本文给出满足这两点的方法论 + 工作流 + 可运行校验器原型。
+
+> **2026-11-25 增补**：AI 候选的进生产通道已开通（`freight/proposals.py` 结构层提议
+> 目录 `class_add`/`relation_add`/`group_add_type`）。AI 产出的候选不再是"给人看的
+> 草稿"，而是**走提议通道**：确定性门禁 → 独立裁决者（语义裁决）→ 台账 → 人审 →
+> 人改 build 源 → 重 build 出新 pin。**AI 候选永不自动进生产**；结构层 why(R10)
+> 必填，"删除类/关系/规则"仍不在目录里（目录只开「新增」不开放「删除」）。
 
 ---
 
@@ -129,6 +137,13 @@ Step 5  人工确认（业务方 + 建模者）
         核对每个 why 是否符合业务事实；这一步不能省——"担责任的事留给人"
         │
         ▼
+Step 5.5 ★ 提交结构层提议通道（freight/proposals.py，2026-11-25 新增）
+        候选 JSON → class_add/relation_add/group_add_type 提案（why(R10) 必填）
+        → 确定性门禁：编译 after 草案 → validate_semantic 逐键 diff
+        → 独立裁决者（R1/R2/R3 判别：对象？职责？事件？）→ 台账留痕
+        → 人审通过后，人把它敲进 ontology/domains_XX.py（AI 永不自动进生产）
+        │
+        ▼
 Step 6  渲染进现有工具链（都是现成的）
         候选 JSON → 生成 ontology/domains_XX.py 的 C()/L() 声明
         → tools/build_ontology_v3.py 渲染 → semantic_layer.json
@@ -143,23 +158,39 @@ Step 7  走既有门禁（都是现成的）
 
 ---
 
-## 三、原型：可运行的东西
-
-`本体快速建模_原型/` 目录下：
+## 三、原型：可运行的东西（落盘位置 `tools/`）
 
 | 文件 | 作用 |
 |---|---|
-| `validate_model.py` | 校验器：输入候选 JSON，按 R5–R10 逐条校验，输出 C()/L() 声明草案 + 校验报告 |
-| `example_candidate.json` | 示例候选模型（故意带 3 处违规，演示校验器能挡住） |
-| `README.md` | 运行说明 + AI 生成候选的 prompt 模板 |
+| `tools/validate_model.py` | 校验器：输入候选 JSON，按 R5–R10 逐条校验，输出 C()/L() 声明草案 + 校验报告 |
+| `tools/roundtrip_candidate.json` | 往返验证候选（8 类，字段/状态保真 53/53） |
+| `tools/roundtrip_business_text.md` | 盲测/往返验证用的口语样例（业务方原话） |
+| `tools/modeling_prompt.md` | AI 生成候选的 system/user prompt 模板 |
 
 运行：
 
 ```bash
-python3 本体快速建模_原型/validate_model.py 本体快速建模_原型/example_candidate.json
+python3 tools/validate_model.py tools/roundtrip_candidate.json --emit-dsl
 ```
 
-预期：校验器报错 3 处（缺 why / 类型非法 / 分类不互斥），修正后 PASS 并生成 `C()`/`L()` 声明草案。
+预期：PASS 后输出 `C()`/`L()` 声明草案（供人工确认后合入 `ontology/domains_*.py`）。
+
+### ★ 两套校验的分工（2026-11-25 核实补充，别混淆）
+
+| | `tools/validate_model.py` | `freight/semantic.py::validate_semantic` |
+|---|---|---|
+| 位置 | `tools/`（建模期工具） | `freight/`（运行时库） |
+| 查什么 | **候选 JSON 的可溯源性**：why 完整性 / 规则号合法 / 硬约束（类型码、主键在属性表、基数、状态机声明、兜底值） | **发布物的引用完整性与结构约束**：96 个检查码（引用存在性、属性注册、状态机完备、规则 AST、定价矩阵、动作端点……） |
+| 地位 | **事前自检工具**（原型：无测试、不挂 CI，仅 `exit 1/0`） | **权威单一事实源**（`scripts/semantic_gate.py` 32 项门禁 + 运行时加载复核） |
+
+**同一批约束存在两处实现，漂移风险是真的**：候选 JSON 通过了 `validate_model.py`
+不代表能进发布物——真正的判定是 `validate_semantic` 对 **after 草案**的逐键 diff
+（提议通道 `freight/proposals.py` 已把这条链接上：结构层提案编译成 after 草案后，
+门禁用 `validate_semantic` 判"这次变更有没有把本体改坏"，只认 after 引入的新错误，
+存量问题不算提案的错）。
+
+**`validate_model.py` 现阶段定位是"起草期自检"**，不是准入闸门；在其规则与
+`validate_semantic` 合并/对齐之前，不要把它当权威判据引用。
 
 ---
 
@@ -176,7 +207,7 @@ python3 本体快速建模_原型/validate_model.py 本体快速建模_原型/ex
 | 导出 JSON/TTL/RDF/OWL，不用手写 OWL | 现有 `export_shacl.py`/`export_owl.py` | 已有 |
 | 推理用自然语言校验，核对模型推出来的结论 | mobility 的门禁 + `smoke_tbox_mechanism.py` | 已有（确定性校验，非 LLM 推理） |
 
-**一处差异要诚实说明**：文章说"推理也可以用自然语言交给 AI 校验"，mobility 走的是**确定性门禁**路线（`semantic_gate.py` + 24 条承重用例），不是让 LLM 读模型答题。两条路各有取舍：LLM 校验灵活但不可回放，确定性门禁可回放但不理解新场景。**建议保持 mobility 的确定性路线**——它和"可回溯"更一致；若将来要补 LLM 校验，应让 LLM 只做"提议"，结论仍由门禁裁定。
+**一处差异要诚实说明**：文章说"推理也可以用自然语言交给 AI 校验"，mobility 走的是**确定性门禁**路线（`semantic_gate.py` 32 项语义门禁），不是让 LLM 读模型答题。两条路各有取舍：LLM 校验灵活但不可回放，确定性门禁可回放但不理解新场景。**建议保持 mobility 的确定性路线**——它和"可回溯"更一致；若将来要补 LLM 校验，应让 LLM 只做"提议"，结论仍由门禁裁定。
 
 ---
 

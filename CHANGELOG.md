@@ -1,5 +1,81 @@
 # Changelog
 
+## 4.0.4 (2026-11-25) — 本体构建通道：结构层提议目录（AI 辅助建模产物进生产的唯一通道）
+
+用户裁定「重点放到本体建模/本体构建模块」后的第一批落地。三项目增量再评估 +
+`docs/MODELING_METHODOLOGY.md`（R1–R10 可溯源方法论）+ `tools/validate_model.py`
+（原型校验器）入库后，核出并补齐了**AI 候选无进生产通道**这个核心缺口。
+
+### W1 结构层提议目录（`freight/proposals.py`，用户裁定政策 A）
+- `MUTATION_CATALOG` 扩三类，全部 **t3（全人审）**：`class_add`（新增对象类型）/
+  `relation_add`（新增关系）/ `group_add_type`（既有类挂既有分类组）。
+- **目录只开「新增」不开放「删除」**：删除类/关系/规则仍不在目录里，提删除仍被
+  `INVALID_MUTATION` 拒绝并留档（4.0.2 的"目录封闭即政策"不变）。
+- **why(R10) 必填**：格式 `R编号: 理由`、规则号限 R1–R10、理由 ≥4 字；缺失/
+  格式非法/越界分别报 `WHY_MISSING`/`WHY_FORMAT`/`WHY_RULE`/`WHY_TOO_SHORT`。
+- AI 候选**永不自动进生产**：`auto_merge_eligible` 恒 False，verdict 恒
+  `NEEDS_HUMAN_REVIEW`；采纳永远是「人改 build 源 → 重 build 出新 pin」。
+
+### W2 结构层编译层（`apply_to_raw` 支持三类结构层变异）
+- `class_add` → class 条目（rid/iri/展示元数据复用 `ontology` 包推导函数，与 v3
+  渲染器同源）+ **property_types 注册**（同名属性合并 `used_by`，类型冲突即拒）+
+  **object_type_groups 归属** + **state_machines 声明** + **actions 迁移边**。
+- `relation_add` → relation 条目（domain/range/cardinality 必填显式，展示元数据
+  按 domain 类属域补齐，boundary 交 v4 映射脚本计算）。
+- `group_add_type` → 分类组成员追加。
+- **重活交给 `validate_semantic`**：编译出的 after 草案由既有门禁做逐键 diff
+  （只认 after 引入的新错误，存量问题不算提案的错）——**单一事实源，不写第二套
+  校验口径**。
+- 结构层提案的 review 报告**带 after 草案**（人审要看编译后的本体长什么样，
+  不是提案原文）。
+
+### W3 结构层裁决合同（`ADJUDICATION_INSTRUCTIONS_STRUCTURAL`）
+- 合同按 mutation_type 分流：非结构层用原合同，结构层用新合同。
+- 判别重点 R1/R2/R3（AI 最常犯的三错）：**为角色建类**（R2 职责不建对象）、
+  **用状态字段糊事件**（R3 事件应建类并声明状态机）、**本该是关系的概念塞成属性**。
+- 另含 R6 属性类型、R7 身份、R8 基数、R9 状态机完备、R10 理由实质。
+
+### R9 状态机完备前置校验
+- statuses 非空则 `state_machine`（initial/terminal）+ `transitions` 必填；
+  每个非终态（非外部态）须有迁出、每个非初态（非外部态）须有迁入
+  （`STATE_MACHINE_SINK`/`STATE_MACHINE_ORPHAN`）；迁移边须带 roles
+  （对齐发布物 `ACTION_ROLES_INVALID`）。
+
+### 文档修正（核实 `docs/MODELING_METHODOLOGY.md` / `docs/AIGEN_ROLLOUT_PLAN.md` 后）
+1. "24 条承重用例" → **32 项语义门禁**（过时数字，三处）。
+2. **两套校验的分工**（新增对照表）：`tools/validate_model.py` 是**起草期自检
+   工具**（原型、无测试、不挂 CI），`freight/semantic.py::validate_semantic`
+   （96 个检查码）才是**权威单一事实源**——同一批约束两处实现，漂移风险已如实
+   写进文档，不把原型当准入闸门引用。
+3. **v3/v4 关系**澄清：`build_ontology_v3.py` 是唯一渲染器；`build_ontology_v4.py`
+   是读 `semantic_layer.json` 再写回的**结构层加工**（限界上下文×聚合×边界链接），
+   不是渲染器、不是入口。
+4. **原型路径修正**：文档引用的 `本体快速建模_原型/` 目录不存在，实际落盘在
+   `tools/`（`validate_model.py` / `roundtrip_candidate.json` /
+   `roundtrip_business_text.md` / `modeling_prompt.md`）。
+5. 两份文档增补 **AI 候选通道**说明与工作流 Step 5.5（候选先进提议通道，不直接
+   进 DSL）。
+
+### 验证
+- 新增承重测试 29 项（`tests/test_proposal_structural.py`）：目录与分级/t3 永不
+  自动合并/编译产物落到正确段/why 四类错/状态机三类不完备/类型冲突/端点未知/
+  基数必填/分组重复/删除仍封闭/结构层合同分流/结构层裁决 veto-keep-retype。
+- 更新 `tests/test_ontology_proposals.py` 两条旧断言（目录 4→7 类、t3 语义变更），
+  按其**原意**改写（删除仍封闭 + 结构层新增全 t3）。
+- 全量 **611 passed / 2 skipped**；语义门禁 **32 项全绿**；lint 干净。
+- 过程记录：门禁抓到本轮一处设计错误——曾把 `statuses` 设计为可选，实际发布物
+  要求每类状态集非空（`CLASS_STATUSES_INVALID`），已改为必填。**单一事实源当场
+  生效**，这正是"编译进 after 草案再由 validate_semantic 判"的价值。
+
+### 未做（诚实记录）
+- **阶段 1 盲测**（`docs/AIGEN_ROLLOUT_PLAN.md` §5 第一件事）：需在 STG 跑独立
+  LLM 盲测（`stg-121` DNS 当前不可达；本地跑脚本违反 AGENTS.md「脚本运行/验收
+  在 STG」），待网络可达后执行。
+- **MCP 工具面**注册 `ontology.propose_mutation`：需本体 functions 段同步声明 +
+  重 build（本体变更本身要走提议通道评审），鸡生蛋问题，从 HTTP 端点起步。
+- `validate_model.py` 与 `validate_semantic` 的规则合并/对齐（文档已如实标注
+  两者分工与漂移风险，未假装统一）。
+
 ## 4.0.3 (2026-11-25) — 本体变异独立裁决者（ontosmith Pass D 增量落地）
 
 三项目增量再评估后落地（用户裁定"按建议执行"）：上轮 4.0.2 只搬了 pin/引用溯源/封闭

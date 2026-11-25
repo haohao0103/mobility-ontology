@@ -24,8 +24,13 @@
   "免内容人审"，**不是**免发布：采纳仍走 build 流程产出新 pin。
 - t1 ``人审``：matrix_add_row（决策表加分支，影响计价分支覆盖）。
 - t2 ``人审 + 灰度``：rule_adjust_param（计费语义变更，最重的爆炸半径）。
-- t3 ``human-only``（删除类/关系/规则）：**不在目录里**。目录封闭即政策——
-  LLM 想提删除会被 ``INVALID_MUTATION`` 拒绝并留档，这是设计而非疏漏。
+- t3 ``人审（结构层新增）``：class_add / relation_add / group_add_type——
+  AI 辅助建模产出的对象类型/关系/分类归属。全部人审 + 结构层裁决合同 +
+  why(R10) 必填；AI 候选**永远不能自动进生产**，采纳仍是人改 build 源重出
+  新 pin。
+- ``删除``类/关系/规则：**不在目录里**。目录封闭即政策——LLM 想提删除会被
+  ``INVALID_MUTATION`` 拒绝并留档，这是设计而非疏漏。（2026-11-25 用户裁定：
+  开口的只是"新增"，删除仍然封闭。）
 
 decline 分析不得蒸发：declined 的提议连同 decline_reason 一起进台账——
 负信息（为什么不改）与正信息（改什么）同等可查。
@@ -44,13 +49,21 @@ from dataclasses import dataclass, field
 from . import change_gate
 from .semantic import SemanticLayer, ontology_pin_digest, validate_semantic
 
+try:  # 建模包复用：类型短码表 / 属性注册条目 / rid 推导 / 展示元数据
+    from ontology import (
+        TYPE_MAP, build_property_type, display_metadata_of, rid_for)
+    ONTOLOGY_PKG_AVAILABLE = True
+except ImportError:  # 运行时不在仓库根：结构层变更不可用，非结构层不受影响
+    ONTOLOGY_PKG_AVAILABLE = False
+
 # ---------------------------------------------------------------------------
 # 封闭变异目录（MUTATION_CATALOG）
 # ---------------------------------------------------------------------------
 # 目录之外的一切 mutation_type 都会被拒绝（INVALID_MUTATION）。
 # 每项声明：tier、语义描述、payload 字段规格。
 # 注意 tier 的赋值原则：只有"非结构层"（术语/别名，不改变类型/规则/计价
-# 结构）才可能是 t0；结构层一律 t1 起步；动计费数字是最重的 t2。
+# 结构）才可能是 t0；结构层一律 t1 起步；动计费数字是最重的 t2；
+# 结构层**新增**（类/关系/分类归属）是 t3（全人审 + why 必填）。
 
 MUTATION_CATALOG: dict[str, dict] = {
     "glossary_add_term": {
@@ -93,6 +106,59 @@ MUTATION_CATALOG: dict[str, dict] = {
             "param": "str 必须是该行 params 里已有的键（收紧/调整，"
                      "不允许新增参数语义）",
             "value": "number >= 0",
+        },
+    },
+    # ---- 结构层（t3）：AI 辅助建模产出的对象类型/关系/分类归属 ----
+    # 用户裁定（2026-11-25）：结构层**新增**开口进目录，但全部 t3 人审——
+    # AI 候选永远不能自动进生产，采纳仍是「人改 build 源重出新 pin」。
+    # 注意与「删除」的区别：删除类/关系/规则仍**不在目录里**（破坏性不可逆，
+    # 永远走人工直接改 build 源）；这里开口的只是"新增"。
+    "class_add": {
+        "tier": "t3",
+        "layer": "structural",
+        "description": "新增对象类型（class）：带 why(R10) 必填，全 t3 人审。",
+        "payload": {
+            "id": "str 类 id（大驼峰），不得与既有 class id 重复",
+            "label": "str 显示名",
+            "key": "str 主键属性名，必须在 properties 里",
+            "description": "str 类描述",
+            "properties": "dict {属性名: 类型短码}，类型短码取 "
+                          "ontology.TYPE_MAP 的 11 种之一（禁止按命名猜）",
+            "group": "str 归属分类组 id（必须是既有 object_type_groups 之一）",
+            "aliases": "list[str] 可选（label 自动进 aliases）",
+            "statuses": "list[str] 必填非空（发布物要求每个类有状态集）",
+            "state_machine": "dict {initial:[], terminal:[], "
+                             "external_states:[]}（必填，R9 状态机完备）",
+            "transitions": "list[dict] {action_id,label,roles[],"
+                           "from_status[],to_status,description}"
+                           "（必填；每个非终态须有迁出、每个非初态须有迁入）",
+            "why": "str R10 必填：'R编号: 理由'（R1–R10，理由 ≥4 字）",
+        },
+    },
+    "relation_add": {
+        "tier": "t3",
+        "layer": "structural",
+        "description": "新增关系（relation）：带 why(R10) 必填，全 t3 人审。",
+        "payload": {
+            "id": "str 关系 id（小写下划线），不得与既有 relation id 重复",
+            "label": "str 显示名",
+            "domain": "str 必须是已声明的 class id",
+            "range": "str 必须是已声明的 class id",
+            "cardinality": "str one_to_one/one_to_many/many_to_one/many_to_many"
+                           "（必须显式，不许默认糊过去）",
+            "temporal": "bool 可选，默认 false",
+            "why": "str R10 必填：'R编号: 理由'（R1–R10，理由 ≥4 字）",
+        },
+    },
+    "group_add_type": {
+        "tier": "t3",
+        "layer": "structural",
+        "description": "把既有类挂到既有分类组（object_type_groups）："
+                       "带 why(R10) 必填，全 t3 人审。",
+        "payload": {
+            "group_id": "str 必须是既有 object_type_groups 的 id",
+            "type_id": "str 必须是已声明的 class id，且不在该组内",
+            "why": "str R10 必填：'R编号: 理由'（R1–R10，理由 ≥4 字）",
         },
     },
 }
@@ -158,6 +224,118 @@ def _error(errors: list[dict], code: str, message: str,
     errors.append({"code": code, "severity": severity, "message": message})
 
 
+# R10：每个建模选择必须带 why，指向 R1–R10 之一，理由足以复查。
+_WHY_RE = re.compile(r"^R(\d{1,2}):\s*(.+)$")
+_VALID_WHY_RULES = set(range(1, 11))
+
+
+def _check_why(payload: dict, errors: list[dict], label: str) -> bool:
+    """R10 校验：why 必填 + 格式 + 规则编号合法 + 理由不短。"""
+    why = payload.get("why")
+    if not isinstance(why, str) or not why.strip():
+        _error(errors, "WHY_MISSING",
+               f"{label} 缺 why（R10：每个建模选择必须可回溯到一条方法论理由）")
+        return False
+    m = _WHY_RE.match(why.strip())
+    if not m:
+        _error(errors, "WHY_FORMAT",
+               f"{label} 的 why 格式非法：{why!r}（应为 'R编号: 理由'）")
+        return False
+    if int(m.group(1)) not in _VALID_WHY_RULES:
+        _error(errors, "WHY_RULE",
+               f"{label} 的 why 指向未知规则 R{m.group(1)}（合法 R1–R10）")
+        return False
+    if len(m.group(2).strip()) < 4:
+        _error(errors, "WHY_TOO_SHORT",
+               f"{label} 的 why 理由过短，不足以复查")
+        return False
+    return True
+
+
+def _property_types_by_name(raw: dict) -> dict:
+    """发布物的属性注册表按名索引（同名属性必须同类型）。"""
+    out: dict = {}
+    for p in raw.get("property_types") or []:
+        if isinstance(p, dict) and p.get("name"):
+            out[p["name"]] = p
+    return out
+
+
+def _groups_by_id(raw: dict) -> dict:
+    """发布物的分类组按 id 索引（object_type_groups）。"""
+    out: dict = {}
+    for g in raw.get("object_type_groups") or []:
+        if isinstance(g, dict) and g.get("id"):
+            out[g["id"]] = g
+    return out
+
+
+def _check_state_machine(payload: dict, statuses: list[str],
+                        errors: list[dict]) -> None:
+    """R9：有状态的对象必须声明状态机完备（初态/终态/迁移边）。
+
+    校验：state_machine 有 initial/terminal；transitions 非空且每条带
+    action_id/roles/from_status/to_status；每个非终态（非外部态）须有迁出、
+    每个非初态（非外部态）须有迁入——否则状态来源说不清。
+    """
+    sm = payload.get("state_machine")
+    if not isinstance(sm, dict) or not sm.get("initial") \
+            or not sm.get("terminal"):
+        _error(errors, "STATE_MACHINE_INCOMPLETE",
+               "statuses 非空时必须声明 state_machine（initial/terminal 非空）")
+        return
+    transitions = payload.get("transitions")
+    if not isinstance(transitions, list) or not transitions:
+        _error(errors, "TRANSITIONS_MISSING",
+               "statuses 非空时必须声明 transitions"
+               "（无迁移动作则状态机是空壳）")
+        return
+    status_set = set(statuses)
+    initial = set(sm.get("initial") or [])
+    terminal = set(sm.get("terminal") or [])
+    external = set(sm.get("external_states") or [])
+    from_set: set[str] = set()
+    to_set: set[str] = set()
+    for t in transitions:
+        if not isinstance(t, dict):
+            _error(errors, "PAYLOAD_TYPE", "transitions 每项必须是对象")
+            continue
+        aid = t.get("action_id")
+        if not isinstance(aid, str) or not aid.strip():
+            _error(errors, "PAYLOAD_TYPE",
+                   "transition.action_id 必须是非空字符串")
+        roles = t.get("roles")
+        if not isinstance(roles, list) or not roles:
+            _error(errors, "PAYLOAD_TYPE",
+                   f"transition {aid} 的 roles 必须是非空列表"
+                   "（动作要有可执行角色）")
+        fs = t.get("from_status")
+        ts = t.get("to_status")
+        if not isinstance(fs, list) or not fs:
+            _error(errors, "PAYLOAD_TYPE",
+                   f"transition {aid} 的 from_status 必须是非空列表")
+            fs = []
+        if not isinstance(ts, str) or not ts.strip():
+            _error(errors, "PAYLOAD_TYPE",
+                   f"transition {aid} 的 to_status 必须是非空字符串")
+            ts = ""
+        for s in list(fs) + ([ts] if ts else []):
+            if s not in status_set:
+                _error(errors, "PAYLOAD_VALUE",
+                       f"transition {aid} 的状态 {s!r} 不在 statuses 内")
+        from_set |= {s for s in fs if isinstance(s, str)}
+        if ts:
+            to_set.add(ts)
+    for s in sorted(status_set - terminal - external):
+        if s not in from_set:
+            _error(errors, "STATE_MACHINE_SINK",
+                   f"状态 {s!r} 没有迁出边，且不是终态/外部态（死胡同）")
+    for s in sorted(status_set - initial - external):
+        if s not in to_set:
+            _error(errors, "STATE_MACHINE_ORPHAN",
+                   f"状态 {s!r} 没有迁入边，且不是初态/外部态（来源说不清）")
+
+
 def _load_target_class(semantic: SemanticLayer, class_id: str):
     cls = semantic.classes.get(class_id)
     return cls
@@ -181,7 +359,8 @@ def validate_proposal(proposal: dict, semantic: SemanticLayer) -> dict:
         _error(errors, "INVALID_MUTATION",
                f"mutation_type={mtype!r} 不在封闭目录内；"
                f"目录成员：{sorted(MUTATION_CATALOG)}。"
-               "删除类/关系/规则（t3）不在目录里，永远走人工直接改 build 源。")
+               "删除类/关系/规则不在目录里（目录只开「新增」不开放「删除」），"
+               "永远走人工直接改 build 源。")
         return {"valid": not errors, "errors": errors,
                 "duplicate": False, "target_exists": False}
 
@@ -338,6 +517,120 @@ def validate_proposal(proposal: dict, semantic: SemanticLayer) -> dict:
                     or value < 0:
                 _error(errors, "PAYLOAD_TYPE", "value 必须是非负数值")
 
+    # ---- 结构层：新增对象类型 / 关系 / 分类归属（t3 人审）----
+    # 前置只查「规格与目标」；发布物级硬约束（引用完整性/属性注册/状态机完备）
+    # 交给 validate_semantic 的 after 草案 diff——单一事实源，不写第二套口径。
+
+    elif mtype == "class_add":
+        cid = payload.get("id")
+        if not isinstance(cid, str) or not cid.strip():
+            _error(errors, "PAYLOAD_TYPE", "id 必须是非空字符串")
+        elif cid in semantic.classes:
+            duplicate = True
+            _error(errors, "PROPOSAL_ALREADY_DECLARED",
+                   f"类 {cid!r} 已存在", severity="declined")
+        label = payload.get("label")
+        if not isinstance(label, str) or not label.strip():
+            _error(errors, "PAYLOAD_TYPE", "label 必须是非空字符串")
+        desc = payload.get("description")
+        if not isinstance(desc, str) or not desc.strip():
+            _error(errors, "PAYLOAD_TYPE", "description 必须是非空字符串")
+        props = payload.get("properties")
+        if not isinstance(props, dict) or not props:
+            _error(errors, "PAYLOAD_TYPE",
+                   "properties 必须是非空对象 {属性名: 类型短码}")
+            props = {}
+        elif not ONTOLOGY_PKG_AVAILABLE:
+            _error(errors, "ONTOLOGY_PKG_MISSING",
+                   "建模包不可用（类型短码表无法加载），结构层变更暂不可校验")
+        else:
+            existing_props = _property_types_by_name(raw)
+            for pname, tcode in props.items():
+                if not isinstance(pname, str) or not pname.strip():
+                    _error(errors, "PAYLOAD_TYPE", "属性名必须是非空字符串")
+                    continue
+                if tcode not in TYPE_MAP:
+                    _error(errors, "PAYLOAD_TYPE",
+                           f"属性 {pname} 的类型短码 {tcode!r} 非法"
+                           f"（合法 {sorted(TYPE_MAP)}；禁止按命名猜类型）")
+                    continue
+                prev = existing_props.get(pname)
+                if prev and prev.get("value_type") != TYPE_MAP[tcode][0]:
+                    _error(errors, "PAYLOAD_VALUE",
+                           f"属性 {pname} 类型冲突：既有注册为 "
+                           f"{prev.get('value_type')!r}，提案为 "
+                           f"{TYPE_MAP[tcode][0]!r}（同名属性必须同类型）")
+        key = payload.get("key")
+        if not isinstance(key, str) or not key.strip():
+            _error(errors, "PAYLOAD_TYPE", "key 必须是非空字符串")
+        elif props and key not in props:
+            _error(errors, "PAYLOAD_VALUE",
+                   f"主键 {key!r} 不在 properties 里（身份必须挂在属性上）")
+        group = payload.get("group")
+        groups = _groups_by_id(raw)
+        if not isinstance(group, str) or group not in groups:
+            _error(errors, "TARGET_UNKNOWN",
+                   f"group={group!r} 不是既有 object_type_groups 之一"
+                   f"（合法 {sorted(groups)[:8]}…）")
+        statuses = payload.get("statuses")
+        if not isinstance(statuses, list) or not statuses or \
+                not all(isinstance(s, str) and s.strip() for s in statuses):
+            _error(errors, "PAYLOAD_MISSING",
+                   "statuses 必须是非空字符串列表"
+                   "（发布物要求每个类有状态集）")
+            statuses = []
+        else:
+            _check_state_machine(payload, statuses, errors)
+        _check_why(payload, errors, "class_add")
+
+    elif mtype == "relation_add":
+        rid = payload.get("id")
+        if not isinstance(rid, str) or not rid.strip():
+            _error(errors, "PAYLOAD_TYPE", "id 必须是非空字符串")
+        else:
+            existing_rels = {r.get("id") for r in raw.get("relations") or []
+                             if isinstance(r, dict)}
+            if rid in existing_rels:
+                duplicate = True
+                _error(errors, "PROPOSAL_ALREADY_DECLARED",
+                       f"关系 {rid!r} 已存在", severity="declined")
+        label = payload.get("label")
+        if not isinstance(label, str) or not label.strip():
+            _error(errors, "PAYLOAD_TYPE", "label 必须是非空字符串")
+        for endpoint in ("domain", "range"):
+            value = payload.get(endpoint)
+            if not isinstance(value, str) or value not in semantic.classes:
+                _error(errors, "TARGET_UNKNOWN",
+                       f"{endpoint}={value!r} 不是已声明的 class id")
+                target_exists = False
+        card = payload.get("cardinality")
+        if card not in ("one_to_one", "one_to_many",
+                        "many_to_one", "many_to_many"):
+            _error(errors, "PAYLOAD_VALUE",
+                   f"cardinality={card!r} 非法或缺失"
+                   "（必须显式声明，不许用默认值糊过去）")
+        temporal = payload.get("temporal", False)
+        if not isinstance(temporal, bool):
+            _error(errors, "PAYLOAD_TYPE", "temporal 必须是布尔值")
+        _check_why(payload, errors, "relation_add")
+
+    elif mtype == "group_add_type":
+        groups = _groups_by_id(raw)
+        gid = payload.get("group_id")
+        tid = payload.get("type_id")
+        if not isinstance(gid, str) or gid not in groups:
+            _error(errors, "TARGET_UNKNOWN",
+                   f"group_id={gid!r} 不是既有 object_type_groups 之一")
+        elif tid in (groups[gid].get("types") or []):
+            duplicate = True
+            _error(errors, "PROPOSAL_ALREADY_DECLARED",
+                   f"{tid!r} 已在组 {gid!r} 内", severity="declined")
+        if not isinstance(tid, str) or tid not in semantic.classes:
+            _error(errors, "TARGET_UNKNOWN",
+                   f"type_id={tid!r} 不是已声明的 class id")
+            target_exists = False
+        _check_why(payload, errors, "group_add_type")
+
     blocking = [e for e in errors if e["severity"] == "error"]
     return {"valid": not blocking and not duplicate,
             "errors": errors, "duplicate": duplicate,
@@ -395,7 +688,127 @@ def apply_to_raw(proposal: dict, raw: dict) -> dict:
                         row.setdefault("params", {})[payload.get("param")] = \
                             payload.get("value")
                         return after
+
+    elif mtype == "class_add":
+        _apply_class_add(after, payload)
+
+    elif mtype == "relation_add":
+        _apply_relation_add(after, payload)
+
+    elif mtype == "group_add_type":
+        for g in after.get("object_type_groups") or []:
+            if isinstance(g, dict) and g.get("id") == payload.get("group_id"):
+                g.setdefault("types", []).append(payload.get("type_id"))
+                break
     return after
+
+
+def _apply_class_add(after: dict, payload: dict) -> None:
+    """把 class_add 提案编译进 after 草案（发布物结构层）。
+
+    编译产出：class 条目 + property_types 注册（含 used_by 合并）+
+    object_type_groups 归属 + state_machines 声明 + actions 迁移。
+    字段形态复用 ontology 包的推导函数（rid / 展示元数据 / 属性注册条目），
+    与 v3 渲染器产出的发布物保持一致——不手搓第二套字段规则。
+    """
+    cid = payload["id"]
+    group = payload.get("group")
+    props = payload.get("properties") or {}
+    statuses = list(payload.get("statuses") or [])
+    label = payload.get("label")
+    version = str(payload.get("version") or "3.0.0")
+    effective_from = str(payload.get("effective_from") or "2026-11-25")
+    cls = {
+        "id": cid,
+        "label": label,
+        "plural_display_name": label,
+        "key": payload.get("key"),
+        "description": payload.get("description"),
+        "aliases": [label, *[a for a in (payload.get("aliases") or [])
+                              if isinstance(a, str) and a.strip()]],
+        "statuses": statuses,
+        "properties": list(props.keys()),
+        "owner": "freight-core",
+        "source": "ai-assisted",
+        "version": version,
+        "iri": f"https://w3id.org/mobility-ontology/freight#{cid}",
+        "effective_from": effective_from,
+        "rid": rid_for("class", cid),
+        "display_metadata": display_metadata_of(group),
+        "labels": [group] if group else [],
+    }
+    after.setdefault("classes", []).append(cls)
+
+    registry = after.setdefault("property_types", [])
+    for pname, tcode in props.items():
+        entry = build_property_type(pname, tcode, cid, version, effective_from)
+        existing = next((p for p in registry
+                         if isinstance(p, dict) and p.get("name") == pname), None)
+        if existing is None:
+            registry.append(entry)
+        elif cid not in (existing.get("used_by") or []):
+            existing.setdefault("used_by", []).append(cid)
+
+    for g in after.get("object_type_groups") or []:
+        if isinstance(g, dict) and g.get("id") == group:
+            g.setdefault("types", []).append(cid)
+            break
+
+    sm = payload.get("state_machine") or {}
+    after.setdefault("state_machines", {})[cid] = {
+        "initial": list(sm.get("initial") or []),
+        "terminal": list(sm.get("terminal") or []),
+        "external_states": list(sm.get("external_states") or []),
+    }
+    for t in payload.get("transitions") or []:
+        after.setdefault("actions", []).append({
+            "id": t.get("action_id"),
+            "label": t.get("label") or t.get("action_id"),
+            "target": cid,
+            "roles": list(t.get("roles") or []),
+            "from_status": list(t.get("from_status") or []),
+            "to_status": t.get("to_status"),
+            "params": [],
+            "description": str(t.get("description") or ""),
+            "owner": "freight-core",
+            "source": "ai-assisted",
+            "version": version,
+            "iri": "https://w3id.org/mobility-ontology/freight/action#"
+                   + str(t.get("action_id")),
+            "effective_from": effective_from,
+        })
+
+
+def _apply_relation_add(after: dict, payload: dict) -> None:
+    """把 relation_add 提案编译进 after 草案（发布物结构层）。
+
+    展示元数据按 domain 类的属域补齐（关系自身没有域声明，与 v3 渲染器
+    attach_link_display 同规则）；boundary 由 v4 的映射脚本计算后写回。
+    """
+    rid = payload["id"]
+    domain = payload.get("domain")
+    group = None
+    for c in after.get("classes") or []:
+        if isinstance(c, dict) and c.get("id") == domain:
+            labels = c.get("labels") or []
+            group = labels[0] if labels else None
+            break
+    after.setdefault("relations", []).append({
+        "id": rid,
+        "label": payload.get("label"),
+        "domain": domain,
+        "range": payload.get("range"),
+        "temporal": bool(payload.get("temporal", False)),
+        "cardinality": payload.get("cardinality"),
+        "owner": "freight-core",
+        "source": "ai-assisted",
+        "version": "3.0.0",
+        "iri": f"https://w3id.org/mobility-ontology/freight#{rid}",
+        "effective_from": "2026-11-25",
+        "rid": rid_for("relation", rid),
+        "display_metadata": display_metadata_of(group),
+        "boundary": False,
+    })
 
 
 # ---------------------------------------------------------------------------
@@ -461,10 +874,62 @@ no explanation, no thinking. Output must start with "{" and end with "}".
 """
 
 
+STRUCTURAL_MUTATIONS = frozenset(
+    {"class_add", "relation_add", "group_add_type"})
+
+ADJUDICATION_INSTRUCTIONS_STRUCTURAL = """\
+你是本体**结构层**裁决者（Pass D）。你裁决的是另一个模型（提议者）提出的结构层\
+本体变更（新增对象类型 / 新增关系 / 分类归属），你没有参与提议。
+
+本体是货运领域语义层，人写、发布钉死（payload_sha256）。结构层变更全部走人审，\
+你的裁决只提供语义判断，不决定采纳。
+
+裁决顺序 keep → retype → veto：
+1. keep —— 提案语义成立：确实是本体该有的对象/关系/归属，表述准确。
+2. retype —— 方向对但表述需修正（描述不准、label 不当、基数需改、类 id 不合惯例）。
+   给出修正后的完整提案；mutation_type 不得改变，retype 出的提案必须仍然合法。
+3. veto —— 最后手段：语义不成立。必须给出 retype_attempt（你能构造的最接近的合法\
+提案）；若完全无法构造，给 {"unconstructible": "<为什么>"}。
+
+结构层裁决子句（按提议类型判）：
+- class_add（clause 1）：
+  · R1 持续性实体：这个对象有独立主键、跨时间稳定、可脱离单次活动存在吗？
+    若它只是"某人当时承担的职责"（R2，如"订单负责人"）→ veto：应建成关系/端点，
+    不建类。
+  · R3 事件：若它描述的是"已发生、要追责的事"（有发生时间+行为人+要回答谁在
+    何时做了什么），用状态字段或普通关系糊过去不够 → veto：应建成事件类并声明
+    状态机与迁移。
+  · R6 属性类型：类型标注是否与业务语义相符（不要按名字猜）；有没有本该是关系
+    的概念被塞成属性。
+  · R7 身份：主键是否真的稳定标识该对象。
+  · R9 状态机：带状态时，状态集与迁移是否覆盖真实业务流（有死胡同或无来源的
+    状态即不成立）。
+  · R10 理由：why 是否真支撑这个选择（套话不算）。
+- relation_add（clause 2）：
+  · R8 基数：基数是否与业务事实相符（不是默认值兜底）；方向是否对（domain→range）。
+  · R1/R2：这条关系是不是在把"职责"当对象来连（若是，先建对象或改用属性）。
+  · R10 理由是否支撑。
+- group_add_type（clause 3）：
+  · 这个类型真的属于该分类组吗（"看起来相关"不算）；一个类型同时属于两个互斥
+    分类组是明确错误 → veto。
+  · R10 理由是否支撑。
+
+Respond with ONLY one JSON object — no markdown, no code fence, no preamble,\
+no explanation, no thinking. Output must start with "{" and end with "}".
+
+{"decision": "keep"|"retype"|"veto",
+ "reason": "<一句话>",
+ "clause": <1-3 或 null>,
+ "final_proposal": <retype 时的完整提案对象；keep/veto 时为 null>,
+ "retype_attempt": <veto 时的 {"mutation_type","payload"} 或 {"unconstructible":"..."}>}
+"""
+
+
 def _adjudication_context(proposal: dict, semantic: SemanticLayer) -> dict:
     """裁决者需要的本体上下文切片（不喂全量本体，只给相关邻域）。"""
     mtype = proposal.get("mutation_type")
     payload = proposal.get("payload") or {}
+    raw = semantic.raw
     ctx: dict = {"mutation_type": mtype, "proposal": proposal}
     if mtype == "glossary_add_term":
         ctx["existing_terms"] = [
@@ -487,14 +952,56 @@ def _adjudication_context(proposal: dict, semantic: SemanticLayer) -> dict:
                 ctx["pricing_entry"] = entry
                 ctx["target_row"] = target_row
                 break
+    elif mtype == "class_add":
+        groups = _groups_by_id(raw)
+        group = groups.get(payload.get("group"))
+        ctx["existing_class_ids"] = sorted(semantic.classes)[:80]
+        ctx["target_group"] = {"id": group.get("id"), "label": group.get("label"),
+                               "types": (group.get("types") or [])[:40]} \
+            if group else None
+        ctx["sibling_classes"] = [
+            {"id": c.get("id"), "label": c.get("label"),
+             "key": c.get("key"), "statuses": c.get("statuses")}
+            for c in semantic.classes.values()
+            if c.get("id") in set(group.get("types") or [])][:12] \
+            if group else []
+    elif mtype == "relation_add":
+        endpoints = {}
+        for cid in (payload.get("domain"), payload.get("range")):
+            cls = semantic.classes.get(cid)
+            if cls:
+                endpoints[cid] = {"label": cls.get("label"),
+                                  "key": cls.get("key"),
+                                  "statuses": cls.get("statuses")}
+        ctx["endpoints"] = endpoints
+        ctx["existing_relations_sample"] = [
+            {"id": r.get("id"), "domain": r.get("domain"),
+             "range": r.get("range"), "cardinality": r.get("cardinality")}
+            for r in (raw.get("relations") or [])[:40]
+            if isinstance(r, dict)]
+    elif mtype == "group_add_type":
+        groups = _groups_by_id(raw)
+        group = groups.get(payload.get("group_id"))
+        ctx["target_group"] = {"id": group.get("id"), "label": group.get("label"),
+                               "types": group.get("types")} if group else None
+        ctx["type_current_groups"] = [
+            gid for gid, g in groups.items()
+            if payload.get("type_id") in (g.get("types") or [])]
     return ctx
 
 
 def build_adjudication_prompt(proposal: dict,
                               semantic: SemanticLayer) -> list[dict]:
-    """裁决 prompt（messages 形态，适配 chat_fn(messages)->str）。"""
+    """裁决 prompt（messages 形态，适配 chat_fn(messages)->str）。
+
+    合同按提议类型分流：非结构层用 ADJUDICATION_INSTRUCTIONS，结构层用
+    ADJUDICATION_INSTRUCTIONS_STRUCTURAL（R1/R2/R3 判别为主）。
+    """
     ctx = _adjudication_context(proposal, semantic)
-    return [{"role": "system", "content": ADJUDICATION_INSTRUCTIONS},
+    mtype = proposal.get("mutation_type")
+    system = ADJUDICATION_INSTRUCTIONS_STRUCTURAL \
+        if mtype in STRUCTURAL_MUTATIONS else ADJUDICATION_INSTRUCTIONS
+    return [{"role": "system", "content": system},
             {"role": "user", "content": json.dumps(ctx, ensure_ascii=False)}]
 
 
@@ -538,7 +1045,7 @@ def _enforce_decision(raw: dict, proposal: dict,
     """
     decision = str(raw.get("decision") or "").strip().lower()
     clause = raw.get("clause")
-    if clause is not None and not (isinstance(clause, int) and 1 <= clause <= 4):
+    if clause is not None and not (isinstance(clause, int) and 1 <= clause <= 6):
         clause = None
     reason = str(raw.get("reason") or "")
 
@@ -676,6 +1183,10 @@ def review_proposal(proposal: dict, semantic: SemanticLayer,
     tier = catalog["tier"]
 
     after = apply_to_raw(proposal, semantic.raw)
+    if mtype in STRUCTURAL_MUTATIONS:
+        # 结构层提案把编译后的草案带出来：人审要看的是「编译后的本体长什么样」，
+        # 不是提案原文。非结构层不带（响应体不需要整份本体副本）。
+        report["after"] = after
 
     # 破坏性分类：复用 change_gate（提案目录本身只放非破坏变异，
     # breaking 非零属防御性后验——目录+门禁双保险）。
@@ -810,8 +1321,11 @@ def catalog_overview() -> dict:
             "payload": spec["payload"],
         } for name, spec in MUTATION_CATALOG.items()},
         "governance": (
-            "目录封闭：t3（删除类/关系/规则）不在目录里，LLM 提删除会被"
-            "INVALID_MUTATION 拒绝并留档。t0=非结构层+门禁全绿（免内容"
-            "人审，采纳仍走 build 重出新 pin）；t1/t2 人审；动计费数字"
-            "最重（t2）。decline 分析必入台账（不蒸发）。"),
+            "目录封闭：删除类/关系/规则不在目录里，LLM 提删除会被"
+            "INVALID_MUTATION 拒绝并留档（目录只开「新增」不开放「删除」）。"
+            "t0=非结构层+门禁全绿（免内容人审，采纳仍走 build 重出新 pin）；"
+            "t1/t2 人审；动计费数字最重（t2）；结构层新增（class_add/"
+            "relation_add/group_add_type）= t3 全人审 + why(R10) 必填 + "
+            "结构层裁决合同，AI 候选永远不能自动进生产。decline 分析必入"
+            "台账（不蒸发）。"),
     }

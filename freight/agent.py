@@ -4013,6 +4013,59 @@ class ReasoningAgent:
     _CITE_RULE_RE = re.compile(r"\b(?:R-[A-Z0-9]{2,}(?:-[A-Z0-9]+)*|F\d{3}|EV-[A-Za-z0-9_-]{2,})\b")
     _CITE_MONEY_RE = re.compile(r"\d+(?:\.\d{1,2})?\s*(?:元|块)|\b\d+\.\d{2}\b")
 
+    def _stuck_clarify_check(self, answer: str) -> dict:
+        """放弃式答案 ↔ 可答性对账（借鉴 auto-ontology clarify + _STUCK_PHRASES）。
+
+        模型给出"无法回答/信息不足"类话术时，对照确定性可答性结果：
+
+        - 可答性 verdict=answer → 模型放弃但本体+事实明明可支撑：check 红
+          （放弃是错误结论，应继续取证而非装死）；
+        - verdict=clarify / refuse → 附上 clarify_questions 把球抛回用户
+          （不硬答、也不让对话死掉），并给 proposal_hints 提示可走术语
+          提案通道补本体缺口。
+
+        纯确定性、不承重：异常静默——澄清建议挂了不能影响结论输出。
+        """
+        from freight.answerability import check_answerable, is_stuck_answer
+        stuck = is_stuck_answer(answer)
+        if not stuck:
+            return {"checked": int(bool(stuck))}
+        try:
+            report = check_answerable(self.system, self.question)
+        except Exception:  # noqa: BLE001
+            return {"checked": 0}  # 增强不承重：挂了不算检查过
+        coverage = report.get("coverage") or {}
+        verdict = coverage.get("verdict", "answer")
+        if verdict == "answer":
+            return {"checked": int(bool(stuck)), "check": {
+                "pass": False,
+                "label": "放弃式答案与可答性对账",
+                "expected": "本体与事实可支撑的问题不应放弃",
+                "actual": ("可答性判定为可答（全部命中），但答案出现放弃式话术——"
+                           "应继续取证而非回答无法确定"),
+            }}
+        questions = coverage.get("clarify_questions") or []
+        facts: list[dict] = []
+        if questions:
+            facts.append({
+                "label": "澄清建议（把问题抛回用户）",
+                "value": "；".join(questions),
+            })
+        hints = coverage.get("proposal_hints") or []
+        if hints:
+            facts.append({
+                "label": "本体缺口 → 术语提案线索",
+                "value": "；".join(
+                    f"「{h.get('term')}」→ {', '.join(h.get('suggested_type_refs') or [])}"
+                    f"（可提交 /agent/ontology-proposal）" for h in hints),
+            })
+        return {"checked": int(bool(stuck)), "check": {
+            "pass": True,
+            "label": "放弃式答案与可答性对账",
+            "expected": "不可答时给出澄清问题，不硬答也不装死",
+            "actual": f"可答性 verdict={verdict}，已附澄清建议",
+        }, "facts": facts}
+
     def _answer_citation_check(self, answer: str, observations: list[dict],
                                analysis: dict | None) -> dict:
         """答案引用溯源：硬引用（对象/证据/规则 ID）必须逐字出现在观察语料。
@@ -4255,6 +4308,15 @@ class ReasoningAgent:
                        if citation["soft_unmatched"] else "")
                 ),
             })
+        # 放弃式答案 ↔ 可答性对账（auto-ontology clarify）：模型说"无法回答"时，
+        # 对照确定性可答性——可答却放弃=红；不可答则附澄清问题把球抛回用户。
+        try:
+            stuck = self._stuck_clarify_check(answer)
+            if stuck.get("checked"):
+                checks.append(stuck["check"])
+                facts.extend(stuck.get("facts") or [])
+        except Exception:  # noqa: BLE001
+            pass  # 确定性增强不承重：澄清建议挂了不影响结论输出
         note = (
             "TBox 只提供类、关系、规则与定价参数；金额、证据、结算状态全部来自 ABox。"
         )

@@ -264,6 +264,55 @@ def agent_declaration_check(body: dict):
         get_system(), body.get("omit_tool"), body.get("omit_type")))
 
 
+@router.get("/ontology/proposal-catalog")
+def ontology_proposal_catalog():
+    """本体变异提议目录总览：封闭目录、分级治理、payload 规格（纯确定性）。"""
+    from freight.proposals import catalog_overview
+    return guard(lambda: catalog_overview())
+
+
+@router.post("/agent/ontology-proposal")
+def agent_ontology_proposal(body: dict):
+    """本体变异提议通道：提交结构化提案 → 后置校验 + 破坏性门禁 +
+    新错误 diff + 分级 → 台账留痕（decline 分析不蒸发）。
+
+    提案不写 semantic_layer.json（发布钉死 fail-closed）：
+    采纳永远 = 人改 build 源重新 build 出新 pin。
+    接受 {"decision": {...LLM 原始输出...}} 或直接 {"mutation_type": ...,
+    "payload": {...}}；{"source": "..."} 记录提议方。
+    """
+    from freight.proposals import (
+        ProposalLedger, normalize_llm_decision, review_proposal)
+    decision = body.get("decision")
+    if decision is None:
+        if body.get("mutation_type"):
+            decision = body
+        else:
+            return {"ok": False, "error": "缺少 decision 或 mutation_type+payload"}
+    source = str(body.get("source") or "external")
+    outcome = normalize_llm_decision(decision)
+
+    def _review_and_record():
+        semantic = get_system().sem
+        if outcome.status != "proposed":
+            record = ProposalLedger().append({
+                "mutation_type": None,
+                "verdict": "DECLINED" if outcome.status == "declined" else "INVALID",
+                "proposal": None,
+                "decline_reason": outcome.decline_reason
+                or f"提议方输出归一化失败：{outcome.analysis}",
+                "validation": None,
+            }, source=source)
+            return {"ok": True, "outcome": {"status": outcome.status,
+                                            "decline_reason": outcome.decline_reason},
+                    "record": record}
+        report = review_proposal(outcome.proposal or {}, semantic)
+        record = ProposalLedger().append(report, source=source)
+        return {"ok": True, "outcome": report, "record": record}
+
+    return guard(_review_and_record)
+
+
 @router.get("/ontology/property-graph-parity")
 def ontology_property_graph_parity():
     """属性图 vs 可执行本体：同题同数据对照实验（六题 + 漏改实验 + 对齐估算）。

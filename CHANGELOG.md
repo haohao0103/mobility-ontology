@@ -1,5 +1,61 @@
 # Changelog
 
+## 4.0.2 (2026-11-25) — 本体变异提议通道 + 澄清层（auto-ontology / ontogeny 调研落地）
+
+三项目调研第二轮（auto-ontology=NVIDIA、ontogeny=apache/hugegraph-ai、OntoSmith 已于
+4.0.1 落地）综合评估后用户裁定"全部落地"，四件：
+
+### P1 本体变异提议通道（`freight/proposals.py`）
+- 借鉴 ontogeny evolve（封闭目录 + 后置校验 + 分级 + decline 不蒸发）与 auto-ontology
+  （LLM 只提术语，结构性断言留给人——目录分层落地）。
+- `MUTATION_CATALOG` 封闭四种：`glossary_add_term` / `class_add_alias`（t0 非结构层，
+  门禁全绿=免内容人审）、`matrix_add_row`（t1 人审）、`rule_adjust_param`（t2 人审+灰度，
+  动计费数字最重）。t3（删除类/关系/规则）**不在目录里**——目录封闭即政策，LLM 提删除
+  被 `INVALID_MUTATION` 拒绝并留档。
+- 后置规则层 `validate_proposal`：提议产生**之后**校验目录/payload/target/值域，
+  从不假设模型输出合法（ontogeny `validate_llm_decision` 的原则）。
+- `review_proposal` 组合门禁：规则校验 → after 草案（深拷贝纯函数）→ `change_gate.review`
+  破坏性分类 → `validate_semantic` 新错误逐键 diff（存量问题不算提案的错）→ 分级 verdict。
+- `ProposeOutcome` + `normalize_llm_decision`：LLM 输出归一 propose/declined/invalid 三态，
+  **decline 分析不得蒸发**（decline_reason 必入台账）。
+- `ProposalLedger`：`runs/ontology_proposals.jsonl`，正信息与负信息同等可查。
+- HTTP 入口：`GET /ontology/proposal-catalog`（目录总览）、`POST /agent/ontology-proposal`
+  （提交提案 → 门禁 → 台账）。
+- **发布钉死不变**：提案绝不写 `semantic_layer.json`（after 是未发布物，pin 保持旧值，
+  直接加载会被 ONTOLOGY_PIN_MISMATCH 拦下）；采纳永远 = 人改 build 源
+  （`tools/build_ontology_v4.py`）重新 build 出新 pin——提案通道绕不过发布。
+
+### P3 覆盖率数值化（`freight/answerability.py`）
+- 借鉴 auto-ontology entity coverage：`check_answerable` 返回新增 `coverage` 块——
+  问句实体候选（滑窗切词，滤语法字噪声）的认领率 score、`verdict` 三档
+  answer/clarify/refuse（不推翻 answerable 布尔；blocking→refuse、score<0.4→clarify）、
+  `clarify_questions`（未认领词抛回用户）、`proposal_hints`（未认领词+子串候选类，
+  直接喂 P1 提案通道——clarify 与提议闭环）。
+
+### P4 放弃式答案对账（`freight/agent.py`）
+- 借鉴 auto-ontology clarify + `_STUCK_PHRASES`：final 步新增 `_stuck_clarify_check`——
+  模型给出"无法回答/信息不足"话术时对照确定性可答性：可答却放弃=check 红（应继续
+  取证）；不可答则附 clarify_questions 把球抛回用户（不硬答也不装死）+ 提案线索。
+  纯确定性不承重（异常静默，增强不得成为新故障源）。
+
+### P2 断言级溯源设计（`docs/assertion-provenance-design.md`，设计记录未实施）
+- 自 ontogeny documents 五表移植的蓝图：断言行/删除语义/来源起源/签名去重/溯源三元组/
+  原始输出不可变——接真实数据源（TMS+文档混合源）时启用；现在动代码是超前建设。
+
+### 验证
+- 新增承重测试 27 项（`tests/test_ontology_proposals.py` 15 +
+  `tests/test_answerability_clarify.py` 12）：目录封闭 / 后置校验 / 分级 / 纯内存 /
+  decline 不蒸发 / ledger 往返 / coverage 三档 / agent 对账红绿。
+- 全量 568 passed / 2 skipped；语义门禁 32 项全绿（含 honesty_scan——本轮 7 处
+  DECORATIVE_CLAIM_FIELD 已按"计算式而非常量"整改）。
+
+### 未做（诚实记录）
+- MCP 工具面注册 `ontology.propose_mutation`：需本体 functions 段同步声明+重 build
+  （本体变更本身要走提议通道评审，鸡生蛋从 HTTP 端点起步）；待下一轮本体发布。
+- 多轮 clarify 对话态（跨轮累积 grounded knowledge）：当前 API 单轮，clarify_questions
+  随响应返回由调用方呈现；多轮会话形态确定后再落。
+- P2 设计的实施（见其文档"启用清单"）。
+
 ## 4.0.1 (2026-11-25) — 本体发布钉死 + 结论引用溯源（借鉴 OntoSmith）
 
 调研 `Dongbumlee/ontosmith`（MIT，2026-10 创建）后落地的两项工程借鉴。它的两个核心机制与

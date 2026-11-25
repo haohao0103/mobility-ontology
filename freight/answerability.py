@@ -51,6 +51,27 @@ _INSTANCE_DEIXIS = ("这单", "本单", "该单", "此单", "这张运单", "这
 _QUESTION_SYNTAX = ("怎么", "如何", "哪些", "是什么", "什么叫", "为什么",
                     "多少", "是否", "能否", "由谁", "谁能", "定义", "规定", "公式")
 
+# ---------------------------------------------------------------------------
+# 澄清层（clarify，借鉴 auto-ontology 的 entity coverage + clarify 循环）
+# ---------------------------------------------------------------------------
+# _STUCK_PHRASES：检测模型"放弃式"话术——答案里出现这些词时，对照
+# 可答性结果判定"该放弃还是该继续取证"（agent final 步使用，纯确定性）。
+_STUCK_PHRASES = ("无法回答", "无法确定", "无法判断", "信息不足",
+                  "没有找到", "查不到", "无法获取", "未找到相关",
+                  "数据不足", "无法验证")
+# 覆盖率低于该阈值的问句即使可答也应先澄清（部分实体未被本体认领，
+# 直接硬答只能覆盖问句的一部分）。
+CLARIFY_COVERAGE_MIN = 0.4
+# 语法字：滑窗切词会产生跨词边界的噪声词（"单的等"），含这些字符的
+# 滑窗词不是实体候选，不进覆盖率的分母（否则噪声拉低分数、误报 clarify）。
+_GRAMMAR_CHARS = set("的了呢吧吗呀啊咋怎啥么或与及并且还在是于对被把给跟就都又也最很太有")
+
+
+def is_stuck_answer(answer: str) -> bool:
+    """答案是否命中"放弃式"话术（纯确定性字符串包含检测）。"""
+    answer = answer or ""
+    return any(p in answer for p in _STUCK_PHRASES)
+
 
 def _declaration_terms(semantic) -> set[str]:
     """「声明型」术语从本体声明派生：规则 / 定价 / 状态机 / 动作 / 业务域
@@ -316,6 +337,74 @@ def _declared_sources(system, fee_types: list[str]) -> dict:
     return {ft: out[ft] for ft in fee_types if ft in out}
 
 
+def _coverage_and_clarify(semantic, question: str, matches: dict) -> dict:
+    """问句实体覆盖率 + 澄清建议（纯确定性，借鉴 auto-ontology entity coverage）。
+
+    口径：问句滑窗切词（已滤停用词）为实体候选；滑窗产生的命中词
+    **子串认领**长候选（"等候"命中认领"等候费"）。覆盖率 = 被认领候选 /
+    全部候选。低于阈值 → 生成 clarify_questions 把未认领词抛回用户，
+    并给出 proposal_hints（未认领词 + 子串候选类）——可直接喂给
+    proposals.glossary_add_term 提案通道，clarify 与提议在此闭环。
+    """
+    terms = [t for t in _terms_of(question)
+             if len(t) >= 2 and not any(c in _GRAMMAR_CHARS for c in t)]
+    hit_terms: set[str] = set()
+    for t in (matches.get("types") or {}).values():
+        hit_terms.update(t)
+    for r in (matches.get("relations") or {}).values():
+        hit_terms.update(r)
+    for f in (matches.get("fee_types") or {}).values():
+        hit_terms.update(f)
+
+    def covered(word: str) -> bool:
+        return any(h in word for h in hit_terms)
+
+    uncovered = [t for t in terms if not covered(t)]
+    score = round((len(terms) - len(uncovered)) / len(terms), 4) if terms else 1.0
+
+    # 澄清候选类：label/alias 与未认领词有子串关系（双向）
+    def candidate_types(word: str, limit: int = 3) -> list[dict]:
+        out = []
+        for cid, cls in semantic.classes.items():
+            names = [cls.get("label")] + list(cls.get("aliases") or [])
+            for name in names:
+                if isinstance(name, str) and name and (name in word or word in name):
+                    out.append({"id": cid, "label": cls.get("label")})
+                    break
+            if len(out) >= limit:
+                break
+        return out
+
+    clarify_questions: list[str] = []
+    proposal_hints: list[dict] = []
+    for word in sorted(uncovered, key=len, reverse=True)[:3]:
+        if len(word) < 2:
+            continue
+        cands = candidate_types(word)
+        if cands:
+            names = " / ".join(f"{c['label']}（{c['id']}）" for c in cands)
+            clarify_questions.append(
+                f"您提到的「{word}」未在本体声明中命中，它是否指：{names}？")
+        else:
+            clarify_questions.append(
+                f"「{word}」在本体里没有声明；如需支持请补充描述，"
+                "或确认它在问句中不是笔误。")
+        proposal_hints.append({
+            "term": word,
+            "suggested_type_refs": [c["id"] for c in cands],
+        })
+
+    return {
+        "score": score,
+        "candidate_terms": terms,
+        "hit_terms": sorted(hit_terms),
+        "uncovered_terms": uncovered,
+        "clarify_questions": clarify_questions,
+        "proposal_hints": proposal_hints,
+        "thresholds": {"clarify_coverage_min": CLARIFY_COVERAGE_MIN},
+    }
+
+
 def check_answerable(system, question: str, terms: list[str] | None = None) -> dict:
     """问句级可答性检查（纯确定性，0 LLM）。"""
     question = (question or "").strip()
@@ -388,6 +477,18 @@ def check_answerable(system, question: str, terms: list[str] | None = None) -> d
 
     blocking = [m for m in missing if m.get("severity") != "info"]
     answerable = not blocking
+
+    # 澄清层：实体覆盖率分档（answer / clarify / refuse，不推翻 answerable 布尔）。
+    # info 级缺口（如类型暂无实例）只展示在 missing 里不压 verdict——
+    # 它是次要信号；分档只由 blocking 与覆盖率决定。
+    coverage = _coverage_and_clarify(system.sem, question, matches)
+    if blocking:
+        coverage["verdict"] = "refuse"
+    elif coverage["score"] < CLARIFY_COVERAGE_MIN:
+        coverage["verdict"] = "clarify"
+    else:
+        coverage["verdict"] = "answer"
+
     return {
         "question": question,
         "answerable": answerable,
@@ -403,6 +504,7 @@ def check_answerable(system, question: str, terms: list[str] | None = None) -> d
         },
         "missing": missing,
         "measure": measure,
+        "coverage": coverage,
         "tiers": ["declaration", "deterministic"],
         "explain": ("问句命中本体：类型 "
                     f"{len(matched_types)} 个 / 费用类型 {len(fee_types)} 个 / "

@@ -10,6 +10,9 @@
 - auto-ontology（NVIDIA）：LLM 只提**术语候选**（glossary/alias 非结构层），
   结构性断言（类/关系/规则的新增删除）永远留给人——提示词边界在这里
   落地为目录分层：非结构层才有 t0 资格。
+- ontosmith（Dongbumlee/ontosmith）Pass D 裁决者：提议者与裁决者分离，
+  裁决合同（针对本目录四类变异的定制子句）+ 确定性不变量（retype 不得
+  换变异类型、veto 必须带 retype_attempt）；裁决不可用降级人审兜底。
 - 本项目自身：发布钉死（``payload_sha256`` pin，fail-closed）。提案**绝不**
   写 ``semantic_layer.json``：产出的是 after 草案 + 门禁结论 + 台账记录。
   采纳后由人修改 build 源（``tools/build_ontology_v4.py``）重新 build 出
@@ -33,6 +36,7 @@ from __future__ import annotations
 import copy
 import json
 import os
+import re
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -112,6 +116,7 @@ class ProposeOutcome:
     proposal: dict | None = None      # status=proposed 时非空
     analysis: str = ""                # 提议方/拒绝方的分析文本
     decline_reason: str = ""          # status=declined 时必填
+    retype_attempt: dict | None = None  # declined 时"最接近的合法提议"（R4）
 
 
 def normalize_llm_decision(raw: object) -> ProposeOutcome:
@@ -133,11 +138,13 @@ def normalize_llm_decision(raw: object) -> ProposeOutcome:
         return ProposeOutcome(status="proposed", proposal=proposal,
                               analysis=str(raw.get("analysis") or ""))
     if raw.get("declined") or raw.get("decline_reason"):
+        retype = raw.get("retype_attempt")
         return ProposeOutcome(
             status="declined",
             analysis=str(raw.get("analysis") or ""),
             decline_reason=str(
-                raw.get("decline_reason") or raw.get("reason") or "未给出理由"))
+                raw.get("decline_reason") or raw.get("reason") or "未给出理由"),
+            retype_attempt=retype if isinstance(retype, dict) else None)
     return ProposeOutcome(status="invalid",
                           analysis="LLM 输出既无 propose 也无 declined")
 
@@ -409,8 +416,227 @@ def _new_issues(before_raw: dict, after_raw: dict) -> list[dict]:
             not in before_keys]
 
 
-def review_proposal(proposal: dict, semantic: SemanticLayer) -> dict:
-    """组合门禁：后置规则层 → after 草案 → 破坏性分类 → 新错误 diff → 分级。
+# ---------------------------------------------------------------------------
+# 独立裁决者（Pass D）：语义裁决层
+# ---------------------------------------------------------------------------
+# 借鉴 ontosmith pipeline/adjudication.py 的"两遍分离"：提议者（Pass C）与
+# 裁决者（Pass D）是两个角色，裁决者没写候选。裁决合同是**针对本目录四类
+# 变异定制**的子句（ontosmith 的 8 条纪律针对开放三元组抽取，不直接适用）。
+# 确定性层只保不变量（retype 不得换变异类型、veto 必须带 retype_attempt），
+# 语义归裁决者、不变量归代码。
+
+ADJUDICATION_INSTRUCTIONS = """\
+你是本体变异裁决者（Pass D）。你裁决的是另一个模型（提议者）提出的本体变更，\
+你没有参与提议。本体是货运领域语义层，人写、发布钉死（payload_sha256）。
+
+裁决顺序 keep → retype → veto：
+1. keep —— 提案语义成立：变异真实反映本体应补的缺口，且表述准确。
+2. retype —— 提案方向对但表述需修正（术语拼写/别名不够标准/数值明显有更合理值），
+   给出修正后的完整提案。retype 出的提案必须**仍然合法**（符合该变异类型的
+   payload 规格），且 mutation_type 不得改变（你不能发明另一种变更）。
+3. veto —— 最后手段：提案语义不成立（虚构术语、不存在的同义关系、无依据的计价
+   参数、与既有本体语义冲突）。veto 必须给出 retype_attempt（你能构造的最接近
+   的合法提案 {"mutation_type": ..., "payload": ...}）；若完全无法构造，给
+   {"unconstructible": "<为什么无法构造>"}。
+
+四类变异的裁决子句：
+- glossary_add_term（clause 1）：术语必须真实存在于货运语料语境（非臆造词）；
+  term 语义必须真的属于 type_ref 指向的类；term 不得是结构性新概念（如"一种新的
+  计费类型"——结构变更不走本通道）。
+- class_add_alias（clause 2）：alias 必须真的是该类的同义/俗称——不是另一个类的
+  名称、不是关系名、不是把类 A 的名称嫁接到类 B。
+- matrix_add_row（clause 3）：新行 conditions 必须真的构成独立分档（不与既有行
+  条件等价、不与之语义重叠到冲突）；params 数值必须有可解释依据。
+- rule_adjust_param（clause 4）：调整后的 value 必须在合理量级内（相对原值不能
+  是数量级荒谬跳动），调整方向要能自圆其说。
+
+只输出一个 JSON 对象，不要多余文本：
+{"decision": "keep"|"retype"|"veto",
+ "reason": "<一句话>",
+ "clause": <1-4 或 null>,
+ "final_proposal": <retype 时的完整提案对象；keep/veto 时为 null>,
+ "retype_attempt": <veto 时的 {"mutation_type","payload"} 或 {"unconstructible":"..."}>}
+"""
+
+
+def _adjudication_context(proposal: dict, semantic: SemanticLayer) -> dict:
+    """裁决者需要的本体上下文切片（不喂全量本体，只给相关邻域）。"""
+    mtype = proposal.get("mutation_type")
+    payload = proposal.get("payload") or {}
+    ctx: dict = {"mutation_type": mtype, "proposal": proposal}
+    if mtype == "glossary_add_term":
+        ctx["existing_terms"] = [
+            g.get("term") for g in semantic.glossary][:50]
+        ctx["target_class"] = semantic.classes.get(payload.get("type_ref"))
+    elif mtype == "class_add_alias":
+        ctx["target_class"] = semantic.classes.get(payload.get("class_id"))
+    elif mtype == "matrix_add_row":
+        ctx["existing_matrix"] = (semantic.raw.get("pricing") or {}).get(
+            payload.get("fee_type"))
+    elif mtype == "rule_adjust_param":
+        for entry in (semantic.raw.get("pricing") or {}).values():
+            if isinstance(entry, dict) and \
+                    entry.get("rule_id") == payload.get("rule_id"):
+                target_row = next(
+                    (r for r in entry.get("matrix") or []
+                     if isinstance(r, dict)
+                     and r.get("id") == payload.get("matrix_row", "default")),
+                    None)
+                ctx["pricing_entry"] = entry
+                ctx["target_row"] = target_row
+                break
+    return ctx
+
+
+def build_adjudication_prompt(proposal: dict,
+                              semantic: SemanticLayer) -> list[dict]:
+    """裁决 prompt（messages 形态，适配 chat_fn(messages)->str）。"""
+    ctx = _adjudication_context(proposal, semantic)
+    return [{"role": "system", "content": ADJUDICATION_INSTRUCTIONS},
+            {"role": "user", "content": json.dumps(ctx, ensure_ascii=False)}]
+
+
+def _extract_adjudication(text: str) -> dict | None:
+    """从裁决者输出提取 JSON 对象（剥围栏 → 全角归一 → 严格 → 宽松找 {}）。"""
+    t = (text or "").strip()
+    t = re.sub(r"^```(?:json)?\s*", "", t)
+    t = re.sub(r"\s*```$", "", t)
+    t = (t.replace("，", ",").replace("：", ":")
+          .replace("“", "\"").replace("”", "\"")
+          .replace("｛", "{").replace("｝", "}"))
+    try:
+        obj = json.loads(t)
+        if isinstance(obj, dict):
+            return obj
+    except json.JSONDecodeError:
+        pass
+    start, end = t.find("{"), t.rfind("}")
+    if start >= 0 and end > start:
+        try:
+            obj = json.loads(t[start:end + 1])
+            if isinstance(obj, dict):
+                return obj
+        except json.JSONDecodeError:
+            pass
+    return None
+
+
+def _unconstructible(message: str) -> dict:
+    return {"unconstructible": message}
+
+
+def _enforce_decision(raw: dict, proposal: dict,
+                      semantic: SemanticLayer) -> dict:
+    """确定性不变量层：裁决者输出过了这里才算数。
+
+    - keep：final_proposal 锁定为原提案（裁决者不能借 keep 改内容）。
+    - retype：final_proposal 必须保持 mutation_type 一致（不能发明变更），
+      且必须重新通过 validate_proposal；不合法 → 降级 veto。
+    - veto：必须带 retype_attempt 或 unconstructible；缺失则补全（程序性无效）。
+    """
+    decision = str(raw.get("decision") or "").strip().lower()
+    clause = raw.get("clause")
+    if clause is not None and not (isinstance(clause, int) and 1 <= clause <= 4):
+        clause = None
+    reason = str(raw.get("reason") or "")
+
+    if decision not in ("keep", "retype", "veto"):
+        return {"decision": "veto", "reason":
+                f"裁决者返回了无法识别的决定 {decision!r}（fail closed）"
+                + (f"：{reason}" if reason else ""),
+                "clause": clause, "final_proposal": None,
+                "retype_attempt": _unconstructible("没有可用的裁决决定"),
+                "enforcement": "unrecognised_decision"}
+
+    if decision == "keep":
+        return {"decision": "keep", "reason": reason, "clause": clause,
+                "final_proposal": proposal, "retype_attempt": None,
+                "enforcement": None}
+
+    if decision == "retype":
+        final = raw.get("final_proposal")
+        if not isinstance(final, dict) or \
+                final.get("mutation_type") != proposal.get("mutation_type"):
+            return {"decision": "veto", "reason":
+                    "retype 必须给出与原变异类型一致的完整提案（不能发明变更）"
+                    + (f"：{reason}" if reason else ""),
+                    "clause": clause, "final_proposal": None,
+                    "retype_attempt": _unconstructible(
+                        "retype 缺 final_proposal 或 mutation_type 不一致"),
+                    "enforcement": "invalid_retype"}
+        check = validate_proposal(final, semantic)
+        if not check["valid"]:
+            return {"decision": "veto", "reason":
+                    "retype 出的提案未通过规则校验："
+                    + "; ".join(f"[{e['code']}] {e['message']}"
+                                for e in check["errors"])
+                    + (f"：{reason}" if reason else ""),
+                    "clause": clause, "final_proposal": None,
+                    "retype_attempt": _unconstructible("retype 出的提案不合法"),
+                    "enforcement": "invalid_retype"}
+        return {"decision": "retype", "reason": reason, "clause": clause,
+                "final_proposal": final, "retype_attempt": None,
+                "enforcement": None}
+
+    # veto
+    attempt = raw.get("retype_attempt")
+    if not isinstance(attempt, dict) or not attempt:
+        return {"decision": "veto", "reason": reason, "clause": clause,
+                "final_proposal": None,
+                "retype_attempt": _unconstructible(
+                    "veto 未带 retype_attempt 记录"),
+                "enforcement": "veto_without_retype_attempt"}
+    return {"decision": "veto", "reason": reason, "clause": clause,
+            "final_proposal": None, "retype_attempt": attempt,
+            "enforcement": None}
+
+
+def _dump_adjudication_failure(text: str, proposal: dict) -> None:
+    """裁决输出解析失败时落 runs/（不入库）：诊断不能靠猜。"""
+    try:
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        path = os.path.join(root, "runs", "adjudication_parse_failures.log")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write("=== %s %s ===\n%s\n" % (
+                time.strftime("%Y-%m-%d %H:%M:%S"),
+                json.dumps(proposal, ensure_ascii=False)[:500],
+                (text or "")[:2000]))
+    except OSError:
+        pass
+
+
+def adjudicate_proposal(proposal: dict, semantic: SemanticLayer,
+                        chat_fn=None) -> dict:
+    """独立裁决者：调 chat_fn 审语义，输出过确定性不变量。
+
+    返回 dict：``adjudicated=False`` 表示没做成裁决（chat_fn 缺 / 异常 /
+    解析失败），调用方应**降级人工兜底**（NEEDS_HUMAN_REVIEW）而非 veto——
+    veto 表达的是"语义不成立"的判断，裁决者挂了没有任何判断，不能冒称否决。
+    """
+    if chat_fn is None:
+        return {"adjudicated": False, "error": "no adjudicator available"}
+    try:
+        text = chat_fn(build_adjudication_prompt(proposal, semantic))
+    except Exception as exc:  # noqa: BLE001
+        return {"adjudicated": False, "error": f"adjudicator call failed: {exc}"}
+    raw = _extract_adjudication(text)
+    if raw is None:
+        _dump_adjudication_failure(text, proposal)
+        return {"adjudicated": False, "error": "adjudicator output unparseable"}
+    enforced = _enforce_decision(raw, proposal, semantic)
+    return {"adjudicated": True, **enforced}
+
+
+def review_proposal(proposal: dict, semantic: SemanticLayer,
+                    chat_fn=None) -> dict:
+    """组合门禁：后置规则层 → after 草案 → 破坏性分类 → 新错误 diff → 分级 →
+    独立裁决（可选）。
+
+    ``chat_fn`` 非空时，在确定性门禁全绿后追加 Pass D 语义裁决：裁决否决 →
+    DECLINED（带 retype_attempt）、retype 且合法 → 以修正提案重走门禁、
+    裁决不可用/非法 → 降级 NEEDS_HUMAN_REVIEW（人审兜底，不冒称否决）。
+    ``chat_fn`` 为 None 时走纯确定性路径（向后兼容）。
 
     返回的 verdict 决定处置：
     - ACCEPTED_FOR_BUILD（t0 + 全绿）：可直接采纳，免内容人审；
@@ -465,6 +691,34 @@ def review_proposal(proposal: dict, semantic: SemanticLayer) -> dict:
 
     report["tier"] = tier
     report["auto_merge_eligible"] = tier == "t0"
+
+    # 独立裁决者（Pass D）：确定性门禁全绿后再审语义。chat_fn 缺省走纯确定性
+    # 路径；裁决不可用/输出非法 → 降级人审兜底（不冒称否决，也不自动采纳）。
+    if chat_fn is not None:
+        adj = adjudicate_proposal(proposal, semantic, chat_fn)
+        report["adjudication"] = adj
+        if adj["adjudicated"]:
+            if adj["decision"] == "veto":
+                report["verdict"] = VERDICT_DECLINED
+                report["decline_reason"] = f"裁决否决：{adj['reason']}"
+                report["retype_attempt"] = adj.get("retype_attempt")
+                return report
+            if adj["decision"] == "retype":
+                # retype 已过确定性校验，用修正提案重走确定性门禁（不递归裁决）
+                sub = review_proposal(adj["final_proposal"], semantic,
+                                      chat_fn=None)
+                sub["adjudication"] = adj
+                sub["adjudicated_retyped"] = True
+                sub["original_proposal"] = proposal
+                return sub
+            # keep：继续用原 proposal 走下面的分级判定
+        else:
+            report["verdict"] = VERDICT_REVIEW
+            report["adoption"] = (
+                "裁决者不可用或输出非法，已降级人审兜底（不自动采纳、"
+                f"也不冒称否决）：{adj.get('error') or '未知原因'}")
+            return report
+
     report["verdict"] = VERDICT_ACCEPTED if tier == "t0" \
         else VERDICT_REVIEW
     report["adoption"] = (
@@ -510,6 +764,8 @@ class ProposalLedger:
             "after_digest": review.get("after_digest"),
             "proposal": review.get("proposal"),
             "decline_reason": review.get("decline_reason"),
+            "retype_attempt": review.get("retype_attempt"),
+            "adjudication": review.get("adjudication"),
             "errors": (review.get("validation") or {}).get("errors"),
             "new_issues": review.get("new_issues"),
         }

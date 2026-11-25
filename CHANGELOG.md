@@ -1,5 +1,53 @@
 # Changelog
 
+## 4.0.3 (2026-11-25) — 本体变异独立裁决者（ontosmith Pass D 增量落地）
+
+三项目增量再评估后落地（用户裁定"按建议执行"）：上轮 4.0.2 只搬了 pin/引用溯源/封闭
+目录/澄清层，本轮深挖 ontosmith `pipeline/adjudication.py` 的**裁决层**与 ontogeny
+domains、auto-ontology mcp 等剩余模块，唯一真空白 = 语义裁决层。
+
+### P5 独立裁决者（Pass D，`freight/proposals.py`）
+- 借鉴 ontosmith 的"两遍分离"：提议者（Pass C）与裁决者（Pass D）是两个角色，裁决者
+  没写候选。确定性门禁全绿后，追加一个独立 LLM 角色审语义。
+- 裁决合同 `ADJUDICATION_INSTRUCTIONS`：**针对本目录四类变异定制的子句**（clause 1~4）
+  ——术语须真实非臆造且真属于 type_ref、别名须真同义非嫁接、矩阵新行须独立分档不冲突、
+  调参须合理量级非荒谬跳动。决策顺序 keep → retype → veto（veto 是最后手段）。
+- 确定性不变量 `_enforce_decision`（语义归裁决者、不变量归代码）：
+  - keep 锁定原提案（裁决者不能借 keep 改内容）；
+  - retype 必须保持 mutation_type 一致（不能发明变更）且重新过 `validate_proposal`，
+    不合法 → 降级 veto（`invalid_retype`）；
+  - veto 必须带 `retype_attempt`（最接近的合法提案），缺失补 `unconstructible`。
+- 裁决不可用 / 输出非法 → **降级人审兜底**（`NEEDS_HUMAN_REVIEW`），不冒称否决、也不
+  自动采纳——veto 表达"语义不成立"的判断，裁决者挂了没有任何判断（较 ontosmith 纯
+  fail-closed 到 veto 更贴合我们有"人审"层的架构）。
+- `review_proposal(proposal, semantic, chat_fn=None)`：`chat_fn` 缺省走纯确定性路径
+  （向后兼容）；retype 合法时以修正提案重走确定性门禁（`adjudicated_retyped`）。
+- 端点接入：`POST /agent/ontology-proposal` 的 `_adjudicator()` 在 LLM 凭据可用时才
+  构造裁决 chat_fn，否则降级纯确定性（网关不可达不阻塞提议通道）。
+
+### P6 veto 强制 retype_attempt（R4）
+- `ProposeOutcome` 新增 `retype_attempt` 字段；`normalize_llm_decision` 解析 declined
+  时的最接近合法提案；`ProposalLedger` 记录 `retype_attempt` + `adjudication`。
+  负信息从"一句理由"升级为"可操作的修正"，与 decline 不蒸发同源。
+
+### 记录在案（未实施，同 P2 断言溯源性质）
+- `docs/replay-and-claim-index-design.md`：ontosmith benchmarks 的 replay 复算
+  （发布数字从原始证据重算、漂移非零退出）+ claim index（每个数字一行 scope/harness/
+  readout）。出现对外发布指标或 fact_store 接真实数据源时启用。
+
+### 不搬（诚实记录）
+- ontosmith 八条裁决纪律原文（针对开放三元组抽取，不适用于我们的封闭目录）——改为
+  四类变异的定制子句。
+- ontosmith 完整晋升门四条件 / queue.py 持久工作队列 / ontogeny ontology.yaml 入口
+  清单式结构 / auto-ontology mcp 服务——分别已覆盖（pin 哲学）、不适用（无批处理
+  队列）、不搬（表达力未超 semantic_layer.json）。
+
+### 验证
+- 新增承重测试 14 项（`tests/test_proposal_adjudication.py`）：裁决 keep/veto（带与
+  不带 retype_attempt）/retype（合法、换类型、非法 payload）/不可用与非法降级人审/
+  无 chat_fn 纯确定性 / unconstructible 补全 / declined retype 归一化 / 台账不蒸发。
+- 全量 582 passed / 2 skipped；语义门禁 32 项全绿。
+
 ## 4.0.2 (2026-11-25) — 本体变异提议通道 + 澄清层（auto-ontology / ontogeny 调研落地）
 
 三项目调研第二轮（auto-ontology=NVIDIA、ontogeny=apache/hugegraph-ai、OntoSmith 已于

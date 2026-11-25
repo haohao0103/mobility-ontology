@@ -283,6 +283,16 @@ def agent_ontology_proposal(body: dict):
     """
     from freight.proposals import (
         ProposalLedger, normalize_llm_decision, review_proposal)
+
+    def _adjudicator():
+        # LLM 可用才裁决；无凭据/不可达则返回 None（降级纯确定性门禁）
+        try:
+            from freight.agent import LLMClient
+            client = LLMClient()
+        except Exception:  # noqa: BLE001
+            return None
+        return lambda messages: client.chat(messages, thinking=False)
+
     decision = body.get("decision")
     if decision is None:
         if body.get("mutation_type"):
@@ -301,12 +311,14 @@ def agent_ontology_proposal(body: dict):
                 "proposal": None,
                 "decline_reason": outcome.decline_reason
                 or f"提议方输出归一化失败：{outcome.analysis}",
+                "retype_attempt": outcome.retype_attempt,
                 "validation": None,
             }, source=source)
             return {"ok": True, "outcome": {"status": outcome.status,
                                             "decline_reason": outcome.decline_reason},
                     "record": record}
-        report = review_proposal(outcome.proposal or {}, semantic)
+        report = review_proposal(outcome.proposal or {}, semantic,
+                                 chat_fn=_adjudicator())
         record = ProposalLedger().append(report, source=source)
         return {"ok": True, "outcome": report, "record": record}
 

@@ -450,7 +450,9 @@ ADJUDICATION_INSTRUCTIONS = """\
 - rule_adjust_param（clause 4）：调整后的 value 必须在合理量级内（相对原值不能
   是数量级荒谬跳动），调整方向要能自圆其说。
 
-只输出一个 JSON 对象，不要多余文本：
+Respond with ONLY one JSON object — no markdown, no code fence, no preamble,
+no explanation, no thinking. Output must start with "{" and end with "}".
+
 {"decision": "keep"|"retype"|"veto",
  "reason": "<一句话>",
  "clause": <1-4 或 null>,
@@ -616,14 +618,24 @@ def adjudicate_proposal(proposal: dict, semantic: SemanticLayer,
     """
     if chat_fn is None:
         return {"adjudicated": False, "error": "no adjudicator available"}
+    messages = build_adjudication_prompt(proposal, semantic)
     try:
-        text = chat_fn(build_adjudication_prompt(proposal, semantic))
+        text = chat_fn(messages)
     except Exception as exc:  # noqa: BLE001
         return {"adjudicated": False, "error": f"adjudicator call failed: {exc}"}
     raw = _extract_adjudication(text)
     if raw is None:
         _dump_adjudication_failure(text, proposal)
-        return {"adjudicated": False, "error": "adjudicator output unparseable"}
+        # MiMo 在 enable_thinking=False 时仍偶发把推理文本输出到 content（非 JSON）。
+        # 裁决是幂等只读判断，unparseable 重试一次；仍失败才降级人审。
+        try:
+            text = chat_fn(messages)
+        except Exception:  # noqa: BLE001
+            return {"adjudicated": False, "error": "adjudicator output unparseable"}
+        raw = _extract_adjudication(text)
+        if raw is None:
+            _dump_adjudication_failure(text, proposal)
+            return {"adjudicated": False, "error": "adjudicator output unparseable"}
     enforced = _enforce_decision(raw, proposal, semantic)
     return {"adjudicated": True, **enforced}
 

@@ -47,6 +47,13 @@ domains、auto-ontology mcp 等剩余模块，唯一真空白 = 语义裁决层�
   不带 retype_attempt）/retype（合法、换类型、非法 payload）/不可用与非法降级人审/
   无 chat_fn 纯确定性 / unconstructible 补全 / declined retype 归一化 / 台账不蒸发。
 - 全量 582 passed / 2 skipped；语义门禁 32 项全绿。
+- 真实裁决 smoke（本地 MiMo 直连）：裁决者 `veto` 了"甩挂→Waybill"——正确识别
+  "甩挂"是运输作业方式而非运单术语（命中 clause 1，附 unconstructible 理由）。
+  这正是纯确定性门禁会放行（term 合法、type_ref 存在、不重复）但语义裁决能拦截
+  的语义错配，证明裁决层价值。
+- 排查并修一个现实问题：MiMo 在 `enable_thinking=False` 时仍偶发把推理文本输出到
+  `content`（非 JSON）→ 裁决 prompt 强约束（ONLY JSON, no thinking）+ unparseable
+  幂等重试一次；仍失败才降级人审。
 
 ## 4.0.2 (2026-11-25) — 本体变异提议通道 + 澄清层（auto-ontology / ontogeny 调研落地）
 

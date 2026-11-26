@@ -1,0 +1,383 @@
+{
+ "stamp": "20261125_201223",
+ "domain": "ontology.domains_02_capacity",
+ "note": "诊断口径，不改已注册判据（类召回≥70% / 字段类型≥85%）；raw 不入库，本文件为可入库的证据摘要",
+ "denominators": {
+  "human_class_count": 98,
+  "stage_a_class_count": 113,
+  "stage_b_class_count": 113,
+  "matched_classes": 25,
+  "declared_state_machine_classes": 14
+ },
+ "parse_fail_files": [],
+ "axiom": {
+  "declaration_rate": 0.56,
+  "initial_in_human_set": 2,
+  "terminal_in_human_set": 3,
+  "initial_hit_rate": 0.1429,
+  "terminal_hit_rate": 0.2143,
+  "initial_equals_first_human_state": 2,
+  "initial_position_hit_rate": 0.1429,
+  "states_exact_match": 0,
+  "states_exact_rate": 0.0,
+  "states_jaccard_mean": 0.1429,
+  "states_jaccard_median": 0.0,
+  "human_state_coverage_mean": 0.2036,
+  "human_state_universe": 57,
+  "llm_state_universe": 46,
+  "universe_jaccard": 0.1075,
+  "other_removed": true,
+  "per_class": [
+   {
+    "human_class": "VehicleProfile",
+    "llm_class": "Vehicle",
+    "human_states": [
+     "ACTIVE",
+     "DRAFT",
+     "RETIRED",
+     "VERIFIED"
+    ],
+    "llm_states": [
+     "IDLE",
+     "IN_SERVICE",
+     "MAINTENANCE",
+     "REGISTERED",
+     "SCRAPPED"
+    ],
+    "initial": "REGISTERED",
+    "terminal": "SCRAPPED",
+    "initial_in_human_set": false,
+    "terminal_in_human_set": false,
+    "initial_equals_first_human_state": false,
+    "states_exact": false,
+    "states_jaccard": 0.0,
+    "human_state_coverage": 0.0
+   },
+   {
+    "human_class": "DriverLicense",
+    "llm_class": "DrivingLicense",
+    "human_states": [
+     "EXPIRED",
+     "EXPIRING",
+     "REVOKED",
+     "VALID"
+    ],
+    "llm_states": [
+     "CANCELLED",
+     "EXPIRED",
+     "REVOKED",
+     "VALID"
+    ],
+    "initial": "VALID",
+    "terminal": "REVOKED",
+    "initial_in_human_set": true,
+    "terminal_in_human_set": true,
+    "initial_equals_first_human_state": true,
+    "states_exact": false,
+    "states_jaccard": 0.6,
+    "human_state_coverage": 0.75
+   },
+   {
+    "human_class": "DriverQualificationCert",
+    "llm_class": "QualificationCert",
+    "human_states": [
+     "EXPIRED",
+     "EXPIRING",
+     "SUSPENDED",
+     "VALID"
+    ],
+    "llm_states": [
+     "CANCELLED",
+     "EXPIRED",
+     "REVOKED",
+     "VALID"
+    ],
+    "initial": "VALID",
+    "terminal": "REVOKED",
+    "initial_in_human_set": true,
+    "terminal_in_human_set": false,
+    "initial_equals_first_human_state": true,
+    "states_exact": false,
+    "states_jaccard": 0.3333,
+    "human_state_coverage": 0.5
+   },
+   {
+    "human_class": "SubcontractDispute",
+    "llm_class": "dispute",
+    "human_states": [
+     "CLOSED",
+     "ESCALATED",
+     "NEGOTIATING",
+     "RAISED",
+     "RESOLVED"
+    ],
+    "llm_states": [
+     "已提出",
+     "已撤回",
+     "已裁决",
+     "待裁决",
+     "沟通中"
+    ],
+    "initial": "已提出",
+    "terminal": "已裁决",
+    "initial_in_human_set": false,
+    "terminal_in_human_set": false,
+    "initial_equals_first_human_state": false,
+    "states_exact": false,
+    "states_jaccard": 0.0,
+    "human_state_coverage": 0.0
+   },
+   {
+    "human_class": "MaintenancePlan",
+    "llm_class": "MaintenancePlan",
+    "human_states": [
+     "DONE",
+     "DUE",
+     "OVERDUE",
+     "PLANNED"
+    ],
+    "llm_states": [
+     "已作废",
+     "已到期",
+     "已完成",
+     "生效中"
+    ],
+    "initial": "生效中",
+    "terminal": "已完成",
+    "initial_in_human_set": false,
+    "terminal_in_human_set": false,
+    "initial_equals_first_human_state": false,
+    "states_exact": false,
+    "states_jaccard": 0.0,
+    "human_state_coverage": 0.0
+   },
+   {
+    "human_class": "MaintenanceItem",
+    "llm_class": "MaintenanceItem",
+    "human_states": [
+     "ACTIVE",
+     "DEPRECATED"
+    ],
+    "llm_states": [
+     "停用",
+     "启用"
+    ],
+    "initial": "启用",
+    "terminal": "停用",
+    "initial_in_human_set": false,
+    "terminal_in_human_set": false,
+    "initial_equals_first_human_state": false,
+    "states_exact": false,
+    "states_jaccard": 0.0,
+    "human_state_coverage": 0.0
+   },
+   {
+    "human_class": "MaintenancePart",
+    "llm_class": "Part",
+    "human_states": [
+     "ACTIVE",
+     "DISCONTINUED"
+    ],
+    "llm_states": [
+     "在库",
+     "已报废",
+     "已装车",
+     "已领用"
+    ],
+    "initial": "在库",
+    "terminal": "已领用",
+    "initial_in_human_set": false,
+    "terminal_in_human_set": false,
+    "initial_equals_first_human_state": false,
+    "states_exact": false,
+    "states_jaccard": 0.0,
+    "human_state_coverage": 0.0
+   },
+   {
+    "human_class": "MaintenanceReminder",
+    "llm_class": "MaintenanceReminder",
+    "human_states": [
+     "ACKNOWLEDGED",
+     "IGNORED",
+     "PENDING",
+     "SENT"
+    ],
+    "llm_states": [
+     "已作废",
+     "已处理",
+     "已提醒",
+     "已生成"
+    ],
+    "initial": "已生成",
+    "terminal": "已提醒",
+    "initial_in_human_set": false,
+    "terminal_in_human_set": false,
+    "initial_equals_first_human_state": false,
+    "states_exact": false,
+    "states_jaccard": 0.0,
+    "human_state_coverage": 0.0
+   },
+   {
+    "human_class": "RepairQuote",
+    "llm_class": "RepairQuotation",
+    "human_states": [
+     "EXPIRED",
+     "RECEIVED",
+     "REJECTED",
+     "SELECTED"
+    ],
+    "llm_states": [
+     "审批中",
+     "已作废",
+     "已同意",
+     "已拒绝",
+     "已过期",
+     "待审批"
+    ],
+    "initial": "待审批",
+    "terminal": "已同意",
+    "initial_in_human_set": false,
+    "terminal_in_human_set": false,
+    "initial_equals_first_human_state": false,
+    "states_exact": false,
+    "states_jaccard": 0.0,
+    "human_state_coverage": 0.0
+   },
+   {
+    "human_class": "BreakdownRecord",
+    "llm_class": "BreakdownRecord",
+    "human_states": [
+     "CLOSED",
+     "REPORTED",
+     "RESCUING",
+     "RESOLVED"
+    ],
+    "llm_states": [
+     "处理中",
+     "已关闭",
+     "已发生",
+     "已解决"
+    ],
+    "initial": "已发生",
+    "terminal": "已解决",
+    "initial_in_human_set": false,
+    "terminal_in_human_set": false,
+    "initial_equals_first_human_state": false,
+    "states_exact": false,
+    "states_jaccard": 0.0,
+    "human_state_coverage": 0.0
+   },
+   {
+    "human_class": "VehicleAnnualReview",
+    "llm_class": "AnnualInspection",
+    "human_states": [
+     "FAILED",
+     "PASSED",
+     "RECTIFYING",
+     "SUBMITTED"
+    ],
+    "llm_states": [
+     "不合格",
+     "办理中",
+     "合格",
+     "待办理"
+    ],
+    "initial": "待办理",
+    "terminal": "合格",
+    "initial_in_human_set": false,
+    "terminal_in_human_set": false,
+    "initial_equals_first_human_state": false,
+    "states_exact": false,
+    "states_jaccard": 0.0,
+    "human_state_coverage": 0.0
+   },
+   {
+    "human_class": "FuelCard",
+    "llm_class": "FuelCard",
+    "human_states": [
+     "ACTIVE",
+     "CANCELLED",
+     "FROZEN",
+     "ISSUED",
+     "LOST"
+    ],
+    "llm_states": [
+     "ACTIVE",
+     "CANCELLED",
+     "CREATED",
+     "FROZEN"
+    ],
+    "initial": "CREATED",
+    "terminal": "CANCELLED",
+    "initial_in_human_set": false,
+    "terminal_in_human_set": true,
+    "initial_equals_first_human_state": false,
+    "states_exact": false,
+    "states_jaccard": 0.5,
+    "human_state_coverage": 0.6
+   },
+   {
+    "human_class": "FuelStation",
+    "llm_class": "GasStation",
+    "human_states": [
+     "ACTIVE",
+     "SUSPENDED",
+     "TERMINATED"
+    ],
+    "llm_states": [
+     "CLOSED",
+     "OPERATING",
+     "REGISTERED",
+     "SUSPENDED"
+    ],
+    "initial": "REGISTERED",
+    "terminal": "CLOSED",
+    "initial_in_human_set": false,
+    "terminal_in_human_set": false,
+    "initial_equals_first_human_state": false,
+    "states_exact": false,
+    "states_jaccard": 0.1667,
+    "human_state_coverage": 0.3333
+   },
+   {
+    "human_class": "ChargingStation",
+    "llm_class": "ChargingStation",
+    "human_states": [
+     "ACTIVE",
+     "CLOSED",
+     "MAINTENANCE"
+    ],
+    "llm_states": [
+     "CLOSED",
+     "MAINTENANCE",
+     "OPERATING",
+     "REGISTERED"
+    ],
+    "initial": "REGISTERED",
+    "terminal": "CLOSED",
+    "initial_in_human_set": false,
+    "terminal_in_human_set": true,
+    "initial_equals_first_human_state": false,
+    "states_exact": false,
+    "states_jaccard": 0.4,
+    "human_state_coverage": 0.6667
+   }
+  ]
+ },
+ "hierarchy": {
+  "stage_a_class_count": 113,
+  "stage_a_with_group": 0,
+  "group_field_rate": 0.0,
+  "matched_group_comparable": 0,
+  "matched_group_hit": 0,
+  "human_groups": [
+   "carrier_domain",
+   "driver_domain",
+   "fuel_domain",
+   "maintenance_domain",
+   "subcontract_domain",
+   "vehicle_domain"
+  ],
+  "verdict": "Stage A 模板未要求 group ⇒ 本轮不可测层级归属，需重跑 Stage A"
+ }
+}

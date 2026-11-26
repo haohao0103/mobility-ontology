@@ -1,0 +1,533 @@
+{
+ "stamp": "20261126_100331",
+ "human_class_count": 98,
+ "llm_class_count": 117,
+ "exact_matched": 33,
+ "exact_recall": 0.3367,
+ "semantic_threshold": 0.25,
+ "semantic_matched": 52,
+ "semantic_coverage": 0.5306,
+ "note": "诊断口径（不改判据）：主口径仍是精确名匹配；此处只回答「未匹配的那些类，是不是其实被模型用别的名字说了」。",
+ "pairs": [
+  {
+   "human_id": "VehicleInsurancePolicy",
+   "human_label": "车辆保险单",
+   "best_llm_id": "InsurancePolicy",
+   "best_llm_label": "车辆保险保单",
+   "similarity": 0.4773,
+   "semantic_match": true
+  },
+  {
+   "human_id": "DriverBankAccount",
+   "human_label": "司机收款账户",
+   "best_llm_id": "BankAccount",
+   "best_llm_label": "收款账户",
+   "similarity": 0.4364,
+   "semantic_match": true
+  },
+  {
+   "human_id": "FuelStation",
+   "human_label": "加油站",
+   "best_llm_id": "GasStation",
+   "best_llm_label": "合作加油站",
+   "similarity": 0.4318,
+   "semantic_match": true
+  },
+  {
+   "human_id": "CarrierBankAccount",
+   "human_label": "承运商收款账户",
+   "best_llm_id": "BankAccount",
+   "best_llm_label": "收款账户",
+   "similarity": 0.4,
+   "semantic_match": true
+  },
+  {
+   "human_id": "VehicleDimension",
+   "human_label": "车厢尺寸",
+   "best_llm_id": "VehicleCompartment",
+   "best_llm_label": "车厢规格",
+   "similarity": 0.3778,
+   "semantic_match": true
+  },
+  {
+   "human_id": "VehicleAnnualReview",
+   "human_label": "车辆年审",
+   "best_llm_id": "VehicleAnnualInspection",
+   "best_llm_label": "车辆年审记录",
+   "similarity": 0.3769,
+   "semantic_match": true
+  },
+  {
+   "human_id": "VehicleTelematics",
+   "human_label": "车联网数据",
+   "best_llm_id": "TelematicsSnapshot",
+   "best_llm_label": "车联网数据快照",
+   "similarity": 0.3667,
+   "semantic_match": true
+  },
+  {
+   "human_id": "CarbonFootprint",
+   "human_label": "碳足迹",
+   "best_llm_id": "WaybillCarbonFootprint",
+   "best_llm_label": "运单碳足迹",
+   "similarity": 0.3333,
+   "semantic_match": true
+  },
+  {
+   "human_id": "DriverTeam",
+   "human_label": "司机班组",
+   "best_llm_id": "Team",
+   "best_llm_label": "班组",
+   "similarity": 0.2917,
+   "semantic_match": true
+  },
+  {
+   "human_id": "TireRecord",
+   "human_label": "轮胎台账",
+   "best_llm_id": "Tire",
+   "best_llm_label": "轮胎",
+   "similarity": 0.2917,
+   "semantic_match": true
+  },
+  {
+   "human_id": "CarrierProfile",
+   "human_label": "承运商档案",
+   "best_llm_id": "Carrier",
+   "best_llm_label": "承运商",
+   "similarity": 0.2857,
+   "semantic_match": true
+  },
+  {
+   "human_id": "CarrierOnboarding",
+   "human_label": "承运商准入",
+   "best_llm_id": "Carrier",
+   "best_llm_label": "承运商",
+   "similarity": 0.2857,
+   "semantic_match": true
+  },
+  {
+   "human_id": "CarrierAudit",
+   "human_label": "承运商审核",
+   "best_llm_id": "Carrier",
+   "best_llm_label": "承运商",
+   "similarity": 0.2857,
+   "semantic_match": true
+  },
+  {
+   "human_id": "CarrierEvaluation",
+   "human_label": "承运商考核",
+   "best_llm_id": "Carrier",
+   "best_llm_label": "承运商",
+   "similarity": 0.2833,
+   "semantic_match": true
+  },
+  {
+   "human_id": "CarrierContract",
+   "human_label": "承运商合同",
+   "best_llm_id": "Carrier",
+   "best_llm_label": "承运商",
+   "similarity": 0.2833,
+   "semantic_match": true
+  },
+  {
+   "human_id": "CarrierCapacity",
+   "human_label": "承运商运力",
+   "best_llm_id": "Carrier",
+   "best_llm_label": "承运商",
+   "similarity": 0.2833,
+   "semantic_match": true
+  },
+  {
+   "human_id": "CarrierSettlementRule",
+   "human_label": "承运商结算规则",
+   "best_llm_id": "SettlementRule",
+   "best_llm_label": "结算规则",
+   "similarity": 0.2833,
+   "semantic_match": true
+  },
+  {
+   "human_id": "CarrierPenalty",
+   "human_label": "承运商处罚",
+   "best_llm_id": "Carrier",
+   "best_llm_label": "承运商",
+   "similarity": 0.2833,
+   "semantic_match": true
+  },
+  {
+   "human_id": "DriverBlacklist",
+   "human_label": "司机黑名单",
+   "best_llm_id": "BlacklistRecord",
+   "best_llm_label": "黑名单记录",
+   "similarity": 0.2821,
+   "semantic_match": true
+  },
+  {
+   "human_id": "CarrierBlacklist",
+   "human_label": "承运商黑名单",
+   "best_llm_id": "Carrier",
+   "best_llm_label": "承运商",
+   "similarity": 0.2385,
+   "semantic_match": false
+  },
+  {
+   "human_id": "VehicleInspection",
+   "human_label": "车辆年检",
+   "best_llm_id": "VehicleAnnualInspection",
+   "best_llm_label": "车辆年审记录",
+   "similarity": 0.2381,
+   "semantic_match": false
+  },
+  {
+   "human_id": "DriverShift",
+   "human_label": "司机排班",
+   "best_llm_id": "ShiftAssignment",
+   "best_llm_label": "排班安排",
+   "similarity": 0.2364,
+   "semantic_match": false
+  },
+  {
+   "human_id": "DriverReward",
+   "human_label": "司机奖励",
+   "best_llm_id": "Reward",
+   "best_llm_label": "奖励记录",
+   "similarity": 0.2364,
+   "semantic_match": false
+  },
+  {
+   "human_id": "CarrierPriceList",
+   "human_label": "承运商价格表",
+   "best_llm_id": "Carrier",
+   "best_llm_label": "承运商",
+   "similarity": 0.2333,
+   "semantic_match": false
+  },
+  {
+   "human_id": "SubcontractInvoice",
+   "human_label": "分包发票",
+   "best_llm_id": "Invoice",
+   "best_llm_label": "发票",
+   "similarity": 0.2292,
+   "semantic_match": false
+  },
+  {
+   "human_id": "DriverViolation",
+   "human_label": "司机违章",
+   "best_llm_id": "Violation",
+   "best_llm_label": "交通违章",
+   "similarity": 0.2154,
+   "semantic_match": false
+  },
+  {
+   "human_id": "RoadRescue",
+   "human_label": "道路救援",
+   "best_llm_id": "RescueRecord",
+   "best_llm_label": "救援记录",
+   "similarity": 0.2071,
+   "semantic_match": false
+  },
+  {
+   "human_id": "VehicleComplianceCheck",
+   "human_label": "车辆合规校验",
+   "best_llm_id": "ComplianceInspection",
+   "best_llm_label": "合规检查记录",
+   "similarity": 0.2056,
+   "semantic_match": false
+  },
+  {
+   "human_id": "CarrierServiceArea",
+   "human_label": "承运商服务范围",
+   "best_llm_id": "Carrier",
+   "best_llm_label": "承运商",
+   "similarity": 0.2051,
+   "semantic_match": false
+  },
+  {
+   "human_id": "DriverAttendance",
+   "human_label": "司机考勤",
+   "best_llm_id": "Driver",
+   "best_llm_label": "司机",
+   "similarity": 0.2,
+   "semantic_match": false
+  },
+  {
+   "human_id": "DriverTraining",
+   "human_label": "司机培训",
+   "best_llm_id": "Driver",
+   "best_llm_label": "司机",
+   "similarity": 0.2,
+   "semantic_match": false
+  },
+  {
+   "human_id": "DriverContract",
+   "human_label": "司机协议",
+   "best_llm_id": "Driver",
+   "best_llm_label": "司机",
+   "similarity": 0.2,
+   "semantic_match": false
+  },
+  {
+   "human_id": "VehicleRestriction",
+   "human_label": "车辆限行",
+   "best_llm_id": "Vehicle",
+   "best_llm_label": "车辆",
+   "similarity": 0.1979,
+   "semantic_match": false
+  },
+  {
+   "human_id": "DriverProfile",
+   "human_label": "司机档案",
+   "best_llm_id": "Driver",
+   "best_llm_label": "司机",
+   "similarity": 0.1979,
+   "semantic_match": false
+  },
+  {
+   "human_id": "DriverPerformance",
+   "human_label": "司机绩效",
+   "best_llm_id": "Driver",
+   "best_llm_label": "司机",
+   "similarity": 0.1979,
+   "semantic_match": false
+  },
+  {
+   "human_id": "RepairPartsUsage",
+   "human_label": "配件领用",
+   "best_llm_id": "Part",
+   "best_llm_label": "配件",
+   "similarity": 0.1979,
+   "semantic_match": false
+  },
+  {
+   "human_id": "VehicleDeviceBinding",
+   "human_label": "车辆设备绑定",
+   "best_llm_id": "Device",
+   "best_llm_label": "车载设备",
+   "similarity": 0.1964,
+   "semantic_match": false
+  },
+  {
+   "human_id": "VehicleOwnership",
+   "human_label": "车辆归属",
+   "best_llm_id": "Vehicle",
+   "best_llm_label": "车辆",
+   "similarity": 0.1961,
+   "semantic_match": false
+  },
+  {
+   "human_id": "SubcontractSettlement",
+   "human_label": "分包结算",
+   "best_llm_id": "Settlement",
+   "best_llm_label": "结算单",
+   "similarity": 0.1875,
+   "semantic_match": false
+  },
+  {
+   "human_id": "SubcontractTemplate",
+   "human_label": "分包模板",
+   "best_llm_id": "ContractTemplate",
+   "best_llm_label": "合同模板",
+   "similarity": 0.1833,
+   "semantic_match": false
+  },
+  {
+   "human_id": "CarrierQualification",
+   "human_label": "承运资质",
+   "best_llm_id": "QualificationCert",
+   "best_llm_label": "资质证书",
+   "similarity": 0.1769,
+   "semantic_match": false
+  },
+  {
+   "human_id": "DriverAvailability",
+   "human_label": "司机可用性",
+   "best_llm_id": "DriverRoutePreference",
+   "best_llm_label": "司机路线偏好",
+   "similarity": 0.1736,
+   "semantic_match": false
+  },
+  {
+   "human_id": "EmissionRecord",
+   "human_label": "排放记录",
+   "best_llm_id": "AnnualInspection",
+   "best_llm_label": "年检记录",
+   "similarity": 0.1714,
+   "semantic_match": false
+  },
+  {
+   "human_id": "MaintenanceOrder",
+   "human_label": "维保工单",
+   "best_llm_id": "MaintenanceWorkOrder",
+   "best_llm_label": "保养工单",
+   "similarity": 0.1667,
+   "semantic_match": false
+  },
+  {
+   "human_id": "SubcontractAllocation",
+   "human_label": "费用分摊",
+   "best_llm_id": "CostAllocation",
+   "best_llm_label": "成本分摊记录",
+   "similarity": 0.1623,
+   "semantic_match": false
+  },
+  {
+   "human_id": "MaintenanceSupplier",
+   "human_label": "维修商",
+   "best_llm_id": "RepairQuote",
+   "best_llm_label": "维修报价",
+   "similarity": 0.1583,
+   "semantic_match": false
+  },
+  {
+   "human_id": "SubcontractConfirmation",
+   "human_label": "分包确认",
+   "best_llm_id": "OrderAcceptance",
+   "best_llm_label": "接单确认",
+   "similarity": 0.1455,
+   "semantic_match": false
+  },
+  {
+   "human_id": "TireChange",
+   "human_label": "换胎记录",
+   "best_llm_id": "TireMountRecord",
+   "best_llm_label": "轮胎安装记录",
+   "similarity": 0.1429,
+   "semantic_match": false
+  },
+  {
+   "human_id": "SubcontractDocument",
+   "human_label": "分包单据",
+   "best_llm_id": "PaperDocument",
+   "best_llm_label": "纸面单据",
+   "similarity": 0.1417,
+   "semantic_match": false
+  },
+  {
+   "human_id": "DriverCheckin",
+   "human_label": "出车签到",
+   "best_llm_id": "StopArrivalSign",
+   "best_llm_label": "到站签到",
+   "similarity": 0.1385,
+   "semantic_match": false
+  },
+  {
+   "human_id": "CarrierSuspension",
+   "human_label": "暂停合作",
+   "best_llm_id": "CooperationContract",
+   "best_llm_label": "合作合同",
+   "similarity": 0.1385,
+   "semantic_match": false
+  },
+  {
+   "human_id": "SubcontractAdjustment",
+   "human_label": "分包调整",
+   "best_llm_id": "SubcontractApproval",
+   "best_llm_label": "分包审批",
+   "similarity": 0.1385,
+   "semantic_match": false
+  },
+  {
+   "human_id": "CarrierLiabilityInsurance",
+   "human_label": "承运人责任险",
+   "best_llm_id": "InsurancePolicy",
+   "best_llm_label": "车辆保险保单",
+   "similarity": 0.1364,
+   "semantic_match": false
+  },
+  {
+   "human_id": "SubcontractPerformance",
+   "human_label": "分包履约",
+   "best_llm_id": "PerformanceRecord",
+   "best_llm_label": "履约记录",
+   "similarity": 0.1357,
+   "semantic_match": false
+  },
+  {
+   "human_id": "FuelAnomaly",
+   "human_label": "加油异常",
+   "best_llm_id": "FuelAnomalyAlert",
+   "best_llm_label": "油耗异常告警",
+   "similarity": 0.1339,
+   "semantic_match": false
+  },
+  {
+   "human_id": "DriverHealthCheck",
+   "human_label": "司机健康检查",
+   "best_llm_id": "Driver",
+   "best_llm_label": "司机",
+   "similarity": 0.1333,
+   "semantic_match": false
+  },
+  {
+   "human_id": "MaintenanceRecord",
+   "human_label": "维保记录",
+   "best_llm_id": "BreakdownRecord",
+   "best_llm_label": "故障记录",
+   "similarity": 0.1313,
+   "semantic_match": false
+  },
+  {
+   "human_id": "VehicleMileageLog",
+   "human_label": "车辆里程台账",
+   "best_llm_id": "Vehicle",
+   "best_llm_label": "车辆",
+   "similarity": 0.1294,
+   "semantic_match": false
+  },
+  {
+   "human_id": "FuelConsumption",
+   "human_label": "油耗",
+   "best_llm_id": "FuelConsumptionRate",
+   "best_llm_label": "车辆百公里油耗指标",
+   "similarity": 0.1292,
+   "semantic_match": false
+  },
+  {
+   "human_id": "VehicleSubstitute",
+   "human_label": "替车记录",
+   "best_llm_id": "PriceAdjustment",
+   "best_llm_label": "调价记录",
+   "similarity": 0.1263,
+   "semantic_match": false
+  },
+  {
+   "human_id": "SubcontractMargin",
+   "human_label": "分包毛利",
+   "best_llm_id": "SubcontractSegment",
+   "best_llm_label": "分包段",
+   "similarity": 0.125,
+   "semantic_match": false
+  },
+  {
+   "human_id": "SubcontractTax",
+   "human_label": "分包税务",
+   "best_llm_id": "SubcontractSegment",
+   "best_llm_label": "分包段",
+   "similarity": 0.125,
+   "semantic_match": false
+  },
+  {
+   "human_id": "EnergyCost",
+   "human_label": "能源成本",
+   "best_llm_id": "CostAllocation",
+   "best_llm_label": "成本分摊记录",
+   "similarity": 0.1099,
+   "semantic_match": false
+  },
+  {
+   "human_id": "VehicleLicense",
+   "human_label": "道路运输证",
+   "best_llm_id": "VehicleRegistration",
+   "best_llm_label": "车辆登记记录",
+   "similarity": 0.0833,
+   "semantic_match": false
+  },
+  {
+   "human_id": "MaintenanceWarranty",
+   "human_label": "维保质保",
+   "best_llm_id": "WarrantyPeriod",
+   "best_llm_label": "厂家保修期",
+   "similarity": 0.0417,
+   "semantic_match": false
+  }
+ ]
+}

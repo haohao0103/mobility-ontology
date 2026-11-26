@@ -101,8 +101,14 @@ R10 每个 class/relation/enum 都要有 why："R编号: 具体到业务事实�
 ```
 请把下面这段业务描述转成候选本体模型 JSON，严格遵守 R1–R10。
 
-【本轮范围】只输出 classes[]，每个类只要 id / label / key / description / why；
+【本轮范围】只输出 classes[]，每个类只要 id / label / key / description / why / group；
 **不要输出 properties / property_types / state_machine / relations / enums**。
+
+【group 怎么给（业务板块分组）】
+- group = 该对象类型所属的**业务板块**（如车辆、司机、承运商这类板块）。**组名你自己起**，
+  中文或英文都行，**不需要与任何外部命名对齐**。
+- **同一业务板块的类必须给完全相同的 group 字符串**；不同板块必须给不同的 group。
+- 板块数量控制在 3~8 个：不要一个类自成一组，也不要把所有类塞进同一个组。
 
 【业务方描述】
 <粘贴业务方原话>

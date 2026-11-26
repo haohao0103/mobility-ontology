@@ -198,6 +198,22 @@
 `tools/modeling_prompt.md` → 候选 → `tools/candidate_to_proposals.py` → 提议通道 →
 人工确认 why → DSL，记录人工修改率——**这才是 AI 辅助建模的正确用法**。）
 
+### 5.1 外部项目借鉴来的三个可补门禁项（2026-11-26 核查 `OntologyAutoGen_HW` 得出，**待确认才动**）
+
+证据与分级见台账 `docs/upstream-ontology-projects-review.md` §7。三项都是**我方目前没有**的
+确定性检查，且都不需要 LLM：
+
+| # | 补什么 | 外部出处 | 我方落点 |
+|---|---|---|---|
+| G1 | **公理 domain/range 与关系定义的一致性交叉校验**（公理说 A 的 domain 是 X、关系定义说 Y ⇒ 报冲突） | `stage5_axiom/consistency_checker.py:136-160` | `validate_semantic` 新增一类 diff 规则（外部实现只告警，**我方须 fail-closed**） |
+| G2 | **规则/迁移链环检测**（规则 A 依赖 B、B 又依赖 A；状态机 A→B→A） | `stage3_taxonomy/cycle_detector.py`（DFS + 删最低置信度边） | `state_machines` 迁移图加环检测；`rules` 间加依赖环检测 |
+| G3 | **盲测加一个负向指标**（未被人工基线/本体支撑的术语占比 = 幻觉率） | `README.md:497-506`（accuracy/completeness/**hallucination**） | 我方现有指标全是"越高越好"的覆盖类，**缺"越低越好"的扣分项** ⇒ 下一轮盲测注册时加 |
+
+★ 另有一条形态借鉴（不是门禁）：外部那套流水线**每项功能都配一条无 LLM 兜底路径**
+（README「降级模式」表 14 行）⇒ 我方 STG 有出网依赖，值得照此形态为关键环节准备确定性兜底
+（如层级归纳的 Hearst 式模式匹配、候选合并的精确名/编辑距离两级）。
+
+
 ---
 
 ## 6. 结论

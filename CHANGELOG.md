@@ -1,5 +1,58 @@
 # Changelog
 
+## 4.0.8 (2026-11-26) — 核查 OntologyAutoGen_HW：六项可借鉴零件 + 七项明确不搬
+
+用户 fork 的七阶段本体自动生成流水线（`haohao0103/OntologyAutoGen_HW`，207 文件），
+两路只读探查 + 关键文件精读，结论落台账 §7。
+
+### 结论（先给结论）
+**它没有解决我方的层级缺口**：全仓 grep "主体域/业务域" 零命中；`layer_classifier` 的
+data/logic/application 是**技术分层轴**，与我方"业务主体域维度"正交；它同样没有"维度选择"机制
+⇒ 不可指望它补我方第 2 轮暴露的层级弱项，**我方第 2 轮结论不受影响**。
+
+### A 级可直接借鉴（6 项，均不需要 LLM）
+1. **"过细 → 合并"确定性三规则**（实例数 <3 / 未被查询日志提及且 confidence<0.6 / 短名且是别名
+   → 降级为属性值）`stage2_concept/granularity_decider.py:81-113`
+   ⇒ ★ 方向与我方第 2 轮问题（拆得过细）正好对上；但它**只有单向**，且父概念来自配置别名表
+   （`pipeline.py:346-358`），另有三个实现 bug 须避开（RDB 的 instance_count 恒 0 等）。
+2. **一致性检查 6 项启发式** `stage5_axiom/consistency_checker.py:1-10`
+   ⇒ 其中**两项我方也没有**：公理 domain/range 与关系定义的一致性交叉校验、规则链环检测。
+3. **分类组成环检测 + 自动断环**（DFS + 删最低置信度边）`stage3_taxonomy/cycle_detector.py`
+   ⇒ 我方状态机**迁移成环（A→B→A）从未查过**，可直接补。
+4. **Hearst 模式**（不依赖 LLM 的分类归纳）`stage3_taxonomy/hearst_pattern.py`
+   ⇒ LLM 不可用时的确定性兜底（我方 STG 有出网依赖）。
+5. **三条件对比评测 + 负向指标**（裸 LLM / LLM+本体 / 符号推理；accuracy/completeness/**hallucination**）
+   `README.md:488-516` ⇒ 我方盲测指标全是"越高越好"的覆盖类，**缺"越低越好"的扣分项**。
+6. **概念合并四级降级链**（精确 → 编辑距离 → 语义嵌入 → LLM 裁决）`stage2_concept/concept_merger.py:116-186`
+   ⇒ 我方 A3「候选对齐检查」的可抄骨架。
+
+### B 级思路可借
+- **stage7 操作/权限/服务编排**：★ **权限维度是我方明确缺的**（我方五段无权限），
+  形态 `PermissionSubject` + `PermissionRule`；
+- **查询日志作第三信号源**（"实际被查询的概念才值得独立成类"＝不依赖 LLM 的粒度锚）；
+- **反事实推理**（`symbolic_reasoner.py:636/762/827/922`）⇒ 对"这条公理值不值得留"有启发
+  （只能作辅助信息，不替代人审）。
+
+### C 级明确不搬（含我方红线反面教材）
+- **"SWRL"名不副实**：只是自定义 JSON + 4 项纯 Python 校验（`nl2swrl.py:257-308`），
+  **无 OWL/RDF 序列化、无外部推理器、规则从不被执行**（`reasoning/` 下 grep "swrl" 0 命中），
+  且**样例产物 `"rules": []`**（`output/ontology.json:3057`）；唯一下游转 ECA 时命名空间不一致
+  （prompt 裸名 vs 消费方 `swrlb:` 前缀）⇒ 实际匹配不上。
+- 公理生成无内容级校验（不验 subject/object 存在、不验公理间矛盾）⇒ 与我方确定性门禁路线相反。
+- **`confidence=0.8` 硬编码**（`nl2swrl.py:194`）= 假置信度，我方红线。
+- **决策不落盘**（合并/降级的概念直接丢弃、只写日志）⇒ 违反我方"可溯源、人审可见"红线。
+- **warning 不阻断**（`consistency_checker.py:75`）⇒ fail-open vs 我方 fail-closed。
+- 技术分层轴、死配置（`Config.max_taxonomy_depth` 定义即未接线）。
+
+### 新增可补门禁项（写入 `docs/AIGEN_ROLLOUT_PLAN.md` §5.1，**待确认才动代码**）
+G1 公理 domain/range 与关系定义一致性交叉校验｜G2 规则/迁移链环检测｜
+G3 盲测加负向指标（幻觉率）。另借鉴其**每项功能配一条无 LLM 兜底路径**的工程形态。
+
+### ★ 安全提醒
+该仓库 `.env` **已入库**（`git ls-files` 命中），内含 `OPENAI_API_KEY`
+⇒ 建议加 `.gitignore` + `git rm --cached .env` + **轮换该 key**（历史提交里仍在）。
+本台账只记键名，不记录任何凭据内容。
+
 ## 4.0.7 (2026-11-26) — 盲测第 2 轮：层级分项首次可测（判据事前注册）+ 失效归因
 
 按用户裁定「继续盲测分项：重跑 Stage A + 判据重注册」执行。第 1 轮盲测只测了三弱项中的

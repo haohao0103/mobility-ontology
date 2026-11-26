@@ -228,4 +228,75 @@ DB ──connectors──▶ catalog/ingest ──▶ Table/Column 节点（物�
 真正该引入的是"值级溯源"；若 PoC **独立不回接**，则 OWL 生态兼容与 SHACL 工具链有其合理性。
 该分叉需项目方裁定。
 
+---
+
+## 7. OntologyAutoGen_HW（`haohao0103/OntologyAutoGen_HW`，2026-11-26 核查）
+
+> 用户 fork 的七阶段本体自动生成流水线（`/tmp/OntologyAutoGen_HW`，浅克隆核查）。
+> ★ 身份：207 文件；**七阶段** = stage1 数据准备 → stage2 概念 → stage3 分类体系 →
+> stage4 关系 → stage5 公理 → stage6 语义 → stage7 流程/操作/权限；
+> 数据源 = RDB(DDL/FK) + 文本 + **查询日志**；输出 = 自定义 JSON 本体（**不输出 OWL/Turtle**）
+> + 7 份 stage 报告；另附 47KB 符号推理引擎与"三条件对比"评测。
+> 核查方式：两个只读探查（层级/粒度、公理/关系判定）+ 关键文件精读。
+
+### 7.1 结论（先给结论）
+
+**它没有解决我方的层级缺口**——全仓 grep "主体域/业务域" **零命中**，`layer_classifier` 的
+data/logic/application 是**技术分层轴**，与我方"业务主体域维度"正交；它同样没有"维度选择"机制。
+⇒ **不可指望它补我方的层级弱项**。
+
+但它有**三类可直接借鉴的确定性零件**（A 级）、一批**思路可借**的结构（B 级），
+以及**两处必须避开的我方红线反面教材**（C 级）。
+
+### 7.2 A 级：可直接借鉴（低成本、高价值）
+
+| # | 借鉴物 | 位置 | 为什么对我方有用 | 必须改造/避坑 |
+|---|---|---|---|---|
+| A1 | **"过细 → 合并"确定性三规则**（实例数 <3 / 未被查询日志提及且 confidence<0.6 / 短名且是别名→降级为属性值） | `ontology_gen/stage2_concept/granularity_decider.py:81-113`（`MIN_INSTANCE_COUNT=3` 见 `:22`） | ★ **方向与我方第 2 轮的问题正好对上**（我方问题＝模型拆得过细；它＝把细的合并）。三条**信号**（实例数 / 查询命中 / 别名降级）都不依赖 LLM，可直接进我方 `class_add` 前置校验 | ①**只有单向**（无"过粗→拆分"）⇒ 我方第 1 轮正是"合并太粗"，须补对称规则；②它的父概念来源是**配置别名表**（`pipeline.py:346-358` 用 `concept_synonyms` 造 taxonomy_hints）⇒ 我方须改成"从既有本体取父概念"；③三个 bug 照抄即错：RDB 路径 `instance_count` 恒 0（`rdb_concept_extractor.py:59-66`，默认 `models.py:122`）致 Rule 1 恒真、`len(name)<=3` 抓不住真实属性值（`0.01元`/`200个字符` 漏网）、Rule 3 依赖 alias 白名单恒不命中 |
+| A2 | **一致性检查 6 项自研启发式** | `ontology_gen/stage5_axiom/consistency_checker.py:1-10` | 其中两项**我方也没有**：①**"公理里的 domain vs 关系定义的 domain 是否一致"**交叉校验（我方 R8 只要求基数显式，无此交叉检查）②**规则链环检测**（我方 16 条 rules 之间无环检测） | ⚠️ 它的严重度分流是**fail-open**：冲突只报 warning、公理照样写进本体（实证 `output/consistency_report.json:4-14` 有 domain 冲突告警）⇒ 我方 `change_gate` 须保持 fail-closed |
+| A3 | **分类组成环检测 + 自动断环**（DFS，删最低置信度边） | `ontology_gen/stage3_taxonomy/cycle_detector.py` | ★ 我方 `state_machines` 有迁移边，但**迁移成环（A→B→A）我没查过**——这是可直接补的门禁项 | 我方组（`object_type_groups`）是扁平结构无环问题 ⇒ 主要用在状态机迁移图 |
+| A4 | **Hearst 模式（不依赖 LLM 的分类归纳）** | `ontology_gen/stage3_taxonomy/hearst_pattern.py` | ★ 降级路径价值：LLM 不可用时仍能产出一版层级草稿（我方 STG 有出网依赖，需要确定性兜底） | 需改造成中文业务语料可用的模式集 |
+| A5 | **三条件对比评测法 + 负向指标** | `README.md:488-516`（条件表 `README.md:507-516`；指标 accuracy/completeness/**hallucination**，按中文 bigram 术语覆盖率） | ★ 我方盲测的指标体系**只有"越高越好"的覆盖类指标**（类召回、类型准确率、语义对应），**缺一个"越低越好"的扣分项** ⇒ 建议加"**未被人工基线/本体支撑的术语占比**"（幻觉率）作为负向指标 | 我方盲测的"支撑"定义要自己定（人工基线 + `semantic_layer.json`），不能直接套它的"标准答案"假设 |
+| A6 | **概念合并四级降级链**（精确 → 编辑距离 → 语义嵌入 → LLM 裁决；阈值 `merge_threshold_edit/semantic/llm`） | `ontology_gen/stage2_concept/concept_merger.py:116-146`（`_should_merge`）、`:148-186`（各相似度实现） | ★ 这正是我方 A3 待办「候选对齐检查」的**可抄骨架**（我方现在只有语义对应诊断，没有"要不要合并"的裁决链） | ⚠️ 它用并查集**直接合并**、**决策不落盘** ⇒ 我方必须走提议通道（`why(R10)` + after 草案 + 人审） |
+
+### 7.3 B 级：思路可借（不抄代码）
+
+- **stage7 的操作/权限/服务编排三层**（`stage7_process/operation_extractor.py`、
+  `permission_extractor.py`、`service_composer.py`）：
+  ★ **权限维度是我方明确缺的**（我方五段：对象/关系/状态机/动作/规则，**无权限**），
+  其形态可借：`PermissionSubject` + `PermissionRule`（主体 × 客体 × 动作）。
+- **查询日志作为第三信号源**（stage1 `query_log` → 粒度规则 2）：
+  ★ **实际被查询的概念才值得独立成类**——这是一条**不依赖 LLM 的粒度锚**，
+  我方若接真实数据源（TMS/ERP）可直接用。
+- **反事实推理**（`reasoning/symbolic_reasoner.py:636/762/827/922`：
+  `counterfactual_remove_subclass / remove_relation / add_subclass / remove_concept`，
+  产出 `output/counterfactual_report.json`）：
+  ★ 对"**这条公理值不值得留**"有启发（我方公理弱，但没人问过必要性）；
+  ⚠️ 我方公理/规则是**人审资产**，反事实只能作辅助信息，不能替代人审。
+
+### 7.4 C 级：明确不搬（含我方红线反面教材）
+
+| # | 不搬的东西 | 证据 | 原因 |
+|---|---|---|---|
+| C1 | **"SWRL" 名不副实**：只是自定义 JSON + 4 项纯 Python 校验 + LLM 修错循环 | `models.py:313-331`（`RuleAtom`/`Rule` dataclass）；校验 `nl2swrl.py:257-308`；**README 明说"不输出 OWL/Turtle"** | **无 OWL/RDF 序列化、无外部推理器**（全库无 owlready2/pyshacl/HermiT/Jena/rdflib 依赖）；**规则从不被执行**（`reasoning/ontology_loader.py:211` 载入 `raw_rules`，但 `reasoning/` 下 grep "swrl" **0 命中**，`symbolic_reasoner` 不消费 rules）；唯一下游转 ECA 触发器且**命名空间不一致**（prompt 要裸名 `greaterThan`，`stage6_semantic/trigger_rule_extractor.py:51-58` 只认 `swrlb:` 前缀）⇒ **实际匹配不上**；★ 实证：样例产物 `"rules": []`（`output/ontology.json:3057`） |
+| C2 | **公理生成的实际能力**：taxonomy 确定性转 `subClassOf` + LLM 自由生成 `subClassOf/domain/range/inverseOf` + 按公理类型查表分级 | `stage5_axiom/axiom_generator.py`；`axiom_risk_classifier.py` | **无内容级校验**（不验 subject/object 是否存在、不验公理间是否矛盾）⇒ 与我方"确定性门禁"路线相反 |
+| C3 | **`confidence=0.8` 硬编码**（与 LLM 自报置信度无关） | `nl2swrl.py:194` | ★ **假置信度是我方红线**：我方 `why(R10)` 必填 + 门禁 fail-closed，宁可无置信度也不能伪造 |
+| C4 | **决策不落盘**：合并/降级的概念**直接从列表丢弃、只写日志** | `granularity_decider.py:52-71`（`merge_into_parent` 分支 `:86-89`）；`concept_merger` 并查集直接 union | ★ 违反我方"可溯源、人审可见"红线——我方提议通道的 after 草案 + `why(R10)` 正是为此而设 |
+| C5 | **warning 不阻断** | `consistency_checker.py:75`（`is_consistent = len(violations)==0`，domain/range 冲突只入 warnings） | fail-open vs 我方 fail-closed |
+| C6 | **技术分层轴**（data/logic/application） | `stage2_concept/layer_classifier.py` | 与我方"业务主体域维度"**正交**，不能替代 |
+| C7 | `Config.max_taxonomy_depth`（死配置，只定义从未被读取） | `ontology_gen/config.py:52`；全仓仅 2 处命中 | 抄这类"看起来有、实际没接线"的配置等于抄坑 |
+
+### 7.5 一句话总结
+
+**它是一个"七阶段齐活但每一层都停在 LLM 自由判断"的流水线**；对我方真正有价值的是
+**它把确定性零件（粒度三规则、环检测、Hearst、启发式一致性检查、合并裁决链）与 LLM 环节分离**
+的工程形态，以及那 14 行**降级模式表**（README `降级模式` 节）——
+**每项功能都配一条无 LLM 兜底路径**。这是我方 STG（有出网依赖）应该抄的形态。
+但**层级/维度问题它没有答案**，我方第 2 轮的结论（划分维度是业务语义决策、模型只能猜）不受影响。
+
+★ ★ **安全提醒**：该仓库 `.env` **已入库**（`git ls-files` 命中 `.env`），内含 `OPENAI_API_KEY`
+⇒ 建议加 `.gitignore` + `git rm --cached .env` + **轮换该 key**（历史提交里仍在，
+是否清历史按暴露面决定）。★ **不要**在回显/落档时打印该文件内容（本台账只记键名）。
+
+
 

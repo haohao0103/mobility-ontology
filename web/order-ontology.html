@@ -2519,14 +2519,27 @@ function openChainQuestion(objectId) {
 
 let llmPreflightCache = null;
 async function ensureLlmReady() {
-  if (!llmPreflightCache) {
-    try {
-      llmPreflightCache = await api('/agent/preflight');
-    } catch (err) {
-      llmPreflightCache = { available: false, error: err.message };
-    }
+  if (llmPreflightCache) return llmPreflightCache;
+  // 预检只是提前暴露网关问题，不能把弹窗卡死在初始化文案上：
+  // STG 冷启动时网关域名首次解析可能长时间无响应，这里最多等 8 秒。
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    const pre = await api('/agent/preflight', { signal: controller.signal });
+    llmPreflightCache = pre;
+    return pre;
+  } catch (err) {
+    // 超时视为“预检未完成”，不阻断会话创建；真实失败仍如实展示。
+    return {
+      available: false,
+      transient: err.name === 'AbortError',
+      error: err.name === 'AbortError'
+        ? '网关预检 8 秒未返回（网关域名解析慢），跳过预检直接创建会话'
+        : err.message
+    };
+  } finally {
+    clearTimeout(timer);
   }
-  return llmPreflightCache;
 }
 
 async function openDiagnostic(kind, objectId, question) {
@@ -2547,7 +2560,7 @@ async function openDiagnostic(kind, objectId, question) {
     let data;
     if (kind === 'chain') {
       const pre = await ensureLlmReady();
-      if (!pre.available) {
+      if (!pre.available && !pre.transient) {
         modalBody.innerHTML = `
           <div class="result-banner bad">大模型网关不可用：${esc(pre.error || pre.message || '未知原因')}</div>
           <div style="margin-top:10px;font-size:12px;line-height:1.7;color:#6d7b99">
@@ -2556,9 +2569,10 @@ async function openDiagnostic(kind, objectId, question) {
         return;
       }
       document.querySelector('.modal').classList.add('wide');
-      data = await api(
+      data = await chainFetch(
         `/waybills/${encodeURIComponent(objectId)}/reasoning-chain/start`
         + `?question=${encodeURIComponent(question)}`,
+        30000,
         { method: 'POST' }
       );
       chainState.waybillId = objectId;
@@ -2672,13 +2686,41 @@ function chainSessionExpired(err) {
   return String((err && err.message) || '').includes('不存在或已过期');
 }
 
+// 推理链请求必须有超时：STG 偶发网络黑洞时 fetch 会一直挂着，
+// 只靠后端超时不够，页面会永久停在「执行中…」而不给任何错误提示。
+async function chainFetch(path, timeoutMs, options = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await api(path, { ...options, signal: controller.signal });
+  } catch (err) {
+    if (err && err.name === 'AbortError') {
+      const timeoutErr = new Error(
+        `请求 ${Math.round(timeoutMs / 1000)} 秒无响应，网络或网关可能已中断；请检查网络后重试`
+      );
+      timeoutErr.timeout = true;
+      throw timeoutErr;
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function chainNextTimeoutMs() {
+  const pending = String((chainState.data && chainState.data.pending) || '');
+  // 规划和决策要调大模型，STG 实测单步可能超过 70 秒；TBox/工具是本地确定性动作。
+  return pending === 'plan' || pending === 'decide' ? 180000 : 45000;
+}
+
 async function chainRebuildSession() {
   const st = chainState;
   if (!st.waybillId) return null;
-  const fresh = await api(
+  const fresh = await chainFetch(
     `/waybills/${encodeURIComponent(st.waybillId)}/reasoning-chain/start`
     + `?question=${encodeURIComponent(st.question || '')}`
     + `&max_steps=${st.maxSteps}`,
+    30000,
     { method: 'POST' }
   );
   return fresh;
@@ -2920,8 +2962,9 @@ async function runChainToEnd() {
   if (btn) btn.textContent = '⏳ 推理中…';
   try {
     // 服务端一次性跑到结论（内部逐步推进），避免现场点十几次
-    const result = await api(
+    const result = await chainFetch(
       `/reasoning-chain/${encodeURIComponent(data.session_id)}/run`,
+      300000,
       { method: 'POST' }
     );
     modalBody.innerHTML = renderReasoningChain(result);
@@ -2939,8 +2982,9 @@ async function runChainToEnd() {
         const fresh = await chainRebuildSession();
         if (fresh && fresh.session_id) {
           showToast('会话已自动续期，正在重试…');
-          const retry = await api(
+          const retry = await chainFetch(
             `/reasoning-chain/${encodeURIComponent(fresh.session_id)}/run`,
+            300000,
             { method: 'POST' }
           );
           retry.session_id = fresh.session_id;
@@ -2971,8 +3015,9 @@ async function advanceChain() {
   chainState.loading = true;
   paintReasoningChain();
   try {
-    const result = await api(
+    const result = await chainFetch(
       `/reasoning-chain/${encodeURIComponent(data.session_id)}/next`,
+      chainNextTimeoutMs(),
       { method: 'POST' }
     );
     modalBody.innerHTML = renderReasoningChain(result);
@@ -2991,8 +3036,9 @@ async function advanceChain() {
         const fresh = await chainRebuildSession();
         if (fresh && fresh.session_id) {
           showToast('会话已自动续期，正在重试本步…');
-          const retry = await api(
+          const retry = await chainFetch(
             `/reasoning-chain/${encodeURIComponent(fresh.session_id)}/next`,
+            chainNextTimeoutMs(),
             { method: 'POST' }
           );
           retry.session_id = fresh.session_id;

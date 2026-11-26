@@ -984,11 +984,29 @@ class FactMCP:
         }
         return result
 
+    @staticmethod
+    def _split_predicates(value: Any) -> list[str]:
+        """把大模型可能拼接传入的关系名拆成列表并去重保序。
+
+        qwen 偶尔会把多个合法关系用竖线/逗号/分号拼成一个字符串塞进单个
+        predicate 参数（如 ``waybill_has_audit_log|waybill_amended_by``）。
+        这里按分隔符拆开后逐个校验，避免合法关系被整体误判为未定义而中断取证。
+        """
+        if value is None:
+            return []
+        items = value if isinstance(value, (list, tuple, set)) else [value]
+        result: list[str] = []
+        for item in items:
+            for part in re.split(r"[|,;，；\s]+", str(item)):
+                if part and part not in result:
+                    result.append(part)
+        return result
+
     def traverse_objects(self, object_id: str, predicate: str | None = None,
                          direction: str = "out", depth: int = 1,
                          limit: int = 200,
                          next_page_token: str | None = None) -> dict:
-        predicates = [predicate] if predicate else []
+        predicates = self._split_predicates(predicate)
         unknown = [p for p in predicates if p not in self.sem.relations]
         if unknown:
             self._schema_error(
@@ -1004,7 +1022,7 @@ class FactMCP:
         size = max(1, min(int(limit), 500))
         query = {
             "object_id": object_id,
-            "predicate": predicate,
+            "predicate": predicates,
             "direction": direction,
             "depth": depth,
         }
@@ -1017,7 +1035,7 @@ class FactMCP:
 
         return self._record(
             "ontology.traverse",
-            {"object_id": object_id, "predicate": predicate,
+            {"object_id": object_id, "predicate": predicates,
              "direction": direction, "depth": depth, "limit": size,
              "next_page_token": next_page_token},
             "本体图查询",
@@ -1035,7 +1053,7 @@ class FactMCP:
             raise BusinessReject("search_around 至少需要一个锚点对象", "ARGUMENT_ERROR")
         if isinstance(link_type_ids, str):
             link_type_ids = [link_type_ids]
-        predicates = [str(item) for item in (link_type_ids or []) if item]
+        predicates = self._split_predicates(link_type_ids)
         unknown = [p for p in predicates if p not in self.sem.relations]
         if unknown:
             self._schema_error(

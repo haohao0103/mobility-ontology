@@ -2366,10 +2366,14 @@ class FreightSystem:
             info["model"] = client.model
             client.max_tokens = 8
             client.step_thinking = False
+            # 预检不是推理：单次、短超时，网关慢时尽快把状态交还给前端，
+            # 不能按正式调用的 120 秒 × 3 次重试把弹窗拖住。
+            client.timeout = min(client.timeout, 10.0)
             reply = client.chat(
                 [{"role": "system", "content": "只回复 ok"},
                  {"role": "user", "content": "ping"}],
                 thinking=False,
+                attempts=1,
             )
             info.update({"available": True, "probe": (reply or "")[:40],
                          "message": "网关可用，交互式问答可演示"})

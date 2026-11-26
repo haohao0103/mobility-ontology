@@ -180,12 +180,26 @@ def _salvage_truncated_json(text: str) -> dict | None:
 
 
 def _extract_json_object(raw: str) -> dict | None:
-    """从模型输出里提取 JSON 对象：剥围栏 → 全角归一 → 逐个 { 尝试 →
-    截断 salvage。JSON 前掺推理文字时从第一个 { 起解；都失败返回 None。
+    """从模型输出里提取 JSON 对象：剥围栏 → 逐个 { 尝试 → 截断 salvage。
+
+    先按原文解析，只有原文确实解析失败才做全角标点归一。原因：全角引号
+    `“”` 既可能是模型写错的 JSON 分隔符，也可能是合法字符串里的正文
+    （qwen 常在 thought 里写 `“为什么贵38”`）。无差别替换会把正文里的
+    引号变成未转义的 ASCII 引号，直接把合法 JSON 破坏成不可解析。
     """
-    text = _relax_json_punct(_normalize_json_text(raw))
+    text = _normalize_json_text(raw)
     if "{" not in text:
         return None
+    obj = _extract_json_object_from_text(text)
+    if obj is not None:
+        return obj
+    relaxed = _relax_json_punct(text)
+    if relaxed == text:
+        return None
+    return _extract_json_object_from_text(relaxed)
+
+
+def _extract_json_object_from_text(text: str) -> dict | None:
     decoder = json.JSONDecoder()
     positions = [i for i, c in enumerate(text) if c == "{"]
     for idx in positions:
